@@ -102,6 +102,11 @@ class ConnectorTestScenario(BaseModel):
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
+    # CAT's `basic_read` opt-out from validating records against the stream schemas.
+    validate_schema: bool = True
+    # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
+    # by `get_scenarios()`; at `high`, `validate_schema: false` is rejected, as in CAT.
+    test_strictness_level: Literal["low", "high"] | None = None
     # The sections of `acceptance-test-config.yml` that list this config. Populated by
     # `get_scenarios()`; empty for scenarios built by hand, which run every command.
     sections: tuple[str, ...] = ()
@@ -177,6 +182,18 @@ class ConnectorTestScenario(BaseModel):
     def runs(self, *commands: ScenarioCommand) -> bool:
         """Whether any of `commands` runs for this scenario. See `commands`."""
         return bool(self.commands & frozenset(commands))
+
+    @property
+    def is_basic_read_config(self) -> bool:
+        """Whether this config is listed under `basic_read` (or the scenario was built by hand).
+
+        Only the records of these configs are checked as in CAT's basic read test: every stream
+        not declared in `empty_streams` returns records, and every record matches its stream's
+        schema unless `validate_schema: false` is set. A config read only because it is listed
+        under `full_refresh` never had CAT's basic read checks, and has no `basic_read` entry to
+        declare those exceptions in, so its `read` only has to return some records.
+        """
+        return not self.sections or "basic_read" in self.sections
 
     @property
     def id(self) -> str:

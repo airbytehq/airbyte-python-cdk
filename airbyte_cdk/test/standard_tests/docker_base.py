@@ -165,6 +165,8 @@ class DockerConnectorTestSuite:
         The sections a config is listed under are unioned as well, so a config that appears under
         `discovery` and `basic_read` runs both `discover` and `read` (see
         `ConnectorTestScenario.commands`).
+
+        A `validate_schema: false` opt-out declared by any entry for the config is kept.
         """
         deduped_scenarios: list[ConnectorTestScenario] = []
 
@@ -190,6 +192,8 @@ class DockerConnectorTestSuite:
                         update={
                             "empty_streams": list(set(all_empty_streams)),
                             "status": existing_scenario.status or scenario.status,
+                            "validate_schema": existing_scenario.validate_schema
+                            and scenario.validate_schema,
                             "sections": tuple(
                                 dict.fromkeys(existing_scenario.sections + scenario.sections)
                             ),
@@ -229,6 +233,7 @@ class DockerConnectorTestSuite:
             )
             return []
 
+        test_strictness_level = all_tests_config.get("test_strictness_level")
         test_scenarios: list[ConnectorTestScenario] = []
         for category in SCENARIO_SECTIONS:
             if (
@@ -246,7 +251,13 @@ class DockerConnectorTestSuite:
                     # We skip iam_role tests for now, as they are not supported in the test suite.
                     continue
 
-                scenario = ConnectorTestScenario.model_validate({**test, "sections": (category,)})
+                scenario = ConnectorTestScenario.model_validate(
+                    {
+                        **test,
+                        "sections": (category,),
+                        "test_strictness_level": test_strictness_level,
+                    }
+                )
 
                 test_scenarios.append(scenario)
 

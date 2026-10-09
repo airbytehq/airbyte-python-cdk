@@ -44,6 +44,24 @@ Migration steps:
 
 Rationale: A `check` that fails is reported as `status: FAILED` in a `CONNECTION_STATUS` message with exit code 0, so an exit-code or exception check cannot detect it. The Standard Tests replaced CAT as the only `check` coverage for most connectors, and without asserting the reported status a connector whose credentials expired, or whose custom components are rejected by the CDK baked into the base image, kept passing. The sections of `acceptance-test-config.yml` name the CAT test each config was written for; running every command for every config would add syncs nobody asked for, running `check` alone would test the wrong thing for most of them, and running nothing left expired secrets and stale configs undetected. Running each config with its own command, with the `succeed` default CAT applied, restores the CAT guarantees in both paths.
 
+### Every stream returns records that match its schema (`basic_read`)
+
+This release also adds record assertions to the in-process `read` Standard Test (`SourceTestSuiteBase.test_basic_read`, run by `airbyte-cdk connector test`). Previously the test only failed when the whole read returned no records, so one stream with records passed the test for every stream. For every config listed under `basic_read` in `acceptance-test-config.yml`, it now restores two checks of the Connector Acceptance Tests (CAT) basic read test, unless the config's `status` is `failed` or `exception`. A config read only because it is listed under `full_refresh` keeps the old "some records" check, as CAT's full refresh test did not run these checks and the config has no `basic_read` entry to declare the exceptions below.
+
+- **Every stream returns records.** Every stream that is not declared in the config's `empty_streams` must return at least one record.
+- **Records match their schema.** Every record is validated against its stream's JSON schema with the validator CAT used: Draft 7, integers must be integers (`1.0` and `true` are not), `date-time` values must look like a date and a time and parse as a datetime (a space separator and a missing offset are accepted), other `format`s use the `jsonschema` defaults, and extra columns are allowed. A record that shares no field with a schema that declares `properties` also fails.
+
+The failure message names each stream, the number of failing records, and for each distinct schema error the record number, the path of the offending value inside the record, the failing schema keyword and the schema rule (for example ``record #3 at `$.items[0].price`: expected type 'number', got string``). Record values are never printed, for any kind of schema error: the message names the value's JSON type, and for an `anyOf`/`oneOf` the closest option's failure. A stream schema that cannot be applied (an unknown `type`, an unresolvable `$ref`, an invalid `pattern`) fails the check for that stream with the schema problem.
+
+Only the test harness changes, but the connector test suites of connectors whose test accounts have empty streams that are not declared, or whose records do not match their declared schemas, start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the new assertions up with this release, without a per-connector CDK bump.
+
+Migration steps:
+
+- A stream with no records for a `basic_read` config: add data to the test account, or list the stream under `empty_streams` for that config, with a `bypass_reason`. Declared empty streams are not read.
+- A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry. As in CAT, this is rejected for a connector at `test_strictness_level: high`, which has to fix the schema (or lower its strictness level).
+
+Rationale: The Standard Tests replaced CAT as the only `read` coverage for most connectors, and CAT's per-stream and schema checks were not carried over. A stream that silently stopped returning records, or a schema that drifted from the API, kept passing as long as some other stream returned a record.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.

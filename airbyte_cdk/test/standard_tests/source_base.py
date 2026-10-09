@@ -19,6 +19,10 @@ from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
+from airbyte_cdk.test.standard_tests._read_assertions import (
+    assert_read_records,
+    assert_schema_validation_opt_out_allowed,
+)
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
@@ -130,9 +134,19 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         `acceptance-test-config.yml`. This test is designed to validate the connector's ability
         to read data from the source and return records. It first runs a `discover` job to
         obtain the catalog of streams, and then it runs a full-refresh `read` job to fetch
-        records from those streams.
+        records from those streams, except the ones declared in `empty_streams`.
+
+        A read expected to succeed must return records. For a config listed under `basic_read`,
+        the records are also checked as in CAT's basic read test: every stream must return at
+        least one record, and every record must match its stream's JSON schema (opt out with
+        `validate_schema: false`, which a connector at `test_strictness_level: high` cannot).
         """
         skip_unless_runs(scenario, "read")
+        if scenario.is_basic_read_config:
+            assert_schema_validation_opt_out_allowed(
+                validate_schema=scenario.validate_schema,
+                test_strictness_level=scenario.test_strictness_level,
+            )
         connector_root = self.get_connector_root_dir()
         discover_result = run_test_job(
             self.create_connector(scenario),
@@ -171,7 +185,19 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             catalog=configured_catalog,
         )
 
-        if read_scenario.expected_outcome.expect_success() and not result.records:
+        if read_scenario.expected_outcome.expect_exception():
+            # The read failed as expected (asserted by `run_test_job`); there are no records to check.
+            return
+
+        if scenario.is_basic_read_config:
+            # Also asserts that the read returned records, in the same pass over them.
+            assert_read_records(
+                records=result.records_iterator,
+                configured_catalog=configured_catalog,
+                require_records_per_stream=True,
+                validate_schema=scenario.validate_schema,
+            )
+        elif next(result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")
 
     def test_incremental_read(
