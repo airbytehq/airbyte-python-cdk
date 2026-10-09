@@ -11,7 +11,6 @@ from types import ModuleType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Set, Union
 
 import orjson
-import yaml
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 from packaging.version import InvalidVersion, Version
@@ -75,6 +74,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     SliceLogger,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from airbyte_cdk.utils.yaml_loader import safe_load_yaml
 
 
 def _get_declarative_component_schema() -> Dict[str, Any]:
@@ -83,7 +83,7 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
             "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
         )
         if raw_component_schema is not None:
-            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+            declarative_component_schema = safe_load_yaml(raw_component_schema)
             return declarative_component_schema  # type: ignore
         else:
             raise RuntimeError(

@@ -5,13 +5,12 @@
 import pkgutil
 from typing import Any, List, Mapping, Optional
 
-import yaml
-
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.types import ConnectionDefinition
+from airbyte_cdk.utils.yaml_loader import safe_load_yaml
 
 
 class YamlDeclarativeSource(ConcurrentDeclarativeSource):
@@ -44,7 +43,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource):
         try:
             # For testing purposes, we want to allow to just pass a file
             with open(path_to_yaml_file, "r") as f:
-                return yaml.safe_load(f)  # type: ignore  # we assume the yaml represents a ConnectionDefinition
+                return safe_load_yaml(f)  # type: ignore  # we assume the yaml represents a ConnectionDefinition
         except FileNotFoundError:
             # Running inside the container, the working directory during an operation is not structured the same as the static files
             package = self.__class__.__module__.split(".")[0]
@@ -66,4 +65,4 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource):
         :param connection_definition_str: yaml string to parse
         :return: The ConnectionDefinition parsed from connection_definition_str
         """
-        return yaml.safe_load(connection_definition_str)  # type: ignore # yaml.safe_load doesn't return a type but know it is a Mapping
+        return safe_load_yaml(connection_definition_str)  # type: ignore # safe_load_yaml doesn't return a type but know it is a Mapping

@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import orjson
-import yaml
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -50,6 +49,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
+from airbyte_cdk.utils.yaml_loader import safe_load_yaml
 
 
 class SourceLocalYaml(YamlDeclarativeSource):
@@ -272,7 +272,7 @@ def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
     """Extract and parse a manifest file specified in the args."""
     try:
         with open(filepath, "r", encoding="utf-8") as manifest_file:
-            manifest_content = yaml.safe_load(manifest_file)
+            manifest_content = safe_load_yaml(manifest_file)
             if manifest_content is None:
                 raise ValueError(f"Manifest file at {filepath} is empty")
             if not isinstance(manifest_content, dict):
