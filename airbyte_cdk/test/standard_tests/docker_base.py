@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import shutil
 import sys
 import tempfile
@@ -28,6 +29,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
+from airbyte_cdk.test.standard_tests._updated_configs import persist_config_updates
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -74,6 +76,48 @@ def _assert_check_outcome(
         assert connection_statuses[-1].status == Status.SUCCEEDED, (
             f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
         )
+
+
+def _run_docker_airbyte_command_with_config_updates(
+    cmd: list[str],
+    *,
+    scenario: ConnectorTestScenario,
+    connector_root: Path,
+    temp_config_file: Path,
+    raise_if_errors: bool = True,
+) -> EntrypointOutput:
+    """Run a containerized Airbyte command and persist any credential rotation it performed.
+
+    Rotated configs are captured both from `CONTROL`/`CONNECTOR_CONFIG` messages and
+    from in-place edits to the mounted `temp_config_file`, then raised to
+    `updated_configurations/` via `persist_config_updates`. Persistence happens before
+    errors are raised so single-use tokens survive a failing command. When
+    `raise_if_errors` is False, the caller is responsible for checking the result.
+    """
+    config_before = temp_config_file.read_text()
+    result = run_docker_airbyte_command(cmd, raise_if_errors=False)
+
+    in_place_updates: list[dict[str, Any]] = []
+    try:
+        config_after = temp_config_file.read_text()
+        if config_after != config_before:
+            parsed = json.loads(config_after)
+            if isinstance(parsed, dict):
+                in_place_updates.append(parsed)
+    except (OSError, ValueError):
+        # The container may have deleted the file or left non-JSON behind; the CONTROL
+        # messages (if any) are still persisted below, so there is nothing more to do here.
+        pass
+
+    persist_config_updates(
+        result,
+        scenario=scenario,
+        connector_root=connector_root,
+        in_place_updates=in_place_updates,
+    )
+    if raise_if_errors:
+        result.raise_if_errors()
+    return result
 
 
 class DockerConnectorTestSuite:
@@ -293,7 +337,7 @@ class DockerConnectorTestSuite:
         with scenario.with_temp_config_file(
             connector_root=connector_root,
         ) as temp_config_file:
-            check_result = run_docker_airbyte_command(
+            check_result = _run_docker_airbyte_command_with_config_updates(
                 [
                     "docker",
                     "run",
@@ -305,6 +349,9 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
+                scenario=scenario,
+                connector_root=connector_root,
+                temp_config_file=temp_config_file,
                 # For expected-failure scenarios, a non-zero exit or trace error is an
                 # acceptable way for `check` to fail; don't raise before we assert on it.
                 raise_if_errors=not scenario.expected_outcome.expect_exception(),
@@ -400,7 +447,7 @@ class DockerConnectorTestSuite:
             ) as temp_dir_str,
         ):
             temp_dir = Path(temp_dir_str)
-            discover_result = run_docker_airbyte_command(
+            discover_result = _run_docker_airbyte_command_with_config_updates(
                 [
                     "docker",
                     "run",
@@ -412,7 +459,9 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                scenario=scenario,
+                connector_root=connector_root,
+                temp_config_file=temp_config_file,
             )
 
             catalog_message = discover_result.catalog  # Get catalog message
@@ -457,7 +506,7 @@ class DockerConnectorTestSuite:
             configured_catalog_path.write_text(
                 orjson.dumps(asdict(configured_catalog)).decode("utf-8")
             )
-            read_result: EntrypointOutput = run_docker_airbyte_command(
+            read_result: EntrypointOutput = _run_docker_airbyte_command_with_config_updates(
                 [
                     "docker",
                     "run",
@@ -473,5 +522,7 @@ class DockerConnectorTestSuite:
                     "--catalog",
                     container_catalog_path,
                 ],
-                raise_if_errors=True,
+                scenario=scenario,
+                connector_root=connector_root,
+                temp_config_file=temp_config_file,
             )

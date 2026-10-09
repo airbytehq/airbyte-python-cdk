@@ -19,6 +19,7 @@ from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
+from airbyte_cdk.test.standard_tests._updated_configs import persist_config_updates
 
 
 @runtime_checkable
@@ -103,6 +104,13 @@ def run_test_job(
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
         expected_outcome=test_scenario.expected_outcome,
+    )
+    # Persist rotated credentials before any assertion can short-circuit the job, so
+    # single-use tokens survive a failing test and can be pushed back to the secrets store.
+    persist_config_updates(
+        result,
+        scenario=test_scenario,
+        connector_root=connector_root,
     )
     if result.errors and test_scenario.expected_outcome.expect_success():
         raise result.as_exception()
