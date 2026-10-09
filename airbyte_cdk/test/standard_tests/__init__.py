@@ -25,6 +25,15 @@ Available test suites base classes:
 - `SourceTestSuiteBase`: A test suite for sources.
 - `DestinationTestSuiteBase`: A test suite for destinations.
 
+`SourceTestSuiteBase.test_discover` checks the discovered catalog. Some of these checks are not
+enforced yet: their problems are reported as a `DiscoveredCatalogWarning` and do not fail the
+test. To make them fail, turn the warning into an error:
+
+```bash
+pytest -W error::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning
+airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning
+```
+
 '''
 
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
