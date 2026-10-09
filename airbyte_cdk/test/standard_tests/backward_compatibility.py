@@ -24,8 +24,7 @@ from typing import Any, Literal
 
 import requests
 from packaging.version import InvalidVersion, Version
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter, Retry
 
 DeploymentMode = Literal["oss", "cloud"]
 
@@ -33,6 +32,13 @@ REGISTRY_ENTRY_URL_TEMPLATE = (
     "https://connectors.airbyte.com/files/metadata/{docker_repository}/{version}/{registry}.json"
 )
 """Public URL of a published registry entry. `version` is a version tag or `latest`."""
+
+REGISTRY_TIMEOUT_SECONDS = (5.0, 10.0)
+"""Connect and read timeouts of one registry request.
+
+With the retries of `registry_retry`, an unreachable registry fails the test in about 30 seconds
+rather than holding every image-test run for minutes.
+"""
 
 BREAKING_CHANGES_DOCS_URL = (
     "https://docs.airbyte.com/platform/connector-development/connector-breaking-changes"
@@ -59,6 +65,9 @@ COMPARED_SPEC_KEYS = (
 and writes OAuth values in a config, and `supported_destination_sync_modes` lists the modes that
 existing connections may use. The other keys are documentation or legacy flags.
 """
+
+MAX_REPORTED_CHANGES = 20
+"""How many changes of one kind `format_spec_change_summary` lists before it truncates."""
 
 
 @dataclass
@@ -87,9 +96,10 @@ def compare_specs(previous: Mapping[str, Any], current: Mapping[str, Any]) -> Sp
 
     The rule is compatibility, not equality: a new optional property passes, because no saved
     config becomes invalid, while a removed property, a narrowed type, a tightened constraint or
-    a property that has become required fails, because saved configs can. Documentation changes
-    (titles, descriptions, examples, ordering) and default changes pass and are reported as
-    compatible.
+    a property that has become required fails, because saved configs can. Only JSON Schema
+    validation keywords and the protocol keys that locate values in a config can break one;
+    every other key (titles, descriptions, `order`, `airbyte_hidden`, `$schema` and so on) is an
+    annotation, and changing it is compatible. Default changes are compatible too.
 
     Args:
         previous: The `spec` object the published version emitted, as plain JSON.
@@ -103,23 +113,6 @@ def compare_specs(previous: Mapping[str, Any], current: Mapping[str, Any]) -> Sp
 def _compared_part(spec: Mapping[str, Any]) -> dict[str, Any]:
     return {key: spec[key] for key in COMPARED_SPEC_KEYS if spec.get(key) is not None}
 
-
-# Keys whose value documents a property rather than constraining it. A change under one of
-# these cannot invalidate a saved config.
-_DOC_KEYS = frozenset(
-    {
-        "always_show",
-        "changelogUrl",
-        "description",
-        "display_type",
-        "documentationUrl",
-        "examples",
-        "group",
-        "order",
-        "pattern_descriptor",
-        "title",
-    }
-)
 
 # Keys whose value maps config field names to schemas. Their keys are names a connector chose,
 # so a field called `description` is a field, not documentation.
@@ -135,34 +128,118 @@ _CONSTRAINT_KEYS = frozenset(
         "exclusiveMaximum",
         "exclusiveMinimum",
         "format",
+        "maxContains",
         "maxItems",
         "maxLength",
         "maxProperties",
         "maximum",
+        "minContains",
         "minItems",
         "minLength",
         "minProperties",
         "minimum",
         "multipleOf",
         "pattern",
+        "required",
         "type",
         "uniqueItems",
     }
 )
 
-# Boolean constraints, and the value that is the strict one. `pattern` and `format` have no such
-# direction (one regex is not comparable to another), so any change to them is breaking.
-_STRICT_BOOLEAN = {"additionalProperties": False, "uniqueItems": True}
+# The value a keyword takes when it is absent. A keyword set to one of these accepts exactly what
+# its absence accepts, so adding or removing it changes nothing, and moving a value keyword to one
+# of these relaxes it. For a boolean keyword, any other value is the strict one. The draft-04
+# boolean form of `exclusiveMaximum`/`exclusiveMinimum` defaults to false.
+_KEYWORD_DEFAULTS: dict[str, tuple[Any, ...]] = {
+    "additionalItems": (True, {}),
+    "additionalProperties": (True, {}),
+    "exclusiveMaximum": (False,),
+    "exclusiveMinimum": (False,),
+    "items": (True, {}),
+    "minContains": (1,),
+    "minItems": (0,),
+    "minLength": (0,),
+    "minProperties": (0,),
+    "patternProperties": ({},),
+    "properties": ({},),
+    "required": ([],),
+    "uniqueItems": (False,),
+}
+
+# Keywords with a default whose value describes fields rather than constrains a value.
+_FIELD_KEYWORDS = frozenset({"items", "patternProperties", "properties"})
 
 _BOUNDS_RELAXED_BY_GROWING = frozenset(
-    {"exclusiveMaximum", "maxItems", "maxLength", "maxProperties", "maximum"}
+    {"exclusiveMaximum", "maxContains", "maxItems", "maxLength", "maxProperties", "maximum"}
 )
 _BOUNDS_RELAXED_BY_SHRINKING = frozenset(
-    {"exclusiveMinimum", "minItems", "minLength", "minProperties", "minimum"}
+    {"exclusiveMinimum", "minContains", "minItems", "minLength", "minProperties", "minimum"}
 )
 
-# Keys that decide the shape of a node rather than constrain a value.
+# Keys that decide the shape of a node rather than constrain a value. Removing one drops the
+# fields it describes, so it is breaking like a removed property.
 _STRUCTURE_KEYS = frozenset({"$ref", "allOf", "anyOf", "items", "oneOf"})
+
+# Validation keywords this check does not model. Removing one only widens what a config may set;
+# adding or changing one may narrow it in ways that are not compared here, so it is breaking.
+# None of them appears in the connection specs of the connector fleet today.
+_UNMODELED_VALIDATION_KEYS = frozenset(
+    {
+        "additionalItems",
+        "contains",
+        "dependencies",
+        "dependentRequired",
+        "dependentSchemas",
+        "else",
+        "if",
+        "not",
+        "prefixItems",
+        "propertyNames",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    }
+)
+
+# Protocol keys that say where the platform reads and writes values in a saved config. Moving or
+# removing one breaks existing connections even though no JSON Schema keyword changed.
+_PROTOCOL_KEYS = frozenset(
+    {
+        *COMPARED_SPEC_KEYS,
+        "auth_flow_type",
+        "complete_oauth_output_specification",
+        "complete_oauth_server_input_specification",
+        "complete_oauth_server_output_specification",
+        "oauth_config_specification",
+        "oauth_user_input_from_connector_config_specification",
+        "path_in_connector_config",
+        "path_in_oauth_response",
+        "predicate_key",
+        "predicate_value",
+    }
+)
+
+# Marks a field whose value the platform stores in its secret store. Marking more fields is
+# compatible; unmarking one changes how values that were already saved as secrets are handled.
+_SECRET_KEY = "airbyte_secret"
+
+# Keys of `advanced_auth` that define how a new OAuth consent is obtained (consent and token URLs,
+# scopes, which outputs to extract). Saved configs and their tokens do not depend on them.
+_OAUTH_CONSENT_FLOW_KEYS = frozenset({"oauth_connector_input_specification"})
+
+_CONFIG_RELEVANT_KEYS = frozenset(
+    {
+        *_PROPERTY_MAP_KEYS,
+        *_CONSTRAINT_KEYS,
+        *_STRUCTURE_KEYS,
+        *_UNMODELED_VALIDATION_KEYS,
+        *_PROTOCOL_KEYS,
+        *_OAUTH_CONSENT_FLOW_KEYS,
+        _SECRET_KEY,
+        "default",
+    }
+)
+"""Every key whose change can matter to a saved config. Any other key is an annotation."""
 
 # Keys whose list value is a set of allowed values. Every other list is positional: in
 # `path_in_connector_config`, `["credentials", "client_id"]` is a different location from
@@ -170,14 +247,28 @@ _STRUCTURE_KEYS = frozenset({"$ref", "allOf", "anyOf", "items", "oneOf"})
 _SET_VALUED_KEYS = frozenset({"enum", "supported_destination_sync_modes"})
 
 # Keys holding alternative shapes for the same node. The platform picks a branch by its
-# discriminating `const`, not by its index, so branches are matched by discriminator.
+# discriminating `const`, not by its index, so branches are matched by what identifies them.
 _BRANCH_KEYS = frozenset({"anyOf", "oneOf"})
 
-# Keys of `advanced_auth` that define how a new OAuth consent is obtained (consent and token URLs,
-# scopes, which outputs to extract). Saved configs and their tokens do not depend on them.
-_OAUTH_CONSENT_FLOW_KEYS = frozenset({"oauth_connector_input_specification"})
-
 _MAX_VALUE_CHARS = 120
+
+
+def _is_annotation(key: str) -> bool:
+    return key not in _CONFIG_RELEVANT_KEYS
+
+
+def _is_keyword_default(key: str, value: Any) -> bool:
+    return any(_same_json(value, default) for default in _KEYWORD_DEFAULTS.get(key, ()))
+
+
+def _same_json(left: Any, right: Any) -> bool:
+    """JSON equality, which unlike Python's does not equate `false` with `0`."""
+    return isinstance(left, bool) == isinstance(right, bool) and left == right
+
+
+def _is_secret(value: Any) -> bool:
+    # The platform reads the flag leniently, so the string "true" also marks a secret.
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")
 
 
 def _diff_node(
@@ -221,7 +312,7 @@ def _diff_object(
 
         child_path = _child_path(path, key)
         if key not in current:
-            _record_removed_key(key, child_path, is_property_map, comparison)
+            _record_removed_key(key, previous[key], child_path, is_property_map, comparison)
             continue
 
         if previous[key] != current[key]:
@@ -230,11 +321,12 @@ def _diff_object(
     for key in current:
         if key in previous or (required_handled and key == "required"):
             continue
-        _record_added_key(key, _child_path(path, key), is_property_map, comparison)
+        _record_added_key(key, current[key], _child_path(path, key), is_property_map, comparison)
 
 
 def _record_removed_key(
     key: str,
+    value: Any,
     child_path: str,
     is_property_map: bool,
     comparison: SpecComparison,
@@ -245,11 +337,15 @@ def _record_removed_key(
         comparison.breaking.append(f"{label} was removed")
     elif key in _OAUTH_CONSENT_FLOW_KEYS:
         comparison.compatible.append(f"{label} was removed (OAuth consent flow)")
-    elif key in _DOC_KEYS:
-        comparison.compatible.append(f"{label} was removed (documentation)")
+    elif key == _SECRET_KEY:
+        _diff_secret(value, None, label, comparison)
+    elif _is_annotation(key):
+        comparison.compatible.append(f"{label} was removed (annotation)")
     elif key == "default":
         comparison.compatible.append(f"{label} was removed (changes behavior, not validity)")
-    elif key in _CONSTRAINT_KEYS:
+    elif _is_keyword_default(key, value):
+        comparison.compatible.append(f"{label} was removed; it was at its default value")
+    elif key in _CONSTRAINT_KEYS or key in _UNMODELED_VALIDATION_KEYS:
         comparison.compatible.append(f"{label} was removed, widening what a config may set")
     else:
         comparison.breaking.append(f"{label} was removed")
@@ -257,19 +353,28 @@ def _record_removed_key(
 
 def _record_added_key(
     key: str,
+    value: Any,
     child_path: str,
     is_property_map: bool,
     comparison: SpecComparison,
 ) -> None:
     label = _label(child_path)
 
-    if is_property_map or key in _DOC_KEYS or key in _PROPERTY_MAP_KEYS:
+    if is_property_map or key in _PROPERTY_MAP_KEYS:
         comparison.compatible.append(f"{label} was added")
+    elif key == _SECRET_KEY:
+        comparison.compatible.append(f"{label} was added")
+    elif _is_annotation(key):
+        comparison.compatible.append(f"{label} was added (annotation)")
     elif key == "default":
         comparison.compatible.append(f"{label} was added (changes behavior, not validity)")
+    elif _is_keyword_default(key, value):
+        comparison.compatible.append(
+            f"{label} was added at its default value {_brief(value)}, which allows the same configs"
+        )
     elif key in _CONSTRAINT_KEYS:
         comparison.breaking.append(f"{label} was added, narrowing what a config may set")
-    elif key in _STRUCTURE_KEYS:
+    elif key in _STRUCTURE_KEYS or key in _UNMODELED_VALIDATION_KEYS:
         comparison.breaking.append(f"{label} was added, changing the shape of this node")
     else:
         comparison.compatible.append(f"{label} was added")
@@ -286,14 +391,18 @@ def _diff_member(
     label = _label(child_path)
 
     if not is_property_map:
-        if key in _DOC_KEYS:
-            comparison.compatible.append(f"{label} changed (documentation)")
-            return
-
         if key in _OAUTH_CONSENT_FLOW_KEYS:
             comparison.compatible.append(
                 f"{label} changed (OAuth consent flow, applies to new authorizations only)"
             )
+            return
+
+        if key == _SECRET_KEY:
+            _diff_secret(previous_value, current_value, label, comparison)
+            return
+
+        if _is_annotation(key):
+            comparison.compatible.append(f"{label} changed (annotation)")
             return
 
         if key == "default":
@@ -307,13 +416,23 @@ def _diff_member(
             _diff_type(previous_value, current_value, label, comparison)
             return
 
-        if isinstance(previous_value, bool) and isinstance(current_value, bool):
-            strict_value = _STRICT_BOOLEAN.get(key)
-            if strict_value is not None:
-                tightened = current_value == strict_value
-                verb = "tightened to" if tightened else "relaxed to"
-                message = f"{label} {verb} {current_value!r}"
-                (comparison.breaking if tightened else comparison.compatible).append(message)
+        if key in _UNMODELED_VALIDATION_KEYS and not _is_keyword_default(key, current_value):
+            comparison.breaking.append(
+                f"{label} changed; this check does not model `{key}`, so any change may narrow "
+                "what a config may set"
+            )
+            return
+
+        if key in _KEYWORD_DEFAULTS:
+            # Emptying `properties` or `items` drops the fields they describe, which the
+            # recursive comparison reports, so only value keywords relax to their default here.
+            if _is_keyword_default(key, current_value) and key not in _FIELD_KEYWORDS:
+                comparison.compatible.append(
+                    f"{label} relaxed to its default {_brief(current_value)}"
+                )
+                return
+            if isinstance(previous_value, bool) and isinstance(current_value, bool):
+                comparison.breaking.append(f"{label} tightened to {current_value!r}")
                 return
 
         if _is_number(previous_value) and _is_number(current_value):
@@ -330,26 +449,61 @@ def _diff_member(
     )
 
 
+def _diff_secret(
+    previous_value: Any,
+    current_value: Any,
+    label: str,
+    comparison: SpecComparison,
+) -> None:
+    """Compare `airbyte_secret` by direction. `current_value` is `None` when the key was removed.
+
+    Values saved while a field was secret live in the platform's secret store, so a field that
+    stops being secret changes how those saved values are read and shown. A field that becomes
+    secret, or a flag rewritten without changing its meaning (`"true"` to `true`), is compatible.
+    """
+    was_secret = _is_secret(previous_value)
+    is_secret = _is_secret(current_value)
+    change = "was removed" if current_value is None else "changed"
+
+    if was_secret and not is_secret:
+        comparison.breaking.append(
+            f"{label} {change}, so the field is no longer a secret: values saved as secrets may "
+            "be exposed or no longer read from the secret store"
+        )
+    elif is_secret and not was_secret:
+        comparison.compatible.append(f"{label} {change}, so the field is now a secret")
+    else:
+        comparison.compatible.append(
+            f"{label} {change} from {_brief(previous_value)} to {_brief(current_value)} "
+            "(same meaning)"
+        )
+
+
 def _diff_type(
     previous_value: Any,
     current_value: Any,
     label: str,
     comparison: SpecComparison,
 ) -> None:
-    """Compare two `type` declarations as the sets of types they allow.
+    """Compare two `type` declarations as the sets of values they allow.
 
-    `"string"` becoming `["null", "string"]` accepts strictly more than before, so comparing the
-    raw values would wrongly call it a break.
+    `"string"` becoming `["null", "string"]` accepts strictly more than before, and so does
+    `"integer"` becoming `"number"`, so comparing the raw values would wrongly call either a break.
     """
     previous_types = _as_type_set(previous_value)
     current_types = _as_type_set(current_value)
 
-    removed = sorted(previous_types - current_types)
-    added = sorted(current_types - previous_types)
+    removed = previous_types - current_types
+    added = current_types - previous_types
+    if "integer" in removed and "number" in current_types:
+        removed.discard("integer")
+        added.discard("number")
+        comparison.compatible.append(f"{label} widened from integer to number")
+
     if removed:
-        comparison.breaking.append(f"{label} no longer allows {', '.join(removed)}")
+        comparison.breaking.append(f"{label} no longer allows {', '.join(sorted(removed))}")
     if added:
-        comparison.compatible.append(f"{label} also allows {', '.join(added)}")
+        comparison.compatible.append(f"{label} also allows {', '.join(sorted(added))}")
 
 
 def _as_type_set(value: Any) -> set[str]:
@@ -425,103 +579,112 @@ def _diff_branches(
     """Compare `oneOf`/`anyOf` branches, matched by what identifies them.
 
     Reordering auth methods is a common, harmless edit; compared by position it would read as
-    every field of both branches being replaced. A branch with a discriminator and no partner is
-    reported as removed or added. Only branches with nothing to identify them fall back to their
-    position. Paths follow the previous version's ordering.
+    every field of both branches being replaced. A previous branch without a partner is reported
+    as removed, and a current one as added. Paths follow each version's own ordering.
     """
-    current_by_key = _branches_by_key(current)
-    matched_current: set[int] = set()
-    unkeyed_previous: list[tuple[int, Any]] = []
+    partners = _match_branches(previous, current)
 
     for index, branch in enumerate(previous):
-        branch_key = _branch_key(branch)
-        if branch_key is None:
-            unkeyed_previous.append((index, branch))
-            continue
-
-        current_index = current_by_key.get(branch_key)
-        if current_index is None:
+        partner = partners.get(index)
+        if partner is None:
             comparison.breaking.append(f"{_label(f'{path}[{index}]')} was removed")
             continue
+        _diff_node(branch, current[partner], f"{path}[{index}]", None, False, comparison)
 
-        matched_current.add(current_index)
-        _diff_node(branch, current[current_index], f"{path}[{index}]", None, False, comparison)
-
-    unkeyed_current: list[tuple[int, Any]] = []
-    for index, branch in enumerate(current):
-        if index in matched_current:
-            continue
-        if _branch_key(branch) is not None:
+    matched = set(partners.values())
+    for index in range(len(current)):
+        if index not in matched:
             comparison.compatible.append(f"{_label(f'{path}[{index}]')} was added")
-            continue
-        unkeyed_current.append((index, branch))
-
-    for (previous_index, previous_branch), (_, current_branch) in zip(
-        unkeyed_previous, unkeyed_current
-    ):
-        _diff_node(
-            previous_branch, current_branch, f"{path}[{previous_index}]", None, False, comparison
-        )
-
-    for previous_index, _ in unkeyed_previous[len(unkeyed_current) :]:
-        comparison.breaking.append(f"{_label(f'{path}[{previous_index}]')} was removed")
-
-    for current_index, _ in unkeyed_current[len(unkeyed_previous) :]:
-        comparison.compatible.append(f"{_label(f'{path}[{current_index}]')} was added")
 
 
-def _branches_by_key(branches: list[Any]) -> dict[tuple[str, Any], int]:
-    """Index branches by discriminator, dropping keys that more than one branch shares."""
-    indexed: dict[tuple[str, Any], int] = {}
-    duplicated: set[tuple[str, Any]] = set()
+def _match_branches(previous: list[Any], current: list[Any]) -> dict[int, int]:
+    """Pair each previous branch with the current branch that is most likely the same one.
 
-    for index, branch in enumerate(branches):
-        branch_key = _branch_key(branch)
-        if branch_key is None:
-            continue
-        if branch_key in indexed:
-            duplicated.add(branch_key)
-            continue
-        indexed[branch_key] = index
-
-    for branch_key in duplicated:
-        del indexed[branch_key]
-
-    return indexed
-
-
-def _branch_key(branch: Any) -> tuple[str, Any] | None:
-    """What identifies a branch across versions, if anything does.
-
-    A single-valued property such as `auth_type: {const: "oauth2.0"}` is what the platform
-    discriminates on; a title is the next best thing. When a branch has several discriminators,
-    the smallest property name wins, so the key does not depend on declaration order.
+    Candidate pairs are ranked by, in order: being identical; the discriminating `const` values
+    they share, minus those they disagree on; the same title; how many fields and types they
+    share; and how close their positions are. Pairs are then taken greedily from the best. Two
+    branches that disagree on a discriminator and share none are different auth methods, never
+    a pair, so a renamed discriminator reads as one branch removed and one added.
     """
-    if not isinstance(branch, dict):
+    ranked: list[tuple[tuple[Any, ...], int, int]] = []
+    for previous_index, previous_branch in enumerate(previous):
+        for current_index, current_branch in enumerate(current):
+            rank = _branch_pair_rank(
+                previous_branch, current_branch, abs(previous_index - current_index)
+            )
+            if rank is not None:
+                ranked.append((rank, previous_index, current_index))
+
+    ranked.sort(key=lambda item: (item[0], -item[1], -item[2]), reverse=True)
+
+    partners: dict[int, int] = {}
+    matched_current: set[int] = set()
+    for _, previous_index, current_index in ranked:
+        if previous_index in partners or current_index in matched_current:
+            continue
+        partners[previous_index] = current_index
+        matched_current.add(current_index)
+    return partners
+
+
+def _branch_pair_rank(previous: Any, current: Any, distance: int) -> tuple[Any, ...] | None:
+    previous_discriminators = _discriminators(previous)
+    current_discriminators = _discriminators(current)
+    shared_names = previous_discriminators.keys() & current_discriminators.keys()
+    agreeing = sum(
+        previous_discriminators[name] == current_discriminators[name] for name in shared_names
+    )
+    disagreeing = len(shared_names) - agreeing
+    if disagreeing and not agreeing:
         return None
 
-    properties = branch.get("properties")
-    if isinstance(properties, dict):
-        discriminators = sorted(
-            (str(name), value)
-            for name, schema in properties.items()
-            if isinstance(schema, dict)
-            for value in (_single_valued(schema),)
-            if value is not None
-        )
-        if discriminators:
-            return discriminators[0]
+    previous_title = previous.get("title") if isinstance(previous, dict) else None
+    current_title = current.get("title") if isinstance(current, dict) else None
+    same_title = isinstance(previous_title, str) and previous_title == current_title
 
-    title = branch.get("title")
-    return ("title", title) if isinstance(title, str) else None
+    return (
+        previous == current,
+        agreeing - disagreeing,
+        same_title,
+        _similarity(_branch_features(previous), _branch_features(current)),
+        -distance,
+    )
 
 
-def _single_valued(schema: dict[str, Any]) -> Any | None:
+def _discriminators(branch: Any) -> dict[str, Hashable]:
+    """The single-valued properties of a branch, such as `auth_type: {const: "oauth2.0"}`."""
+    if not isinstance(branch, dict) or not isinstance(branch.get("properties"), dict):
+        return {}
+    return {
+        str(name): value
+        for name, schema in branch["properties"].items()
+        if isinstance(schema, dict)
+        for value in (_single_valued(schema),)
+        if value is not None
+    }
+
+
+def _single_valued(schema: dict[str, Any]) -> Hashable | None:
     value = schema.get("const")
     if value is None:
         enum = schema.get("enum")
         value = enum[0] if isinstance(enum, list) and len(enum) == 1 else None
     return value if isinstance(value, Hashable) else None
+
+
+def _branch_features(branch: Any) -> set[str]:
+    if not isinstance(branch, dict):
+        return set()
+    properties = branch.get("properties")
+    features = (
+        {f"property:{name}" for name in properties} if isinstance(properties, dict) else set()
+    )
+    return features | {f"type:{name}" for name in _as_type_set(branch.get("type"))}
+
+
+def _similarity(left: set[str], right: set[str]) -> float:
+    union = left | right
+    return len(left & right) / len(union) if union else 0.0
 
 
 def _diff_required(
@@ -571,12 +734,25 @@ def _brief(value: Any) -> str:
     return text if len(text) <= _MAX_VALUE_CHARS else f"{text[:_MAX_VALUE_CHARS]}…"
 
 
+def registry_retry() -> Retry:
+    """The retry policy of registry requests.
+
+    Transient server errors and rate limits are retried twice with a short backoff. A
+    `Retry-After` header is not honored, so a rate-limited registry cannot stall the test.
+    """
+    return Retry(
+        total=2,
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET",),
+        respect_retry_after_header=False,
+    )
+
+
 def fetch_published_spec(
     docker_repository: str,
     registry: DeploymentMode,
     version: str = "latest",
-    *,
-    timeout_seconds: float = 30,
 ) -> PublishedSpec | None:
     """Fetch a published spec from the public connector registry.
 
@@ -600,14 +776,10 @@ def fetch_published_spec(
         registry=registry,
     )
     with requests.Session() as session:
-        retries = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=("GET",),
-        )
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        response = session.get(url, timeout=timeout_seconds)
+        adapter = HTTPAdapter(max_retries=registry_retry())
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        response = session.get(url, timeout=REGISTRY_TIMEOUT_SECONDS)
 
     if response.status_code == 404:
         return None
@@ -639,7 +811,8 @@ def declared_breaking_changes(
 
     A declared breaking change covers every later version until the release that carries it
     reaches `latest`, which matters during a progressive rollout: a patch on top of a major that
-    is still rolling out is compared against the version before that major.
+    is still rolling out is compared against the version before that major. A pre-release such
+    as `2.0.0-rc.1` is covered by the breaking change declared for the release it precedes.
 
     Args:
         metadata: The `data` section of the connector's `metadata.yaml`.
@@ -654,6 +827,8 @@ def declared_breaking_changes(
         upper = Version(current_version)
     except InvalidVersion:
         return [current_version] if current_version in breaking_changes else []
+    if upper.is_prerelease or upper.is_devrelease:
+        upper = Version(upper.base_version)
 
     declared: list[str] = []
     for version in breaking_changes:
@@ -693,6 +868,40 @@ def format_breaking_spec_changes(
         f'"{published.version}"}}` to an entry of the `spec` section in '
         "acceptance-test-config.yml. The waiver expires when a newer version is published."
     )
+
+
+def format_spec_change_summary(
+    *,
+    registry: DeploymentMode,
+    published: PublishedSpec,
+    comparison: SpecComparison,
+    waiver: str | None = None,
+) -> str:
+    """Summarize a passed or waived spec comparison, so a reviewer can see what was judged safe.
+
+    Each list is capped at `MAX_REPORTED_CHANGES` entries.
+
+    Args:
+        waiver: Why the breaking changes, if any, were waived.
+    """
+    lines = [
+        f"{registry.upper()} spec compared with the published version {published.version}: "
+        f"{len(comparison.breaking)} breaking, {len(comparison.compatible)} compatible change(s)."
+    ]
+    if comparison.breaking:
+        lines.append(f"Breaking changes, waived ({waiver}):" if waiver else "Breaking changes:")
+        lines.extend(_capped(comparison.breaking))
+    if comparison.compatible:
+        lines.append("Compatible changes:")
+        lines.extend(_capped(comparison.compatible))
+    return "\n".join(lines)
+
+
+def _capped(changes: list[str]) -> list[str]:
+    lines = [f"  - {change}" for change in changes[:MAX_REPORTED_CHANGES]]
+    if len(changes) > MAX_REPORTED_CHANGES:
+        lines.append(f"  … and {len(changes) - MAX_REPORTED_CHANGES} more")
+    return lines
 
 
 def disabled_for_version(acceptance_test_config: Mapping[str, Any]) -> list[str]:

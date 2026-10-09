@@ -14,6 +14,7 @@ from typing import Any, Literal, cast
 
 import orjson
 import pytest
+import requests
 import yaml
 from boltons.typeutils import classproperty
 
@@ -36,6 +37,7 @@ from airbyte_cdk.test.standard_tests.backward_compatibility import (
     disabled_for_version,
     fetch_published_spec,
     format_breaking_spec_changes,
+    format_spec_change_summary,
     is_newer_version,
 )
 from airbyte_cdk.utils.connector_paths import (
@@ -315,18 +317,28 @@ class DockerConnectorTestSuite:
         Breaking findings are waived, and the test is skipped, when the change goes through the
         breaking-change process (a `releases.breakingChanges` entry in metadata.yaml for a
         version after the published one), or when `disable_for_version` in
-        acceptance-test-config.yml names the published version.
+        acceptance-test-config.yml names the published version. The compatible changes, and
+        any waived breaking ones, are printed (pytest shows them with `-rA`).
         """
         connector_root = self.get_connector_root_dir().absolute()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
         metadata_data = metadata.data.model_dump()
         current_version = metadata.data.dockerImageTag
 
-        published_specs = {
-            registry: published
-            for registry in DEPLOYMENT_MODE_ENV_VARS
-            if (published := fetch_published_spec(metadata.data.dockerRepository, registry))
-        }
+        try:
+            published_specs = {
+                registry: published
+                for registry in DEPLOYMENT_MODE_ENV_VARS
+                if (published := fetch_published_spec(metadata.data.dockerRepository, registry))
+            }
+        except requests.RequestException as error:
+            pytest.fail(
+                f"Could not fetch the published spec of `{self.connector_name}` from the connector "
+                f"registry: {error}\n"
+                "This test compares the spec against the published version, so it needs access "
+                "to connectors.airbyte.com. To run the other tests without it, deselect this one "
+                "with `-k 'not test_docker_image_spec_backward_compatibility'`."
+            )
         if not published_specs:
             pytest.skip(f"`{self.connector_name}` has no published version to compare against.")
 
@@ -371,17 +383,32 @@ class DockerConnectorTestSuite:
                 published.spec, _run_spec_in_image(connector_image, registry)
             )
             if comparison.is_backward_compatible:
+                if comparison.compatible:
+                    print(
+                        format_spec_change_summary(
+                            registry=registry, published=published, comparison=comparison
+                        )
+                    )
                 continue
 
-            summary = (
-                f"{len(comparison.breaking)} breaking change(s) to the {registry.upper()} spec "
-                f"since {published.version}"
-            )
             declared = declared_breaking_changes(metadata_data, published.version, current_version)
             if declared:
-                waivers.append(f"{summary}, declared as breaking in {', '.join(declared)}")
+                waiver: str | None = f"declared as breaking in {', '.join(declared)}"
             elif published.version in disabled_versions:
-                waivers.append(f"{summary}, waived by `disable_for_version: {published.version}`")
+                waiver = f"waived by `disable_for_version: {published.version}`"
+            else:
+                waiver = None
+
+            if waiver:
+                print(
+                    format_spec_change_summary(
+                        registry=registry, published=published, comparison=comparison, waiver=waiver
+                    )
+                )
+                waivers.append(
+                    f"{len(comparison.breaking)} breaking change(s) to the {registry.upper()} "
+                    f"spec since {published.version}, {waiver}"
+                )
             else:
                 failures.append(
                     format_breaking_spec_changes(

@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import http.server
 import json
+import socket
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,16 +17,21 @@ import requests
 import requests_mock
 import yaml
 
-from airbyte_cdk.test.standard_tests import docker_base
+from airbyte_cdk.test.standard_tests import backward_compatibility, docker_base
 from airbyte_cdk.test.standard_tests.backward_compatibility import (
     BREAKING_CHANGES_DOCS_URL,
+    MAX_REPORTED_CHANGES,
+    REGISTRY_TIMEOUT_SECONDS,
     PublishedSpec,
+    SpecComparison,
     compare_specs,
     declared_breaking_changes,
     disabled_for_version,
     fetch_published_spec,
     format_breaking_spec_changes,
+    format_spec_change_summary,
     is_newer_version,
+    registry_retry,
 )
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 
@@ -489,6 +498,442 @@ def test_spec_keys_existing_connections_do_not_depend_on_are_ignored() -> None:
     assert not comparison.compatible
 
 
+# Annotations: every key that is not a validation keyword or a config-locating protocol key
+
+
+def _convex_published_spec() -> dict[str, Any]:
+    """The shape of destination-convex 0.2.19 as the registry publishes it."""
+    return {
+        "connectionSpecification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "title": "Destination Convex",
+            "type": "object",
+            "required": ["deployment_url", "access_key"],
+            "additionalProperties": False,
+            "properties": {
+                "deployment_url": {
+                    "type": "string",
+                    "description": "URL of the Convex deployment that is the destination",
+                    "examples": ["https://murky-swan-635.convex.cloud"],
+                },
+                "access_key": {
+                    "type": "string",
+                    "description": "API access key used to send data to a Convex deployment.",
+                    "airbyte_secret": "true",
+                },
+            },
+        },
+        "documentationUrl": "https://docs.airbyte.com/integrations/destinations/convex",
+        "supported_destination_sync_modes": ["overwrite", "append", "append_dedup"],
+        "supportsIncremental": True,
+    }
+
+
+def test_string_airbyte_secret_rewritten_as_a_boolean_is_compatible() -> None:
+    previous = _convex_published_spec()
+    current = _convex_published_spec()
+    current["connectionSpecification"]["properties"]["access_key"]["airbyte_secret"] = True
+
+    comparison = compare_specs(previous, current)
+
+    assert comparison.is_backward_compatible
+    assert comparison.compatible == [
+        "`connectionSpecification.properties.access_key.airbyte_secret` changed from 'true' to "
+        "True (same meaning)"
+    ]
+
+
+@pytest.mark.parametrize(
+    "previous_value, current_value",
+    [
+        pytest.param(False, True, id="false-to-true"),
+        pytest.param(None, True, id="added"),
+        pytest.param(False, None, id="non-secret-flag-removed"),
+        pytest.param("true", True, id="string-to-boolean"),
+    ],
+)
+def test_marking_more_values_secret_is_compatible(previous_value: Any, current_value: Any) -> None:
+    def spec(value: Any) -> dict[str, Any]:
+        schema: dict[str, Any] = {"type": "string"}
+        if value is not None:
+            schema["airbyte_secret"] = value
+        return _spec({"token": schema})
+
+    assert compare_specs(spec(previous_value), spec(current_value)).is_backward_compatible
+
+
+@pytest.mark.parametrize(
+    "current_value",
+    [pytest.param(False, id="true-to-false"), pytest.param(None, id="removed")],
+)
+@pytest.mark.parametrize("previous_value", [True, "true"])
+def test_unmarking_a_secret_is_breaking(previous_value: Any, current_value: Any) -> None:
+    current_schema: dict[str, Any] = {"type": "string"}
+    if current_value is not None:
+        current_schema["airbyte_secret"] = current_value
+
+    comparison = compare_specs(
+        _spec({"token": {"type": "string", "airbyte_secret": previous_value}}),
+        _spec({"token": current_schema}),
+    )
+
+    assert len(comparison.breaking) == 1
+    assert "no longer a secret" in comparison.breaking[0]
+
+
+@pytest.mark.parametrize(
+    "previous_schema, current_schema",
+    [
+        pytest.param({"airbyte_hidden": True}, {}, id="airbyte_hidden-removed"),
+        pytest.param({}, {"airbyte_hidden": True}, id="airbyte_hidden-added"),
+        pytest.param({"multiline": True}, {}, id="multiline-removed"),
+        pytest.param({"always_show": True}, {"always_show": False}, id="always_show-changed"),
+        pytest.param({"order": 1}, {"order": 3}, id="order-changed"),
+        pytest.param({"group": "auth"}, {}, id="group-removed"),
+        pytest.param({"examples": ["a"]}, {"examples": ["a", "b"]}, id="examples-changed"),
+        pytest.param({"title": "Token"}, {}, id="title-removed"),
+        pytest.param({"x-display": {"width": 2}}, {"x-display": {"width": 3}}, id="vendor-key"),
+        pytest.param({"deprecated": False}, {"deprecated": True}, id="deprecated"),
+    ],
+)
+def test_annotation_changes_are_compatible(
+    previous_schema: dict[str, Any], current_schema: dict[str, Any]
+) -> None:
+    comparison = compare_specs(
+        _spec({"token": {"type": "string", **previous_schema}}),
+        _spec({"token": {"type": "string", **current_schema}}),
+    )
+
+    assert comparison.is_backward_compatible
+    assert all("(annotation)" in change for change in comparison.compatible)
+
+
+@pytest.mark.parametrize(
+    "current_schema_keyword",
+    [
+        pytest.param({"$schema": "https://json-schema.org/draft-07/schema#"}, id="changed"),
+        pytest.param({}, id="removed"),
+    ],
+)
+def test_schema_keyword_changes_are_compatible(current_schema_keyword: dict[str, Any]) -> None:
+    previous = _spec(_BASE_PROPERTIES)
+    previous["connectionSpecification"]["$schema"] = "http://json-schema.org/draft-07/schema#"
+    current = _spec(_BASE_PROPERTIES)
+    current["connectionSpecification"].update(current_schema_keyword)
+
+    assert compare_specs(previous, current).is_backward_compatible
+
+
+def test_connection_specification_groups_are_annotations() -> None:
+    previous = _spec(_BASE_PROPERTIES)
+    previous["connectionSpecification"]["groups"] = [{"id": "auth", "title": "Auth"}]
+    current = _spec(_BASE_PROPERTIES)
+    current["connectionSpecification"]["groups"] = [{"id": "auth", "title": "Authentication"}]
+
+    assert compare_specs(previous, current).is_backward_compatible
+
+
+@pytest.mark.parametrize(
+    "key, previous_value, current_value",
+    [
+        pytest.param("predicate_key", ["credentials", "auth_type"], ["auth_type"], id="moved"),
+        pytest.param("predicate_value", "oauth2.0", "oauth", id="changed"),
+        pytest.param("auth_flow_type", "oauth2.0", None, id="removed"),
+    ],
+)
+def test_advanced_auth_protocol_keys_are_still_breaking(
+    key: str, previous_value: Any, current_value: Any
+) -> None:
+    def advanced_auth(value: Any) -> dict[str, Any]:
+        auth: dict[str, Any] = {"auth_flow_type": "oauth2.0", "predicate_value": "oauth2.0"}
+        if value is None:
+            del auth[key]
+        else:
+            auth[key] = value
+        return auth
+
+    comparison = compare_specs(
+        _spec({}, advanced_auth=advanced_auth(previous_value)),
+        _spec({}, advanced_auth=advanced_auth(current_value)),
+    )
+
+    assert not comparison.is_backward_compatible
+
+
+@pytest.mark.parametrize(
+    "previous_schema, current_schema, compatible",
+    [
+        pytest.param({}, {"not": {"const": "x"}}, False, id="added"),
+        pytest.param(
+            {"dependencies": {"a": ["b"]}}, {"dependencies": {"a": ["c"]}}, False, id="changed"
+        ),
+        pytest.param(
+            {"if": {"required": ["a"]}, "then": {"required": ["b"]}}, {}, True, id="removed"
+        ),
+    ],
+)
+def test_unmodeled_validation_keywords(
+    previous_schema: dict[str, Any], current_schema: dict[str, Any], compatible: bool
+) -> None:
+    comparison = compare_specs(
+        _spec({"options": {"type": "object", **previous_schema}}),
+        _spec({"options": {"type": "object", **current_schema}}),
+    )
+
+    assert comparison.is_backward_compatible is compatible
+
+
+# Keywords at their default value
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        pytest.param({"additionalProperties": True}, id="additionalProperties-true"),
+        pytest.param({"additionalProperties": {}}, id="additionalProperties-empty-schema"),
+        pytest.param({"uniqueItems": False}, id="uniqueItems-false"),
+        pytest.param({"minLength": 0}, id="minLength-0"),
+        pytest.param({"minItems": 0}, id="minItems-0"),
+        pytest.param({"minProperties": 0}, id="minProperties-0"),
+        pytest.param({"items": {}}, id="items-empty-schema"),
+        pytest.param({"required": []}, id="empty-required"),
+        pytest.param({"exclusiveMinimum": False}, id="draft-04-exclusiveMinimum-false"),
+    ],
+)
+def test_keyword_added_at_its_default_is_compatible(added: dict[str, Any]) -> None:
+    previous = _spec({"region": {"type": "string"}})
+    current = _spec({"region": {"type": "string", **added}})
+
+    assert compare_specs(previous, current).is_backward_compatible
+    assert compare_specs(current, previous).is_backward_compatible
+
+
+def test_root_additional_properties_true_after_a_manifest_migration_is_compatible() -> None:
+    current = _spec(_BASE_PROPERTIES)
+    current["connectionSpecification"]["additionalProperties"] = True
+
+    comparison = compare_specs(_spec(_BASE_PROPERTIES), current)
+
+    assert comparison.is_backward_compatible
+    assert comparison.compatible == [
+        "`connectionSpecification.additionalProperties` was added at its default value True, "
+        "which allows the same configs"
+    ]
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        pytest.param({"minLength": 1}, id="minLength-1"),
+        pytest.param({"uniqueItems": True}, id="uniqueItems-true"),
+        pytest.param(
+            {"additionalProperties": {"type": "string"}}, id="additionalProperties-schema"
+        ),
+        pytest.param({"exclusiveMaximum": True}, id="draft-04-exclusiveMaximum-true"),
+        pytest.param({"minItems": False}, id="false-is-not-zero"),
+    ],
+)
+def test_keyword_added_away_from_its_default_is_breaking(added: dict[str, Any]) -> None:
+    comparison = compare_specs(
+        _spec({"region": {"type": "string"}}),
+        _spec({"region": {"type": "string", **added}}),
+    )
+
+    assert not comparison.is_backward_compatible
+
+
+@pytest.mark.parametrize(
+    "previous_value, current_value, compatible",
+    [
+        pytest.param({"type": "string"}, True, True, id="schema-relaxed-to-true"),
+        pytest.param({"type": "string"}, {}, True, id="schema-relaxed-to-empty-schema"),
+        pytest.param(True, {"type": "string"}, False, id="true-tightened-to-schema"),
+        pytest.param(False, {}, True, id="false-relaxed-to-empty-schema"),
+    ],
+)
+def test_additional_properties_schema_is_judged_by_its_direction(
+    previous_value: Any, current_value: Any, compatible: bool
+) -> None:
+    comparison = compare_specs(
+        _spec({"options": {"type": "object", "additionalProperties": previous_value}}),
+        _spec({"options": {"type": "object", "additionalProperties": current_value}}),
+    )
+
+    assert comparison.is_backward_compatible is compatible
+
+
+@pytest.mark.parametrize(
+    "key, previous_value",
+    [
+        pytest.param("properties", {"client_id": {"type": "string"}}, id="properties-emptied"),
+        pytest.param(
+            "items",
+            {"type": "object", "properties": {"name": {"type": "string"}}},
+            id="items-emptied",
+        ),
+    ],
+)
+def test_emptying_a_field_keyword_still_removes_its_fields(key: str, previous_value: Any) -> None:
+    comparison = compare_specs(
+        _spec({"options": {"type": "object", key: previous_value}}),
+        _spec({"options": {"type": "object", key: {}}}),
+    )
+
+    assert len(comparison.breaking) == 1
+    assert comparison.breaking[0].endswith("was removed")
+
+
+def test_draft_04_exclusive_bound_flag_is_judged_by_its_direction() -> None:
+    def spec(exclusive: bool) -> dict[str, Any]:
+        return _spec(
+            {"page_size": {"type": "integer", "maximum": 10, "exclusiveMaximum": exclusive}}
+        )
+
+    assert not compare_specs(spec(False), spec(True)).is_backward_compatible
+    assert compare_specs(spec(True), spec(False)).is_backward_compatible
+
+
+# Integer and number
+
+
+@pytest.mark.parametrize(
+    "previous_type, current_type, compatible",
+    [
+        pytest.param("integer", "number", True, id="integer-widened-to-number"),
+        pytest.param(["integer", "null"], ["null", "number"], True, id="nullable-widened"),
+        pytest.param("number", "integer", False, id="number-narrowed-to-integer"),
+        pytest.param("integer", "string", False, id="integer-to-string"),
+    ],
+)
+def test_integer_and_number(previous_type: Any, current_type: Any, compatible: bool) -> None:
+    comparison = compare_specs(
+        _spec({"page_size": {"type": previous_type}}),
+        _spec({"page_size": {"type": current_type}}),
+    )
+
+    assert comparison.is_backward_compatible is compatible
+
+
+def test_integer_widened_to_number_is_reported_once() -> None:
+    comparison = compare_specs(
+        _spec({"page_size": {"type": "integer"}}),
+        _spec({"page_size": {"type": "number"}}),
+    )
+
+    assert comparison.compatible == [
+        "`connectionSpecification.properties.page_size.type` widened from integer to number"
+    ]
+
+
+# oneOf/anyOf branch identity
+
+
+def _credentials(*branches: dict[str, Any]) -> dict[str, Any]:
+    return _spec({"credentials": {"type": "object", "oneOf": list(branches)}})
+
+
+def _branch(title: str, *fields: str, **consts: str) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        name: {"type": "string", "const": value} for name, value in consts.items()
+    }
+    properties.update({name: {"type": "string"} for name in fields})
+    return {"title": title, "type": "object", "properties": properties}
+
+
+def test_optional_discriminator_added_beside_the_existing_one_is_compatible() -> None:
+    previous = _credentials(
+        _branch("OAuth", "client_id", option_title="OAuth Credentials"),
+        _branch("API key", "api_key", option_title="API Key Credentials"),
+    )
+    with_auth_type = [
+        _branch("OAuth", "client_id", option_title="OAuth Credentials"),
+        _branch("API key", "api_key", option_title="API Key Credentials"),
+    ]
+    with_auth_type[0]["properties"]["auth_type"] = {"const": "oauth2.0", "default": "oauth2.0"}
+    with_auth_type[1]["properties"]["auth_type"] = {"const": "api_key", "default": "api_key"}
+
+    comparison = compare_specs(previous, _credentials(*reversed(with_auth_type)))
+
+    assert comparison.is_backward_compatible
+    assert not any("was removed" in change for change in comparison.compatible)
+
+
+def test_renamed_title_of_a_branch_without_a_discriminator_is_compatible() -> None:
+    comparison = compare_specs(
+        _credentials(_branch("Basic", "username", "password"), _branch("Token", "token")),
+        _credentials(
+            _branch("Username and password", "username", "password"), _branch("Token", "token")
+        ),
+    )
+
+    assert comparison.is_backward_compatible
+    assert comparison.compatible == [
+        "`connectionSpecification.properties.credentials.oneOf[0].title` changed (annotation)"
+    ]
+
+
+def test_reordered_branches_without_a_discriminator_are_matched_by_their_fields() -> None:
+    basic = _branch("Basic", "username", "password")
+    token = _branch("Token", "token")
+    renamed_token = _branch("Access token", "token")
+
+    comparison = compare_specs(_credentials(basic, token), _credentials(renamed_token, basic))
+
+    assert comparison.is_backward_compatible
+
+
+def test_removed_branch_without_a_discriminator_is_breaking() -> None:
+    basic = _branch("Basic", "username", "password")
+    token = _branch("Token", "token")
+    key = _branch("Key", "api_key")
+
+    comparison = compare_specs(_credentials(basic, token, key), _credentials(key, basic))
+
+    assert comparison.breaking == [
+        "`connectionSpecification.properties.credentials.oneOf[1]` was removed"
+    ]
+
+
+def test_branches_sharing_a_discriminator_are_told_apart_by_title() -> None:
+    app = _branch("OAuth app", "client_id", auth_type="oauth2.0")
+    token = _branch("OAuth token", "access_token", auth_type="oauth2.0")
+    key = _branch("API key", "api_key", auth_type="api_key")
+
+    comparison = compare_specs(_credentials(app, token), _credentials(token, app, key))
+
+    assert comparison.is_backward_compatible
+    assert comparison.compatible == [
+        "`connectionSpecification.properties.credentials.oneOf[2]` was added"
+    ]
+
+
+def test_renamed_discriminator_is_breaking_even_with_the_same_title() -> None:
+    comparison = compare_specs(
+        _credentials(_branch("OAuth", "client_id", auth_type="oauth")),
+        _credentials(_branch("OAuth", "client_id", auth_type="oauth2.0")),
+    )
+
+    assert comparison.breaking == [
+        "`connectionSpecification.properties.credentials.oneOf[0]` was removed"
+    ]
+
+
+@pytest.mark.parametrize(
+    "current_branches, compatible",
+    [
+        pytest.param([{"type": "integer"}, {"type": "string"}], True, id="reordered"),
+        pytest.param([{"type": "string"}], False, id="branch-removed"),
+    ],
+)
+def test_anyof_type_branches(current_branches: list[Any], compatible: bool) -> None:
+    comparison = compare_specs(
+        _spec({"page_size": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}),
+        _spec({"page_size": {"anyOf": current_branches}}),
+    )
+
+    assert comparison.is_backward_compatible is compatible
+
+
 # declared_breaking_changes
 
 
@@ -511,7 +956,10 @@ _METADATA_WITH_BREAKING_CHANGES: dict[str, Any] = {
         pytest.param("1.2.0", "1.2.1", [], id="no-major-in-range"),
         pytest.param("0.9.0", "2.0.0", ["1.0.0", "2.0.0"], id="several-majors-in-range"),
         pytest.param("2.0.0", "2.0.0", [], id="version-not-bumped"),
-        pytest.param("1.9.0", "2.0.0-rc.1", [], id="release-candidate-before-major"),
+        pytest.param("1.9.0", "2.0.0-rc.1", ["2.0.0"], id="release-candidate-of-the-major"),
+        pytest.param("1.9.0", "2.0.1-rc.1", ["2.0.0"], id="release-candidate-after-the-major"),
+        pytest.param("1.9.0", "1.9.1-rc.1", [], id="release-candidate-before-the-major"),
+        pytest.param("2.0.0", "2.0.1-rc.1", [], id="release-candidate-after-a-published-major"),
         pytest.param("not-a-version", "2.0.0", ["2.0.0"], id="unparsable-falls-back-to-exact"),
     ],
 )
@@ -609,6 +1057,141 @@ def test_fetch_published_spec_raises_when_the_registry_errors() -> None:
             fetch_published_spec("airbyte/source-test", "oss")
 
 
+class _ScriptedRegistry:
+    """A local HTTP server answering each request with the next scripted status code.
+
+    `requests_mock` replaces the transport adapter, so it cannot exercise the retry policy that
+    `fetch_published_spec` mounts; a real server can.
+    """
+
+    def __init__(self, statuses: list[int]) -> None:
+        self.statuses = statuses
+        self.requests = 0
+        registry = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802 - the name http.server dispatches to
+                status = registry.statuses[min(registry.requests, len(registry.statuses) - 1)]
+                registry.requests += 1
+                body = json.dumps({"dockerImageTag": "1.2.3", "spec": {}}).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_: Any) -> None:
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    @property
+    def url_template(self) -> str:
+        port = self.server.server_address[1]
+        return f"http://127.0.0.1:{port}/{{docker_repository}}/{{version}}/{{registry}}.json"
+
+    def __enter__(self) -> _ScriptedRegistry:
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.mark.parametrize(
+    "statuses, expected_requests",
+    [
+        pytest.param([503, 503, 200], 3, id="recovers-after-two-server-errors"),
+        pytest.param([429, 200], 2, id="recovers-after-a-rate-limit"),
+        pytest.param([200], 1, id="first-try"),
+    ],
+)
+def test_fetch_published_spec_retries_transient_errors(
+    monkeypatch: pytest.MonkeyPatch, statuses: list[int], expected_requests: int
+) -> None:
+    with _ScriptedRegistry(statuses) as registry:
+        monkeypatch.setattr(
+            backward_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
+        )
+
+        published = fetch_published_spec("airbyte/source-test", "oss")
+
+    assert published is not None
+    assert published.version == "1.2.3"
+    assert registry.requests == expected_requests
+
+
+@pytest.mark.parametrize(
+    "statuses, error, expected_requests",
+    [
+        pytest.param([503], requests.exceptions.RetryError, 3, id="gives-up-after-two-retries"),
+        pytest.param([403], requests.HTTPError, 1, id="client-error-is-not-retried"),
+    ],
+)
+def test_fetch_published_spec_raises_when_retries_do_not_help(
+    monkeypatch: pytest.MonkeyPatch,
+    statuses: list[int],
+    error: type[Exception],
+    expected_requests: int,
+) -> None:
+    with _ScriptedRegistry(statuses) as registry:
+        monkeypatch.setattr(
+            backward_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
+        )
+
+        with pytest.raises(error):
+            fetch_published_spec("airbyte/source-test", "oss")
+
+    assert registry.requests == expected_requests
+
+
+def test_fetch_published_spec_does_not_retry_a_missing_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _ScriptedRegistry([404]) as registry:
+        monkeypatch.setattr(
+            backward_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
+        )
+
+        assert fetch_published_spec("airbyte/source-test", "oss") is None
+
+    assert registry.requests == 1
+
+
+def test_unreachable_registry_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    with socket.socket() as closed:
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+    monkeypatch.setattr(
+        backward_compatibility,
+        "REGISTRY_ENTRY_URL_TEMPLATE",
+        f"http://127.0.0.1:{port}/{{docker_repository}}/{{version}}/{{registry}}.json",
+    )
+
+    started = time.monotonic()
+    with pytest.raises(requests.ConnectionError):
+        fetch_published_spec("airbyte/source-test", "oss")
+
+    assert time.monotonic() - started < 5
+
+
+def test_registry_wait_is_bounded() -> None:
+    retry = registry_retry()
+    assert isinstance(retry.total, int)
+    attempts = retry.total + 1
+    backoff = sum(
+        retry.backoff_factor * 2 ** (consecutive_errors - 1)
+        for consecutive_errors in range(2, attempts)
+    )
+
+    assert retry.respect_retry_after_header is False
+    assert set(retry.status_forcelist) >= {429, 500, 502, 503, 504}
+    assert attempts * sum(REGISTRY_TIMEOUT_SECONDS) + backoff <= 60
+    assert attempts * REGISTRY_TIMEOUT_SECONDS[0] + backoff <= 20
+
+
 def test_failure_message_points_at_the_breaking_change_process() -> None:
     published = PublishedSpec(version="1.2.3", spec={}, url=_REGISTRY_URL)
     comparison = compare_specs(
@@ -629,6 +1212,37 @@ def test_failure_message_points_at_the_breaking_change_process() -> None:
     assert BREAKING_CHANGES_DOCS_URL in message
     assert "`releases.breakingChanges`" in message
     assert 'disable_for_version: "1.2.3"' in message
+
+
+def test_change_summary_lists_compatible_and_waived_changes() -> None:
+    published = PublishedSpec(version="1.2.3", spec={}, url=_REGISTRY_URL)
+    comparison = SpecComparison(breaking=["`a` was removed"], compatible=["`b` was added"])
+
+    summary = format_spec_change_summary(
+        registry="cloud", published=published, comparison=comparison, waiver="declared in 2.0.0"
+    )
+
+    assert summary.splitlines() == [
+        "CLOUD spec compared with the published version 1.2.3: 1 breaking, 1 compatible change(s).",
+        "Breaking changes, waived (declared in 2.0.0):",
+        "  - `a` was removed",
+        "Compatible changes:",
+        "  - `b` was added",
+    ]
+
+
+def test_change_summary_is_capped() -> None:
+    published = PublishedSpec(version="1.2.3", spec={}, url=_REGISTRY_URL)
+    changes = [f"`field_{index}` was added" for index in range(MAX_REPORTED_CHANGES + 5)]
+
+    summary = format_spec_change_summary(
+        registry="oss", published=published, comparison=SpecComparison(compatible=changes)
+    )
+
+    lines = summary.splitlines()
+    assert len(lines) == 2 + MAX_REPORTED_CHANGES + 1
+    assert lines[-1] == "  … and 5 more"
+    assert "Breaking" not in summary
 
 
 # DockerConnectorTestSuite.test_docker_image_spec_backward_compatibility
@@ -846,6 +1460,76 @@ def test_stale_disable_for_version_does_not_waive(
 
     with pytest.raises(pytest.fail.Exception):
         _run_test(suite)
+
+
+def test_release_candidate_of_a_declared_major_is_waived(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _BREAKING_SPEC})
+    suite = _make_suite(
+        tmp_path,
+        docker_image_tag="2.0.0-rc.1",
+        breaking_changes={"2.0.0": {"message": "Removes `start_date`."}},
+    )
+
+    with pytest.raises(pytest.skip.Exception, match="declared as breaking in 2.0.0"):
+        _run_test(suite)
+
+
+def test_compatible_changes_are_printed_on_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    extended = _spec({**_BASE_PROPERTIES, "page_size": {"type": "integer"}})
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": extended})
+
+    _run_test(_make_suite(tmp_path))
+
+    printed = capsys.readouterr().out
+    assert "OSS spec compared with the published version 1.2.3" in printed
+    assert "`connectionSpecification.properties.page_size` was added" in printed
+
+
+def test_nothing_is_printed_for_an_unchanged_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _PREVIOUS_SPEC})
+
+    _run_test(_make_suite(tmp_path))
+
+    assert capsys.readouterr().out == ""
+
+
+def test_waived_changes_are_printed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _BREAKING_SPEC})
+    suite = _make_suite(
+        tmp_path,
+        docker_image_tag="2.0.0",
+        breaking_changes={"2.0.0": {"message": "Removes `start_date`."}},
+    )
+
+    with pytest.raises(pytest.skip.Exception):
+        _run_test(suite)
+
+    printed = capsys.readouterr().out
+    assert "Breaking changes, waived (declared as breaking in 2.0.0):" in printed
+    assert "`connectionSpecification.properties.start_date` was removed" in printed
+
+
+def test_unreachable_registry_fails_with_how_to_deselect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unreachable(docker_repository: str, registry: str) -> PublishedSpec | None:
+        raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(docker_base, "fetch_published_spec", unreachable)
+
+    with pytest.raises(pytest.fail.Exception) as error:
+        _run_test(_make_suite(tmp_path))
+
+    assert "connection refused" in str(error.value)
+    assert "-k 'not test_docker_image_spec_backward_compatibility'" in str(error.value)
 
 
 def test_run_spec_in_image_returns_the_raw_spec(monkeypatch: pytest.MonkeyPatch) -> None:
