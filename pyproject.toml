@@ -58,6 +58,7 @@ requests_cache = "*"
 rich = "*"  # Use whichever version meets other constraints
 rich-click = "^1.8.8"
 typing-extensions = "*"  # Transitive dependency used directly in code
+urllib3 = "*"  # Transitive dependency used directly in code
 wcmatch = "10.0"
 # Extras depedencies
 avro = { version = ">=1.11.2,<1.13.0", optional = true }  # TODO: Move into dev dependencies if only used in tests

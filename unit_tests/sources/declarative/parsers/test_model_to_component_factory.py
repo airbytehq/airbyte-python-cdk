@@ -274,6 +274,7 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Resp
 from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
@@ -10096,3 +10097,88 @@ def test_create_file_uploader_with_a_combined_download_target_extractor():
     )
 
     assert isinstance(file_uploader.download_target_extractor, CombinedExtractor)
+
+
+@pytest.mark.parametrize(
+    "manifest_fields, expected_timeout",
+    [
+        pytest.param(
+            {"connect_timeout_in_seconds": 30, "read_timeout_in_seconds": 300},
+            (30.0, 300.0),
+            id="both_timeouts",
+        ),
+        pytest.param(
+            {"read_timeout_in_seconds": 300},
+            (None, 300.0),
+            id="read_only",
+        ),
+        pytest.param(
+            {"connect_timeout_in_seconds": 30},
+            (30.0, None),
+            id="connect_only",
+        ),
+        pytest.param({}, None, id="no_timeouts"),
+    ],
+)
+def test_create_http_requester_with_request_timeouts(manifest_fields, expected_timeout):
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition={
+            "type": "HttpRequester",
+            "url_base": "https://api.test.com",
+            "path": "/data",
+            "http_method": "GET",
+            **manifest_fields,
+        },
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert requester._http_client._request_timeout == expected_timeout
+    if expected_timeout is None:
+        assert (
+            type(requester._http_client._session.adapters["https://"])
+            is requests.adapters.HTTPAdapter
+        )
+        assert (
+            type(requester._http_client._session.adapters["http://"])
+            is requests.adapters.HTTPAdapter
+        )
+
+
+def test_create_http_requester_with_tcp_keepalive():
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition={
+            "type": "HttpRequester",
+            "url_base": "https://api.test.com",
+            "path": "/data",
+            "http_method": "GET",
+            "use_tcp_keepalive": True,
+        },
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester._http_client._session.adapters["https://"], TcpKeepaliveHTTPAdapter)
+    assert isinstance(requester._http_client._session.adapters["http://"], TcpKeepaliveHTTPAdapter)
+
+
+@pytest.mark.parametrize(
+    "manifest_fields",
+    [
+        pytest.param({"read_timeout_in_seconds": 0}, id="read_zero"),
+        pytest.param({"connect_timeout_in_seconds": -1}, id="connect_negative"),
+        pytest.param({"read_timeout_in_seconds": -5}, id="read_negative"),
+    ],
+)
+def test_http_requester_rejects_non_positive_timeouts(manifest_fields):
+    with pytest.raises(ValidationError):
+        HttpRequesterModel(
+            type="HttpRequester",
+            url_base="https://api.test.com",
+            path="/data",
+            **manifest_fields,
+        )
