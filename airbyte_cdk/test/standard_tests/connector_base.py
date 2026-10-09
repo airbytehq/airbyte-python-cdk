@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from boltons.typeutils import classproperty
 
 from airbyte_cdk.test import entrypoint_wrapper
@@ -19,7 +20,10 @@ from airbyte_cdk.test.standard_tests._spec_lint import (
     assert_no_secrets_in_output,
     get_single_spec,
 )
-from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
+from airbyte_cdk.test.standard_tests.docker_base import (
+    _SPEC_FAILED_SKIP_REASON,
+    DockerConnectorTestSuite,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -114,16 +118,22 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         """Assert that no `airbyte_secret` value from the scenario's config is in `output`.
 
         Pass this to `run_test_job` as `inspect_output`, so it runs before the job's own
-        assertions print raw messages.
+        assertions print raw messages. It runs `spec` in-process once per call, to learn which
+        config paths are secret. If `spec` fails, the test is skipped: the spec tests report
+        that failure, and the outcome assertions must not print raw messages unchecked.
         """
-        spec_result = run_test_job(
-            self.create_connector(scenario),
-            "spec",
-            connector_root=self.get_connector_root_dir(),
-        )
+        try:
+            spec_result = run_test_job(
+                self.create_connector(scenario),
+                "spec",
+                connector_root=self.get_connector_root_dir(),
+            )
+            spec = get_single_spec(spec_result, connector_name=self.connector_name)
+        except Exception:
+            pytest.skip(_SPEC_FAILED_SKIP_REASON)
         assert_no_secrets_in_output(
             output,
-            spec=get_single_spec(spec_result, connector_name=self.connector_name),
+            spec=spec,
             config=scenario.get_config_dict(
                 connector_root=self.get_connector_root_dir(),
                 empty_if_missing=True,

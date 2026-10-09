@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import functools
 import inspect
 import shutil
 import sys
@@ -83,24 +82,44 @@ def _assert_check_outcome(
         )
 
 
-@functools.cache
+_docker_spec_cache: dict[str, ConnectorSpecification | Exception] = {}
+"""The spec, or the error from running `spec`, of each connector image in this test session."""
+
+
 def _run_docker_spec(connector_image: str, *, connector_name: str) -> ConnectorSpecification:
     """Run `spec` in the connector image and return the single spec it emits.
 
-    The result is cached per image for the test session, so the spec test and every check
-    scenario share one `docker run`. The image under a tag does not change within a session.
+    The outcome is cached per image for the test session, so the spec test and every check
+    scenario share one `docker run`. A failure is cached too and raised again, so an image
+    whose `spec` fails is not run again for each scenario. The image under a tag does not
+    change within a session.
     """
-    spec_result = run_docker_airbyte_command(
-        [
-            "docker",
-            "run",
-            "--rm",
-            connector_image,
-            "spec",
-        ],
-        raise_if_errors=True,
-    )
-    return get_single_spec(spec_result, connector_name=connector_name)
+    outcome = _docker_spec_cache.get(connector_image)
+    if outcome is None:
+        try:
+            spec_result = run_docker_airbyte_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    connector_image,
+                    "spec",
+                ],
+                raise_if_errors=True,
+            )
+            outcome = get_single_spec(spec_result, connector_name=connector_name)
+        except Exception as error:  # `get_single_spec` raises `AssertionError`.
+            outcome = error
+        _docker_spec_cache[connector_image] = outcome
+    if isinstance(outcome, Exception):
+        raise outcome
+    return outcome
+
+
+_SPEC_FAILED_SKIP_REASON = (
+    "`spec` failed, so the secret leak check cannot tell which config values are secret, and "
+    "the check outcome is not asserted without it. The spec tests report the `spec` failure."
+)
 
 
 class DockerConnectorTestSuite:
@@ -335,9 +354,13 @@ class DockerConnectorTestSuite:
         # The leak check runs first, whatever the outcome: the assertions below print the raw
         # CONNECTION_STATUS and error messages, which are the likeliest to carry a secret.
         connector_name = connector_root.absolute().name
+        try:
+            spec = _run_docker_spec(connector_image, connector_name=connector_name)
+        except Exception:
+            pytest.skip(_SPEC_FAILED_SKIP_REASON)
         assert_no_secrets_in_output(
             check_result,
-            spec=_run_docker_spec(connector_image, connector_name=connector_name),
+            spec=spec,
             config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
             verb="check",
             connector_name=connector_name,

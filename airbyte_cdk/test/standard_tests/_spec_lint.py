@@ -11,10 +11,16 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from airbyte_cdk.models import AirbyteMessageSerializer, ConnectorSpecification, Type
+from airbyte_cdk.models import (
+    AirbyteMessage,
+    AirbyteMessageSerializer,
+    ConnectorSpecification,
+    Type,
+)
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 
 SECRET_PROPERTY_NAMES = frozenset(
@@ -67,6 +73,16 @@ _SECRET_CAPABLE_TYPES = {"string", "integer", "number"}
 
 _COMBINATORS = ("oneOf", "anyOf", "allOf")
 
+_UNMASKED_COMBINATORS = ("anyOf", "allOf")
+"""Combinators that the CDK's runtime secret filter does not look through.
+
+`airbyte_cdk.utils.airbyte_secrets_utils.get_secret_paths` drops only `properties` and `oneOf`
+from the schema path of an `airbyte_secret` flag and looks the rest up in the config. A flag
+under `anyOf` or `allOf` therefore resolves to no config value, and the secret is never masked
+in logs. `get_secrets` also starts at the top-level `properties`, so no combinator at the root
+of the spec is looked through either.
+"""
+
 _MIN_LEAK_CHECK_LENGTH = 8
 """Secret values shorter than this are not searched for in the output.
 
@@ -111,76 +127,171 @@ def is_secret_property_name(name: str, sibling_names: Iterable[str] = ()) -> boo
     return True
 
 
-def _can_hold_secret(property_schema: Mapping[str, Any]) -> bool:
+def _variants(schema: Mapping[str, Any], keywords: Iterable[str] = _COMBINATORS) -> Iterator[Any]:
+    for keyword in keywords:
+        variants = schema.get(keyword)
+        if isinstance(variants, list):
+            yield from (variant for variant in variants if isinstance(variant, Mapping))
+
+
+def _declared_types(schema: Mapping[str, Any]) -> set[str]:
+    """Return the types `schema` declares, itself or through its combinator variants.
+
+    A pydantic-v2 `Optional[str]` field declares its types only under `anyOf`.
+    """
+    property_type = schema.get("type")
+    if isinstance(property_type, str):
+        return {property_type}
+    if isinstance(property_type, list):
+        return {str(item) for item in property_type}
+    return set().union(*(_declared_types(variant) for variant in _variants(schema)))
+
+
+def _can_hold_secret(schema: Mapping[str, Any]) -> bool:
     """Return whether a property can hold a secret value.
 
     Booleans and nulls cannot, and the UI cannot render secret objects or arrays. A property
-    with a `const` value cannot either, since every config holds the same value.
+    with a `const` value cannot either, since every config holds the same value. A property
+    that declares its types only under a combinator can hold a secret if any variant can.
     """
-    property_type = property_schema.get("type")
-    if isinstance(property_type, str):
-        types = {property_type}
-    elif isinstance(property_type, list):
-        types = set(property_type)
-    else:
+    if "const" in schema:
         return False
-    return bool(types & _SECRET_CAPABLE_TYPES) and "const" not in property_schema
+    if "type" in schema:
+        return bool(_declared_types(schema) & _SECRET_CAPABLE_TYPES)
+    return any(_can_hold_secret(variant) for variant in _variants(schema))
 
 
-def _iter_named_properties(
+def _is_marked_secret(schema: Mapping[str, Any]) -> bool:
+    """Return whether the runtime secret filter masks the value of this property.
+
+    The flag counts on the property itself, or on a `oneOf` variant of it, because the
+    filter drops `oneOf` from the schema path. A flag under `anyOf` or `allOf` does not count
+    (see `_UNMASKED_COMBINATORS`).
+    """
+    if schema.get("airbyte_secret") is True:
+        return True
+    return any(_is_marked_secret(variant) for variant in _variants(schema, ("oneOf",)))
+
+
+@dataclass(frozen=True)
+class _SpecProperty:
+    pointer: str
+    """JSON pointer of this schema in the connection specification."""
+    name: str
+    """Name of the property this schema belongs to."""
+    sibling_names: frozenset[str]
+    """Names of every property of the object that declares the property, itself included."""
+    schema: Mapping[str, Any]
+    property_pointer: str
+    """JSON pointer of the property itself, which differs from `pointer` for a variant."""
+    is_variant: bool
+    """Whether this schema is a `oneOf`/`anyOf`/`allOf` variant of the property."""
+    unmasked_under: str | None
+    """The first combinator on the path that the runtime secret filter does not look through."""
+    unmasked_at_root: bool
+    """Whether `unmasked_under` sits at the root of the spec, which the filter never reads."""
+
+
+def _iter_spec_properties(
     schema: Mapping[str, Any],
+    *,
     pointer: str = "",
     name: str | None = None,
     sibling_names: frozenset[str] = frozenset(),
-) -> Iterator[tuple[str, str, frozenset[str], Mapping[str, Any]]]:
-    """Yield `(json_pointer, name, sibling_names, property_schema)` for each property.
+    property_pointer: str = "",
+    is_variant: bool = False,
+    unmasked_under: str | None = None,
+    unmasked_at_root: bool = False,
+) -> Iterator[_SpecProperty]:
+    """Yield every property of `schema`, and every combinator variant of each property.
 
-    `sibling_names` holds the names of every property of the object that declares the
-    property, itself included. Variants of a `oneOf`/`anyOf`/`allOf` and the `items` of an
-    array are yielded under the name and siblings of the property that declares them.
+    The `items` of an array are yielded as the property itself, under its name and siblings,
+    since an array of secret strings marks its items.
     """
     if name is not None:
-        yield pointer, name, sibling_names, schema
+        yield _SpecProperty(
+            pointer,
+            name,
+            sibling_names,
+            schema,
+            property_pointer,
+            is_variant,
+            unmasked_under,
+            unmasked_at_root,
+        )
 
     properties = schema.get("properties")
     if isinstance(properties, Mapping):
         property_names = frozenset(properties)
         for property_name, property_schema in properties.items():
             if isinstance(property_schema, Mapping):
-                yield from _iter_named_properties(
+                child_pointer = f"{pointer}/properties/{property_name}"
+                yield from _iter_spec_properties(
                     property_schema,
-                    f"{pointer}/properties/{property_name}",
-                    property_name,
-                    property_names,
+                    pointer=child_pointer,
+                    name=property_name,
+                    sibling_names=property_names,
+                    property_pointer=child_pointer,
+                    unmasked_under=unmasked_under,
+                    unmasked_at_root=unmasked_at_root,
                 )
 
     for keyword in _COMBINATORS:
         variants = schema.get(keyword)
-        if isinstance(variants, list):
-            for index, variant in enumerate(variants):
-                if isinstance(variant, Mapping):
-                    yield from _iter_named_properties(
-                        variant, f"{pointer}/{keyword}/{index}", name, sibling_names
-                    )
+        if not isinstance(variants, list):
+            continue
+        at_root = name is None
+        hides_secrets = unmasked_under is None and (keyword in _UNMASKED_COMBINATORS or at_root)
+        for index, variant in enumerate(variants):
+            if isinstance(variant, Mapping):
+                yield from _iter_spec_properties(
+                    variant,
+                    pointer=f"{pointer}/{keyword}/{index}",
+                    name=name,
+                    sibling_names=sibling_names,
+                    property_pointer=property_pointer,
+                    is_variant=not at_root,
+                    unmasked_under=keyword if hides_secrets else unmasked_under,
+                    unmasked_at_root=at_root if hides_secrets else unmasked_at_root,
+                )
 
     items = schema.get("items")
     if isinstance(items, Mapping):
-        yield from _iter_named_properties(items, f"{pointer}/items", name, sibling_names)
+        yield from _iter_spec_properties(
+            items,
+            pointer=f"{pointer}/items",
+            name=name,
+            sibling_names=sibling_names,
+            property_pointer=f"{pointer}/items",
+            unmasked_under=unmasked_under,
+            unmasked_at_root=unmasked_at_root,
+        )
+
+
+def _describe_types(schema: Mapping[str, Any]) -> str:
+    return ", ".join(sorted(_declared_types(schema))) or "none"
 
 
 def find_secret_marking_errors(connection_specification: Mapping[str, Any]) -> list[str]:
     """Return one error per property whose `airbyte_secret` flag is wrong.
 
     Any `airbyte_secret` value must be a boolean: the CDK's secret filter only masks values
-    whose flag is `True`, so a string such as `"true"` leaves the value unmasked. A property
-    whose name denotes a secret (see `is_secret_property_name`) and that can hold a secret
-    value must set `airbyte_secret: true`. One that cannot hold a secret value, such as a
-    boolean or an object, must not set it.
+    whose flag is `True`, so a string such as `"true"` leaves the value unmasked. The flag
+    must also sit where the filter finds it, so not under `anyOf` or `allOf` (see
+    `_UNMASKED_COMBINATORS`).
+
+    A property whose name denotes a secret (see `is_secret_property_name`) and that can hold
+    a secret value must set `airbyte_secret: true`, on itself or on a `oneOf` variant. One
+    that cannot hold a secret value, such as a boolean or an object, must not set it.
+
+    A property that sets `airbyte_secret: false` explicitly is not reported as an unmarked
+    secret: that is how a spec records that a secret-looking name, such as a sort `key`,
+    holds no secret.
     """
     errors: list[str] = []
-    for pointer, name, sibling_names, property_schema in _iter_named_properties(
-        connection_specification
-    ):
+    for spec_property in _iter_spec_properties(connection_specification):
+        pointer = spec_property.pointer
+        property_schema = spec_property.schema
         marking = property_schema.get("airbyte_secret")
         if marking is not None and not isinstance(marking, bool):
             errors.append(
@@ -188,21 +299,57 @@ def find_secret_marking_errors(connection_specification: Mapping[str, Any]) -> l
                 "boolean, so the CDK does not treat the value as a secret."
             )
             continue
-        if "type" not in property_schema or not is_secret_property_name(name, sibling_names):
+        if marking is True and spec_property.unmasked_under:
+            if spec_property.is_variant:
+                fix = f"Set it on `{spec_property.property_pointer}` instead."
+            elif spec_property.unmasked_at_root:
+                fix = "The filter reads only the top-level `properties` of the spec."
+            else:
+                combinator = spec_property.unmasked_under
+                fix = f"Declare the variants with `oneOf` instead of `{combinator}`."
+            errors.append(
+                f"`{pointer}` sets `airbyte_secret: true` under "
+                f"`{spec_property.unmasked_under}`, where the CDK's secret filter does not look, "
+                f"so the value is not masked in logs. {fix}"
+            )
+            continue
+        if spec_property.is_variant:
+            # The property that declares the variant is checked as a whole.
+            continue
+        if not _declared_types(property_schema) or not is_secret_property_name(
+            spec_property.name, spec_property.sibling_names
+        ):
             continue
 
-        marked_as_secret = marking is True
+        marked_as_secret = _is_marked_secret(property_schema)
         can_hold_secret = _can_hold_secret(property_schema)
         if can_hold_secret and not marked_as_secret:
+            if marking is False or _has_unmasked_variant_marking(property_schema):
+                # An explicit `false` is a reviewed decision. A flag under `anyOf` is reported
+                # on the variant above.
+                continue
             errors.append(
-                f"`{pointer}` looks like a secret but is not marked `airbyte_secret: true`."
+                f"`{pointer}` looks like a secret but is not marked `airbyte_secret: true`. "
+                "If it holds no secret, set `airbyte_secret: false` on it explicitly."
             )
         elif marked_as_secret and not can_hold_secret:
             errors.append(
                 f"`{pointer}` is marked `airbyte_secret: true` but its type "
-                f"`{property_schema.get('type')}` cannot hold a secret value."
+                f"`{_describe_types(property_schema)}` cannot hold a secret value."
             )
     return errors
+
+
+def _has_unmasked_variant_marking(schema: Mapping[str, Any], under_unmasked: bool = False) -> bool:
+    """Return whether a variant of `schema` sets the flag under `anyOf` or `allOf`."""
+    for keyword in _COMBINATORS:
+        unmasked = under_unmasked or keyword in _UNMASKED_COMBINATORS
+        for variant in _variants(schema, (keyword,)):
+            if unmasked and variant.get("airbyte_secret") is True:
+                return True
+            if _has_unmasked_variant_marking(variant, unmasked):
+                return True
+    return False
 
 
 def get_single_spec(result: EntrypointOutput, *, connector_name: str) -> ConnectorSpecification:
@@ -234,16 +381,55 @@ def _pointer_token(name: str) -> str:
 
 
 def _scalars(value: Any) -> Iterator[Any]:
-    """Yield every scalar inside a JSON-like value, mapping keys included."""
+    """Yield every scalar inside a JSON-like value.
+
+    Mapping keys are not yielded: they name the fields of a secret object, and the runtime
+    secret filter does not mask them either.
+    """
     if isinstance(value, Mapping):
-        for key, item in value.items():
-            yield key
+        for item in value.values():
             yield from _scalars(item)
     elif isinstance(value, list):
         for item in value:
             yield from _scalars(item)
     elif value is not None:
         yield value
+
+
+def _discriminators(variant: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the properties of a `oneOf` variant that have one fixed value, such as `auth_type`."""
+    properties = variant.get("properties")
+    if not isinstance(properties, Mapping):
+        return {}
+    discriminators: dict[str, Any] = {}
+    for name, property_schema in properties.items():
+        if not isinstance(property_schema, Mapping):
+            continue
+        enum = property_schema.get("enum")
+        if "const" in property_schema:
+            discriminators[name] = property_schema["const"]
+        elif isinstance(enum, list) and len(enum) == 1:
+            discriminators[name] = enum[0]
+    return discriminators
+
+
+def _selected_variants(variants: list[Any], config: Any) -> list[Mapping[str, Any]]:
+    """Return the `oneOf` variants that `config` selects through their discriminators.
+
+    A value that is secret only in a variant the user did not choose is not a secret of this
+    config. If no variant's discriminators match the config, for example because no variant
+    has any, every variant is returned.
+    """
+    mappings = [variant for variant in variants if isinstance(variant, Mapping)]
+    if not isinstance(config, Mapping):
+        return mappings
+    selected = [
+        variant
+        for variant in mappings
+        if (discriminators := _discriminators(variant))
+        and all(name in config and config[name] == value for name, value in discriminators.items())
+    ]
+    return selected or mappings
 
 
 def _iter_config_secrets(
@@ -274,6 +460,8 @@ def _iter_config_secrets(
     for keyword in _COMBINATORS:
         variants = schema.get(keyword)
         if isinstance(variants, list):
+            if keyword == "oneOf":
+                variants = _selected_variants(variants, config)
             for variant in variants:
                 yield from _iter_config_secrets(variant, config, pointer)
 
@@ -290,9 +478,10 @@ def find_config_secrets(
     """Return `(config_pointer, value)` for every `airbyte_secret` value in `config`.
 
     Unlike `airbyte_cdk.utils.airbyte_secrets_utils.get_secrets`, which the CDK uses to mask
-    logs at runtime, this also walks array `items` and every `anyOf`/`allOf`/`oneOf` variant,
-    so it finds a secret in an array of objects, such as one API key per account. It finds
-    every value `get_secrets` finds for the spec shapes connectors use.
+    logs at runtime, this also walks array `items` and `anyOf`/`allOf` variants, so it finds a
+    secret in an array of objects, such as one API key per account. Of a `oneOf`, it walks only
+    the variants the config selects (see `_selected_variants`). For the variant the config
+    selects, it finds every value `get_secrets` finds.
     """
     return list(dict.fromkeys(_iter_config_secrets(connection_specification, config)))
 
@@ -338,9 +527,14 @@ def _stream_name(message: Mapping[str, Any]) -> str | None:
 
 
 def _string_values(value: Any) -> Iterator[str]:
-    """Yield every string found in a JSON-like value, recursively."""
+    """Yield every string found in a JSON-like value, recursively.
+
+    Numbers are yielded as text too, so a numeric secret emitted as a JSON number is found.
+    """
     if isinstance(value, str):
         yield value
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        yield str(value)
     elif isinstance(value, Mapping):
         for item in value.values():
             yield from _string_values(item)
@@ -349,16 +543,36 @@ def _string_values(value: Any) -> Iterator[str]:
             yield from _string_values(item)
 
 
+_CONFIG_VALIDATION_ERROR_PREFIX = "Config validation error:"
+"""How `check_config_against_spec_or_exit` starts the message of a failed config validation."""
+
+_CONFIG_VALIDATION_LABEL = "built by the CDK's config validation"
+
+
+def _is_config_validation_status(message: AirbyteMessage) -> bool:
+    status = message.connectionStatus
+    return (
+        message.type == Type.CONNECTION_STATUS
+        and status is not None
+        and (status.message or "").startswith(_CONFIG_VALIDATION_ERROR_PREFIX)
+    )
+
+
 def find_leaked_secrets(
     output: EntrypointOutput,
     secrets: Iterable[tuple[str, Any]],
 ) -> list[str]:
     """Return one line per place in `output` that contains a secret from `secrets`.
 
-    `secrets` holds `(config_pointer, value)` pairs, as `find_config_secrets` returns. A line names the pointers of the secrets found and where they were found: the
-    message number (on the Docker path, the stdout line number), its type and stream, or the
-    stderr line number. It never contains any text from the output, so it cannot print a
-    secret in any encoding. The stream name is left out if it overlaps any secret.
+    `secrets` holds `(config_pointer, value)` pairs, as `find_config_secrets` returns. A line
+    names the pointers of the secrets found and where they were found: the message number (on
+    the Docker path, the stdout line number), its type and stream, or the stderr line number.
+    It never contains any text from the output, so it cannot print a secret in any encoding.
+    The stream name is left out if it overlaps any searched form of a secret.
+
+    A CONNECTION_STATUS that the CDK builds from a failed config validation is labeled as
+    such, since the connector's own code never ran: the fix is a newer CDK, which masks
+    secrets in that message, or a scenario config that passes the spec.
 
     CONTROL messages are skipped: a connector config update carries the full config,
     including its secrets, by design.
@@ -370,9 +584,7 @@ def find_leaked_secrets(
             variants_by_pointer.setdefault(pointer, set()).update(variants)
     if not variants_by_pointer:
         return []
-    every_secret_form = {str(secret) for _, secret in secrets if str(secret)}.union(
-        *variants_by_pointer.values()
-    )
+    every_secret_form = set().union(*variants_by_pointer.values())
 
     def leaked_pointers(text: str) -> list[str]:
         return [
@@ -400,6 +612,8 @@ def find_leaked_secrets(
         stream = _stream_name(serialized_message)
         if stream and not any(form in stream or stream in form for form in every_secret_form):
             location += f", stream `{stream}`"
+        if _is_config_validation_status(message):
+            location += f", {_CONFIG_VALIDATION_LABEL}"
         leaks.append(f"{describe(pointers)} in message #{number} ({location})")
 
     stderr_lines = (output.stderr or "").splitlines()
@@ -428,8 +642,16 @@ def assert_no_secrets_in_output(
     """
     secrets = find_config_secrets(spec.connectionSpecification, config)
     leaks = find_leaked_secrets(output, secrets)
+    hint = ""
+    if any(_CONFIG_VALIDATION_LABEL in leak for leak in leaks):
+        hint = (
+            "\nA message built by the CDK's config validation comes from the CDK, not from "
+            "connector code: the CDK in use predates masking secrets in it, or the secret sits "
+            "where the CDK's secret filter does not look (the spec lint reports that). Upgrade "
+            "`airbyte-cdk`, or make the scenario config pass the spec."
+        )
     assert not leaks, (
         f"`{verb}` for connector '{connector_name}' printed secret values from its config. "
         "Secrets must never appear in logs, traces or connection status messages. The values "
-        "at these config paths were found in the output:\n" + "\n".join(leaks)
+        "at these config paths were found in the output:\n" + "\n".join(leaks) + hint
     )

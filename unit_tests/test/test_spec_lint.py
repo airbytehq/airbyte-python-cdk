@@ -4,11 +4,14 @@
 import base64
 import json
 import logging
+import subprocess
 from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import quote
 
 import pytest
+from pydantic import BaseModel, Field
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -18,9 +21,9 @@ from airbyte_cdk.models import (
     Status,
 )
 from airbyte_cdk.sources.source import Source
-from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
+from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException, EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
-from airbyte_cdk.test.standard_tests import docker_base
+from airbyte_cdk.test.standard_tests import connector_base, docker_base, source_base
 from airbyte_cdk.test.standard_tests._spec_lint import (
     assert_no_secrets_in_output,
     assert_spec_is_valid,
@@ -33,6 +36,7 @@ from airbyte_cdk.test.standard_tests._spec_lint import (
 from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
+from airbyte_cdk.utils import docker as docker_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets
 
 SECRET = "sk_live_51UWRAsFuIbeygfIY3"
@@ -566,14 +570,78 @@ _ONESIGNAL_STYLE_SPEC = _spec(
         ),
         pytest.param(
             _spec({"headers": {"type": "object", "airbyte_secret": True}}),
-            {"headers": {"X-Token": "tok-1", "extra": ["tok-2"]}},
-            [
-                ("/headers", "X-Token"),
-                ("/headers", "tok-1"),
-                ("/headers", "extra"),
-                ("/headers", "tok-2"),
-            ],
-            id="secret_object_never_names_its_keys",
+            {"headers": {"X-Token": "tok-1", "region2025x": ["tok-2"]}},
+            [("/headers", "tok-1"), ("/headers", "tok-2")],
+            id="secret_object_yields_values_not_keys",
+        ),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "type": "object",
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "auth": {"const": "oauth"},
+                                    "client_id": {"type": "string", "airbyte_secret": True},
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "auth": {"enum": ["basic"]},
+                                    "client_id": {"type": "string"},
+                                    "password": {"type": "string", "airbyte_secret": True},
+                                }
+                            },
+                        ],
+                    }
+                }
+            ),
+            {"credentials": {"auth": "basic", "client_id": "cid-12345678", "password": "p-1"}},
+            [("/credentials/password", "p-1")],
+            id="one_of_walks_only_the_selected_variant",
+        ),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "type": "object",
+                        "oneOf": [
+                            {"properties": {"client_secret": {"airbyte_secret": True}}},
+                            {"properties": {"api_key": {"airbyte_secret": True}}},
+                        ],
+                    }
+                }
+            ),
+            {"credentials": {"client_secret": "s-1", "api_key": "k-1"}},
+            [("/credentials/client_secret", "s-1"), ("/credentials/api_key", "k-1")],
+            id="one_of_without_discriminators_walks_every_variant",
+        ),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "type": "object",
+                        "oneOf": [
+                            {
+                                "properties": {
+                                    "auth": {"const": "oauth"},
+                                    "client_secret": {"airbyte_secret": True},
+                                }
+                            },
+                            {
+                                "properties": {
+                                    "auth": {"const": "token"},
+                                    "api_key": {"airbyte_secret": True},
+                                }
+                            },
+                        ],
+                    }
+                }
+            ),
+            {"credentials": {"client_secret": "s-1", "api_key": "k-1"}},
+            [("/credentials/client_secret", "s-1"), ("/credentials/api_key", "k-1")],
+            id="one_of_with_no_matching_discriminator_walks_every_variant",
         ),
     ],
 )
@@ -609,7 +677,7 @@ def test_find_config_secrets(
 def test_find_config_secrets_finds_every_runtime_secret(
     spec: dict[str, Any], config: dict[str, Any]
 ) -> None:
-    """Every value the runtime log filter masks is also searched for in the output."""
+    """Every value the runtime log filter masks, in the variant the config selects, is searched."""
     found = {value for _, value in find_config_secrets(spec, config)}
     assert set(get_secrets(spec, config)) <= found
 
@@ -659,9 +727,9 @@ class _DockerSuite(DockerConnectorTestSuite):
 
 @pytest.fixture(autouse=True)
 def _clear_docker_spec_cache() -> Iterator[None]:
-    docker_base._run_docker_spec.cache_clear()
+    docker_base._docker_spec_cache.clear()
     yield
-    docker_base._run_docker_spec.cache_clear()
+    docker_base._docker_spec_cache.clear()
 
 
 def _fake_docker(
@@ -869,3 +937,369 @@ def test_in_process_check_test_fails_when_check_prints_a_secret(
         suite_test(_InProcessSuite(), scenario)
     assert "`/api_key` in message #" in str(error.value)
     assert SECRET not in str(error.value)
+
+
+class _OptionalSecretSpec(BaseModel):
+    """How a pydantic-v2 spec declares an optional secret: the flag sits next to `anyOf`."""
+
+    api_key: Optional[str] = Field(None, json_schema_extra={"airbyte_secret": True})
+
+
+class _OptionalUnmarkedSpec(BaseModel):
+    api_key: Optional[str] = None
+
+
+_NULLABLE_STRING = [{"type": "string"}, {"type": "null"}]
+_MARKED_STRING_OR_NULL = [{"type": "string", "airbyte_secret": True}, {"type": "null"}]
+
+
+@pytest.mark.parametrize(
+    "connection_specification, expected_errors",
+    [
+        pytest.param(
+            _OptionalSecretSpec.model_json_schema(),
+            [],
+            id="pydantic_v2_optional_secret_passes",
+        ),
+        pytest.param(
+            _OptionalUnmarkedSpec.model_json_schema(),
+            ["`/properties/api_key` looks like a secret"],
+            id="pydantic_v2_optional_unmarked_secret_fails_once_at_the_property",
+        ),
+        pytest.param(
+            _spec({"api_key": {"anyOf": _MARKED_STRING_OR_NULL}}),
+            [
+                "`/properties/api_key/anyOf/0` sets `airbyte_secret: true` under `anyOf`, where "
+                "the CDK's secret filter does not look, so the value is not masked in logs. Set it "
+                "on `/properties/api_key` instead."
+            ],
+            id="flag_inside_any_of_variant_fails",
+        ),
+        pytest.param(
+            _spec({"api_key": {"allOf": _MARKED_STRING_OR_NULL[:1]}}),
+            ["`/properties/api_key/allOf/0` sets `airbyte_secret: true` under `allOf`"],
+            id="flag_inside_all_of_variant_fails",
+        ),
+        pytest.param(
+            _spec({"api_key": {"oneOf": _MARKED_STRING_OR_NULL}}),
+            [],
+            id="flag_inside_one_of_variant_passes",
+        ),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "token": {"type": "string", "airbyte_secret": True},
+                                },
+                            }
+                        ]
+                    }
+                }
+            ),
+            [
+                "`/properties/credentials/anyOf/0/properties/token` sets `airbyte_secret: true` "
+                "under `anyOf`, where the CDK's secret filter does not look, so the value is not "
+                "masked in logs. Declare the variants with `oneOf` instead of `anyOf`."
+            ],
+            id="flag_on_a_property_of_an_any_of_object_fails",
+        ),
+        pytest.param(
+            {
+                "type": "object",
+                "oneOf": [
+                    {"properties": {"api_key": {"type": "string", "airbyte_secret": True}}},
+                ],
+            },
+            [
+                "`/oneOf/0/properties/api_key` sets `airbyte_secret: true` under `oneOf`, where "
+                "the CDK's secret filter does not look, so the value is not masked in logs. The "
+                "filter reads only the top-level `properties` of the spec."
+            ],
+            id="flag_under_a_top_level_one_of_fails",
+        ),
+        pytest.param(
+            _spec({"password": {"airbyte_secret": True, "anyOf": [{"type": "boolean"}]}}),
+            [
+                "`/properties/password` is marked `airbyte_secret: true` but its type `boolean` "
+                "cannot hold a secret value."
+            ],
+            id="marked_property_with_only_boolean_variants_fails",
+        ),
+        pytest.param(
+            _spec({"api_key": {"anyOf": _NULLABLE_STRING}}),
+            ["`/properties/api_key` looks like a secret"],
+            id="unmarked_property_typed_by_its_variants_fails",
+        ),
+        pytest.param(
+            _spec({"key": {"type": "string", "airbyte_secret": False}}),
+            [],
+            id="explicit_false_records_a_non_secret",
+        ),
+        pytest.param(
+            _spec({"sort": {"type": "object", "properties": {"key": {"type": "string"}}}}),
+            [
+                "`/properties/sort/properties/key` looks like a secret but is not marked "
+                "`airbyte_secret: true`. If it holds no secret, set `airbyte_secret: false` on it "
+                "explicitly."
+            ],
+            id="failure_text_names_the_opt_out",
+        ),
+    ],
+)
+def test_find_secret_marking_errors_follows_the_runtime_secret_filter(
+    connection_specification: dict[str, Any],
+    expected_errors: list[str],
+) -> None:
+    errors = find_secret_marking_errors(connection_specification)
+    assert len(errors) == len(expected_errors), errors
+    for error, expected_error in zip(errors, expected_errors):
+        assert error.startswith(expected_error), error
+
+
+@pytest.mark.parametrize(
+    "connection_specification, config",
+    [
+        pytest.param(_OptionalSecretSpec.model_json_schema(), {"api_key": SECRET}, id="optional"),
+        pytest.param(_spec({"api_key": {"anyOf": _MARKED_STRING_OR_NULL}}), {"api_key": SECRET}),
+        pytest.param(
+            _spec({"api_key": {"allOf": _MARKED_STRING_OR_NULL[:1]}}), {"api_key": SECRET}
+        ),
+        pytest.param(_spec({"api_key": {"oneOf": _MARKED_STRING_OR_NULL}}), {"api_key": SECRET}),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "anyOf": [
+                            {"properties": {"token": {"type": "string", "airbyte_secret": True}}}
+                        ]
+                    }
+                }
+            ),
+            {"credentials": {"token": SECRET}},
+            id="any_of_object",
+        ),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "oneOf": [
+                            {"properties": {"token": {"type": "string", "airbyte_secret": True}}}
+                        ]
+                    }
+                }
+            ),
+            {"credentials": {"token": SECRET}},
+            id="one_of_object",
+        ),
+        pytest.param(
+            {
+                "type": "object",
+                "oneOf": [{"properties": {"api_key": {"type": "string", "airbyte_secret": True}}}],
+            },
+            {"api_key": SECRET},
+            id="top_level_one_of",
+        ),
+    ],
+)
+def test_marking_lint_agrees_with_the_runtime_secret_filter(
+    connection_specification: dict[str, Any], config: dict[str, Any]
+) -> None:
+    """The lint reports a flag the runtime cannot resolve exactly when `get_secrets` misses it."""
+    errors = find_secret_marking_errors(connection_specification)
+    lint_says_unmasked = any("where the CDK's secret filter does not look" in e for e in errors)
+    runtime_masks = SECRET in get_secrets(connection_specification, config)
+    assert lint_says_unmasked != runtime_masks, errors
+
+
+def test_find_leaked_secrets_finds_a_numeric_secret_emitted_as_a_json_number() -> None:
+    record = {
+        "type": "RECORD",
+        "record": {"stream": "pins", "data": {"pin": 12345678}, "emitted_at": 0},
+    }
+    leaks = find_leaked_secrets(_output(record), [("/pin", 12345678)])
+    assert leaks == ["`/pin` in message #1 (RECORD, stream `pins`)"]
+
+
+@pytest.mark.parametrize(
+    "secret, printed_text",
+    [
+        pytest.param('ab"cd\\1234ef', lambda config: json.dumps(config), id="json_escaped"),
+        pytest.param(
+            "p@ss/w0rd&123",
+            lambda config: "GET https://api.example.com/?token="
+            + quote(config["api_key"], safe=""),
+            id="url_encoded",
+        ),
+        pytest.param("it's\"s3cret", lambda config: f"config: {config!r}", id="repr_escaped"),
+    ],
+)
+def test_find_leaked_secrets_finds_each_encoded_form(secret: str, printed_text: Any) -> None:
+    text = printed_text({"api_key": secret})
+    assert secret not in text, "the literal value must not match, so only the encoded form can"
+    leaks = find_leaked_secrets(_output(_log(text)), [("/api_key", secret)])
+    assert leaks == ["`/api_key` in message #1 (LOG)"]
+
+
+def test_find_leaked_secrets_shows_the_stream_despite_a_short_unrelated_secret() -> None:
+    record = {
+        "type": "RECORD",
+        "record": {"stream": "users", "data": {"t": SECRET}, "emitted_at": 0},
+    }
+    leaks = find_leaked_secrets(_output(record), [("/api_key", SECRET), ("/pin", "s")])
+    assert leaks == ["`/api_key` in message #1 (RECORD, stream `users`)"]
+
+
+def test_leak_in_a_cdk_config_validation_status_is_labeled() -> None:
+    """A CDK older than the masking fix leaks the value; the failure says the CDK built it."""
+    output = _output(
+        _connection_status("FAILED", f"Config validation error: '{SECRET}' does not match '^a$'")
+    )
+    with pytest.raises(AssertionError) as error:
+        assert_no_secrets_in_output(
+            output,
+            spec=ConnectorSpecification(
+                connectionSpecification=_SECRET_SPEC_MESSAGE["spec"]["connectionSpecification"]
+            ),
+            config={"api_key": SECRET},
+            verb="check",
+            connector_name="source-test",
+        )
+    failure_text = str(error.value)
+    assert (
+        "`/api_key` in message #1 (CONNECTION_STATUS, built by the CDK's config validation)"
+        in failure_text
+    )
+    assert "Upgrade `airbyte-cdk`, or make the scenario config pass the spec." in failure_text
+    assert SECRET not in failure_text
+
+
+class _PatternSecretSource(_LeakySource):
+    """A source whose spec rejects the scenario's API key, so only the CDK reports on it."""
+
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+        return ConnectorSpecification(
+            connectionSpecification=_spec(
+                {"api_key": {"type": "string", "pattern": "^[a-z]+$", "airbyte_secret": True}}
+            )
+        )
+
+    def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
+        raise AssertionError("connector code must not run when the config fails validation")
+
+
+@pytest.mark.parametrize(
+    "suite_test",
+    [
+        pytest.param(SourceTestSuiteBase.test_check, id="source_suite"),
+        pytest.param(ConnectorTestSuiteBase.test_check, id="connector_suite"),
+    ],
+)
+def test_in_process_check_passes_when_the_config_fails_validation(
+    monkeypatch: pytest.MonkeyPatch, suite_test: Any
+) -> None:
+    """The CDK masks the secret in its own `Config validation error` CONNECTION_STATUS."""
+    monkeypatch.setattr(_InProcessSuite, "connector", _PatternSecretSource)
+    scenario = ConnectorTestScenario(config_dict={"api_key": "abcd1234"}, status="failed")
+    suite_test(_InProcessSuite(), scenario)
+
+
+class _UnmarkedSpecSource(_LeakySource):
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+        return ConnectorSpecification(
+            connectionSpecification=_spec({"api_key": {"type": "string"}})
+        )
+
+
+def test_in_process_spec_test_lints_the_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_InProcessSuite, "connector", _UnmarkedSpecSource)
+    with pytest.raises(AssertionError, match="/properties/api_key"):
+        _InProcessSuite().test_spec()
+
+
+def test_in_process_spec_test_requires_a_spec_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(source_base, "run_test_job", lambda *args, **kwargs: _output(_log("hi")))
+    with pytest.raises(AssertionError, match="emitted 0 SPEC messages"):
+        _InProcessSuite().test_spec()
+
+
+class _BrokenSpecSource(_LeakySource):
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+        raise ValueError("No module named 'source_test.run'")
+
+
+def test_in_process_check_is_skipped_when_spec_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_InProcessSuite, "connector", _BrokenSpecSource)
+    scenario = ConnectorTestScenario(config_dict={"api_key": SECRET}, status="failed")
+    with pytest.raises(pytest.skip.Exception, match="`spec` failed"):
+        _InProcessSuite().test_check(scenario)
+
+
+def test_in_process_check_is_skipped_when_the_spec_run_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_run_test_job = connector_base.run_test_job
+
+    def run_test_job(connector: Any, verb: str, **kwargs: Any) -> EntrypointOutput:
+        if verb == "spec":
+            raise AirbyteEntrypointException("spec failed")
+        return real_run_test_job(connector, verb, **kwargs)
+
+    monkeypatch.setattr(connector_base, "run_test_job", run_test_job)
+    scenario = ConnectorTestScenario(config_dict={"api_key": SECRET}, status="failed")
+    with pytest.raises(pytest.skip.Exception, match="`spec` failed"):
+        ConnectorTestSuiteBase.test_check(_InProcessSuite(), scenario)
+
+
+_TRACE_ERROR = {
+    "type": "TRACE",
+    "trace": {"type": "ERROR", "emitted_at": 0, "error": {"message": "Invalid API key"}},
+}
+
+
+def test_docker_check_accepts_a_trace_error_on_a_failure_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    check_output = _output(_TRACE_ERROR, _connection_status("FAILED", "Invalid API key"))
+    _fake_docker(monkeypatch, {"spec": _output(_SECRET_SPEC_MESSAGE), "check": check_output})
+    _run_docker_check(ConnectorTestScenario(config_dict={"api_key": SECRET}, status="failed"))
+
+
+def test_docker_check_raises_a_trace_error_on_a_success_scenario(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    check_output = _output(_TRACE_ERROR, _connection_status("SUCCEEDED", "ok"))
+    _fake_docker(monkeypatch, {"spec": _output(_SECRET_SPEC_MESSAGE), "check": check_output})
+    with pytest.raises(AirbyteEntrypointException, match="Invalid API key"):
+        _run_docker_check(ConnectorTestScenario(config_dict={"api_key": SECRET}, status="succeed"))
+
+
+def test_docker_spec_failure_runs_spec_once_and_skips_the_check_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    check_output = _output(_connection_status("FAILED", "Invalid API key"))
+    commands = _fake_docker(monkeypatch, {"spec": _output(_TRACE_ERROR), "check": check_output})
+    with pytest.raises(AirbyteEntrypointException):
+        _DockerSuite().test_docker_image_build_and_spec(
+            connector_image_override="source-test:dev",
+            connector_base_image_override=None,
+        )
+    for _ in range(2):
+        with pytest.raises(pytest.skip.Exception, match="`spec` failed"):
+            _run_docker_check(
+                ConnectorTestScenario(config_dict={"api_key": SECRET}, status="failed")
+            )
+
+    assert [command[-1] for command in commands if "spec" in command] == ["spec"]
+
+
+def test_run_docker_airbyte_command_keeps_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run_docker_command(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="warning: retrying\n")
+
+    monkeypatch.setattr(docker_utils, "run_docker_command", run_docker_command)
+    output = docker_utils.run_docker_airbyte_command(["docker", "run", "image", "spec"])
+    assert output.stderr == "warning: retrying\n"
