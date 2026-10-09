@@ -14,7 +14,7 @@ from unittest.mock import Mock, call, mock_open, patch
 import pytest
 import requests
 import yaml
-from jsonschema.exceptions import ValidationError
+from jsonschema.exceptions import SchemaError, UnknownType, ValidationError
 from jsonschema.validators import Draft7Validator, validate
 
 import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
@@ -2613,3 +2613,34 @@ def test_building_a_source_does_not_check_the_component_schema():
         side_effect=AssertionError("check_schema must not run at source build"),
     ):
         ManifestDeclarativeSource(source_config=_two_stream_schema_validation_manifest())
+
+
+def test_a_broken_component_schema_that_fails_the_manifest_raises_schema_error():
+    manifest = _two_stream_schema_validation_manifest()
+    broken = deepcopy(_get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["properties"]["http_method"]["enum"] = "GET"
+
+    assert list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source._get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(SchemaError):
+            ManifestDeclarativeSource(source_config=manifest)
+
+
+def test_a_broken_component_schema_that_breaks_validation_raises_schema_error():
+    manifest = _two_stream_schema_validation_manifest()
+    broken = deepcopy(_get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["properties"]["path"]["type"] = "strng"
+
+    with pytest.raises(UnknownType):
+        list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source._get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(SchemaError):
+            ManifestDeclarativeSource(source_config=manifest)

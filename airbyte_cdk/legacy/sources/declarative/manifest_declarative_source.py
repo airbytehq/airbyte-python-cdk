@@ -448,13 +448,19 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
 
         # The component schema ships with the CDK and is checked against its metaschema in unit
-        # tests, so `jsonschema.validate`'s `check_schema` step is skipped. `best_match` keeps the
-        # error `validate` would raise.
-        validator = validator_for(self._declarative_component_schema)(
-            self._declarative_component_schema
-        )
-        error = best_match(validator.iter_errors(self._source_config))
+        # tests, so a valid manifest skips `check_schema`. On failure the schema is checked first,
+        # so a broken schema is reported as `SchemaError` rather than blamed on the manifest.
+        # `best_match` keeps the error `jsonschema.validate` would raise.
+        validator_class = validator_for(self._declarative_component_schema)
+        try:
+            error = best_match(
+                validator_class(self._declarative_component_schema).iter_errors(self._source_config)
+            )
+        except Exception:
+            validator_class.check_schema(self._declarative_component_schema)
+            raise
         if error is not None:
+            validator_class.check_schema(self._declarative_component_schema)
             raise ValidationError(
                 "Validation against json schema defined in declarative_component_schema.yaml schema failed"
             ) from error

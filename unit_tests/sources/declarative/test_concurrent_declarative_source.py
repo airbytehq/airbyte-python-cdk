@@ -25,7 +25,7 @@ from airbyte_protocol_dataclasses.models import (
     AirbyteTraceMessage,
     TraceType,
 )
-from jsonschema.exceptions import ValidationError
+from jsonschema.exceptions import SchemaError, UnknownType, ValidationError
 from jsonschema.validators import Draft7Validator, validate
 from typing_extensions import deprecated
 
@@ -7044,3 +7044,38 @@ def test_building_a_source_does_not_check_the_component_schema():
             catalog=create_catalog("a"),
             state=None,
         )
+
+
+def test_a_broken_component_schema_that_fails_the_manifest_raises_schema_error():
+    manifest = _two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(_get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["properties"]["http_method"]["enum"] = "GET"
+
+    assert list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source._get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(SchemaError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("a"), state=None
+            )
+
+
+def test_a_broken_component_schema_that_breaks_validation_raises_schema_error():
+    manifest = _two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(_get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["properties"]["path"]["type"] = "strng"
+
+    with pytest.raises(UnknownType):
+        list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source._get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(SchemaError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("a"), state=None
+            )
