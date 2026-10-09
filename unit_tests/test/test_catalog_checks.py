@@ -216,8 +216,10 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
             check_schemas_are_valid_json_schema,
             _catalog(_stream(json_schema=_with_property("v", {"type": "any"}))),
             [
-                "Stream 'items' has an invalid JSON schema at #/properties/v/type: "
-                "'any' is not valid under any of the given schemas"
+                (
+                    "Stream 'items' has an invalid JSON schema at #/properties/v/type: "
+                    "'any' is not valid under any of the given schemas"
+                )
             ],
             id="unknown_type_name",
         ),
@@ -233,12 +235,18 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
                 )
             ),
             [
-                "Stream 'items' has an invalid JSON schema at #/properties/address: "
-                "None is not of type 'object', 'boolean'",
-                "Stream 'items' has an invalid JSON schema at #/properties/zip: "
-                "None is not of type 'object', 'boolean'",
-                "Stream 'items' has an invalid JSON schema at #/required: "
-                "['id', 'id'] has non-unique elements",
+                (
+                    "Stream 'items' has an invalid JSON schema at #/properties/address: "
+                    "None is not of type 'object', 'boolean'"
+                ),
+                (
+                    "Stream 'items' has an invalid JSON schema at #/properties/zip: "
+                    "None is not of type 'object', 'boolean'"
+                ),
+                (
+                    "Stream 'items' has an invalid JSON schema at #/required: "
+                    "['id', 'id'] has non-unique elements"
+                ),
             ],
             id="every_violation_reported_in_path_order",
         ),
@@ -250,12 +258,18 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
                 _stream("open", json_schema={"type": "object"}, default_cursor_field=["id"]),
             ),
             [
-                "Stream 'items' declares cursor field 'modified_at', "
-                "which is not a property in the stream schema.",
-                "Stream 'nested' declares cursor field 'author.updated_at', "
-                "which is not a property in the stream schema.",
-                "Stream 'open' declares cursor field 'id', "
-                "which is not a property in the stream schema.",
+                (
+                    "Stream 'items' declares cursor field 'modified_at', "
+                    "which is not a property in the stream schema."
+                ),
+                (
+                    "Stream 'nested' declares cursor field 'author.updated_at', "
+                    "which is not a property in the stream schema."
+                ),
+                (
+                    "Stream 'open' declares cursor field 'id', "
+                    "which is not a property in the stream schema."
+                ),
             ],
             id="cursor_missing",
         ),
@@ -263,8 +277,10 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
             check_primary_keys_exist_in_schema,
             _catalog(_stream(source_defined_primary_key=[["id"], ["uuid"]])),
             [
-                "Stream 'items' declares primary key field 'uuid', "
-                "which is not a property in the stream schema."
+                (
+                    "Stream 'items' declares primary key field 'uuid', "
+                    "which is not a property in the stream schema."
+                )
             ],
             id="primary_key_missing",
         ),
@@ -279,10 +295,14 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
                 ),
             ),
             [
-                "Stream 'items' declares primary key field 'author' with type "
-                "['null', 'object']. Primary key fields must not be objects or arrays.",
-                "Stream 'array_typed' declares primary key field 'id' with type "
-                "['array']. Primary key fields must not be objects or arrays.",
+                (
+                    "Stream 'items' declares primary key field 'author' with type "
+                    "['null', 'object']. Primary key fields must not be objects or arrays."
+                ),
+                (
+                    "Stream 'array_typed' declares primary key field 'id' with type "
+                    "['array']. Primary key fields must not be objects or arrays."
+                ),
             ],
             id="primary_key_object_or_array",
         ),
@@ -296,8 +316,10 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
                 )
             ),
             [
-                "Stream 'items' has an unresolved $ref '#/definitions/user' "
-                "at #/properties/owner/items."
+                (
+                    "Stream 'items' has an unresolved $ref '#/definitions/user' "
+                    "at #/properties/owner/items."
+                )
             ],
             id="unresolved_ref",
         ),
@@ -354,12 +376,18 @@ def test_check_passes(check: Check, catalog: AirbyteCatalog) -> None:
             ),
             [
                 "Stream 'items' has a top-level schema of type ['array']; it must be an object.",
-                "Stream 'items' uses the unknown airbyte_type 'big_integer' "
-                "at #/items/properties/big.",
-                "Stream 'items' uses airbyte_type 'timestamp_with_timezone' on type ['integer'] "
-                "at #/items/properties/ts; it requires one of ['string'].",
-                "Stream 'items' uses format 'date' on type ['integer', 'null'] "
-                "at #/items/properties/day; it requires a string.",
+                (
+                    "Stream 'items' uses the unknown airbyte_type 'big_integer' "
+                    "at #/items/properties/big."
+                ),
+                (
+                    "Stream 'items' uses airbyte_type 'timestamp_with_timezone' on type ['integer'] "
+                    "at #/items/properties/ts; it requires one of ['string']."
+                ),
+                (
+                    "Stream 'items' uses format 'date' on type ['integer', 'null'] "
+                    "at #/items/properties/day; it requires a string."
+                ),
             ],
             id="unsupported_types",
         ),
