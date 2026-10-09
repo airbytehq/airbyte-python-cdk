@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 """Unit tests for the catalog checks run by the `discover` standard test."""
 
 from __future__ import annotations
@@ -430,6 +430,154 @@ def test_supported_data_types_tolerates_non_string_annotations() -> None:
     ]
 
 
+_REF = {"$ref": "#/definitions/user"}
+
+
+@pytest.mark.parametrize(
+    "keyword_schema, pointer",
+    [
+        *(
+            pytest.param({keyword: {"user": _REF}}, f"#/{keyword}/user", id=keyword)
+            for keyword in (
+                "properties",
+                "patternProperties",
+                "definitions",
+                "$defs",
+                "dependentSchemas",
+            )
+        ),
+        *(
+            pytest.param({keyword: [{}, _REF]}, f"#/{keyword}/1", id=f"{keyword}_list")
+            for keyword in ("allOf", "anyOf", "oneOf", "prefixItems", "items")
+        ),
+        *(
+            pytest.param({keyword: _REF}, f"#/{keyword}", id=keyword)
+            for keyword in (
+                "additionalItems",
+                "additionalProperties",
+                "contains",
+                "else",
+                "if",
+                "items",
+                "not",
+                "propertyNames",
+                "then",
+                "unevaluatedItems",
+                "unevaluatedProperties",
+            )
+        ),
+        pytest.param(
+            {"dependencies": {"user": _REF, "id": ["user"]}},
+            "#/dependencies/user",
+            id="dependencies_schema_and_property_list",
+        ),
+    ],
+)
+def test_schema_walker_follows_keyword(keyword_schema: dict[str, Any], pointer: str) -> None:
+    catalog = _catalog(_stream(json_schema={"type": "object", **keyword_schema}))
+    assert check_refs_are_resolved(catalog) == [
+        f"Stream 'items' has an unresolved $ref '#/definitions/user' at {pointer}."
+    ]
+
+
+@pytest.mark.parametrize(
+    "dialect",
+    [
+        pytest.param("http://json-schema.org/draft-04/schema#", id="draft_04"),
+        pytest.param("http://json-schema.org/draft-04/schema", id="draft_04_without_fragment"),
+    ],
+)
+def test_valid_json_schema_honours_declared_draft_04(dialect: str) -> None:
+    """Draft 4 `exclusiveMinimum` is a boolean, which Draft 7 rejects."""
+    schema = _with_property("n", {"type": "number", "minimum": 0, "exclusiveMinimum": True})
+    assert check_schemas_are_valid_json_schema(_catalog(_stream(json_schema=schema))) != []
+    catalog = _catalog(_stream(json_schema={"$schema": dialect, **schema}))
+    assert check_schemas_are_valid_json_schema(catalog) == []
+
+
+def test_valid_json_schema_honours_declared_draft_2020_12() -> None:
+    """Draft 7 ignores `prefixItems`; Draft 2020-12 requires it to be a list."""
+    schema = _with_property("pair", {"type": "array", "prefixItems": {"type": "string"}})
+    assert check_schemas_are_valid_json_schema(_catalog(_stream(json_schema=schema))) == []
+    catalog = _catalog(
+        _stream(json_schema={"$schema": "https://json-schema.org/draft/2020-12/schema", **schema})
+    )
+    assert check_schemas_are_valid_json_schema(catalog) == [
+        "Stream 'items' has an invalid JSON schema at #/properties/pair/prefixItems: "
+        "{'type': 'string'} is not of type 'array'"
+    ]
+
+
+@pytest.mark.parametrize(
+    "dialect",
+    [
+        pytest.param("https://example.com/my-dialect", id="unknown_uri"),
+        pytest.param(7, id="not_a_string"),
+    ],
+)
+def test_valid_json_schema_falls_back_to_draft_7(dialect: Any) -> None:
+    schema = {"$schema": dialect, **_with_property("v", {"type": "any"})}
+    problems = check_schemas_are_valid_json_schema(_catalog(_stream(json_schema=schema)))
+    assert (
+        "Stream 'items' has an invalid JSON schema at #/properties/v/type: "
+        "'any' is not valid under any of the given schemas"
+    ) in problems
+
+
+@pytest.mark.parametrize(
+    "property_schema",
+    [
+        pytest.param(
+            {"anyOf": [{"type": "string"}, {"type": "null"}], "format": "date-time"},
+            id="format_beside_any_of",
+        ),
+        pytest.param(
+            {"oneOf": [{"type": "null"}, {"type": ["string"]}], "format": "date"},
+            id="format_beside_one_of",
+        ),
+        pytest.param(
+            {
+                "anyOf": [{"type": "null"}, {"oneOf": [{"type": "string"}]}],
+                "airbyte_type": "timestamp_with_timezone",
+            },
+            id="airbyte_type_beside_nested_alternatives",
+        ),
+        pytest.param({"format": "date"}, id="format_on_untyped_node"),
+        pytest.param({"airbyte_type": "integer"}, id="airbyte_type_on_untyped_node"),
+    ],
+)
+def test_supported_data_types_reads_types_of_alternatives(
+    property_schema: dict[str, Any],
+) -> None:
+    catalog = _catalog(_stream(json_schema=_with_property("v", property_schema)))
+    assert check_supported_data_types(catalog) == []
+
+
+def test_supported_data_types_still_rejects_incompatible_alternatives() -> None:
+    catalog = _catalog(
+        _stream(
+            json_schema=_with_property(
+                "v",
+                {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "format": "date",
+                    "airbyte_type": "time_without_timezone",
+                },
+            )
+        )
+    )
+    assert check_supported_data_types(catalog) == [
+        (
+            "Stream 'items' uses airbyte_type 'time_without_timezone' on type "
+            "['integer', 'null'] at #/properties/v; it requires one of ['string']."
+        ),
+        (
+            "Stream 'items' uses format 'date' on type ['integer', 'null'] "
+            "at #/properties/v; it requires a string."
+        ),
+    ]
+
+
 def test_find_catalog_problems_returns_only_failing_checks() -> None:
     catalog = _catalog(_stream(default_cursor_field=["missing"]))
     problems = find_catalog_problems(catalog)
@@ -448,6 +596,27 @@ def test_find_catalog_problems_reports_a_crashing_check() -> None:
 def test_every_check_has_a_unique_name() -> None:
     names = [check.name for check in CATALOG_CHECKS]
     assert len(names) == len(set(names))
+
+
+def test_catalog_checks_enforcement_wiring() -> None:
+    """Pin which checks fail `test_discover` and which only warn.
+
+    Promoting a check to enforced changes the result of `test_discover` for every connector,
+    so it must be a deliberate edit of this test.
+    """
+    assert {check.name: check.enforced for check in CATALOG_CHECKS} == {
+        "catalog has streams": True,
+        "stream names are unique": True,
+        "streams declare sync modes": True,
+        "refs are resolved": True,
+        "no unsupported keywords": True,
+        "additionalProperties is not false": True,
+        "schemas are valid JSON schema": False,
+        "cursor fields exist in schema": False,
+        "primary keys exist in schema": False,
+        "primary keys have scalar types": False,
+        "supported data types": False,
+    }
 
 
 def _catalog_message(*streams: AirbyteStream) -> str:
@@ -528,6 +697,61 @@ def test_discover_skips_checks_when_scenario_allows_failure(
 ) -> None:
     discover_output(EntrypointOutput(messages=[], uncaught_exception=ValueError("boom")))
     _FakeSourceSuite().test_discover(ConnectorTestScenario())
+
+
+def test_discover_runs_checks_when_scenario_allows_failure_and_discover_succeeds(
+    discover_output: Callable[[EntrypointOutput], None],
+) -> None:
+    """Most scenarios declare no `status`; their catalog must still be checked."""
+    assert ConnectorTestScenario().expected_outcome.expect_success() is False
+    discover_output(EntrypointOutput(messages=[_catalog_message(_stream("a"), _stream("a"))]))
+    with pytest.raises(AssertionError, match=r"\[stream names are unique\]"):
+        _FakeSourceSuite().test_discover(ConnectorTestScenario())
+
+
+def test_discover_fails_on_more_than_one_catalog(
+    discover_output: Callable[[EntrypointOutput], None],
+) -> None:
+    message = _catalog_message(_stream())
+    discover_output(EntrypointOutput(messages=[message, message]))
+    with pytest.raises(AssertionError, match="Expected exactly one CATALOG message. Got 2."):
+        _FakeSourceSuite().test_discover(ConnectorTestScenario(status="succeed"))
+
+
+def test_discover_is_skipped_when_scenario_expects_failure(
+    discover_output: Callable[[EntrypointOutput], None],
+) -> None:
+    discover_output(EntrypointOutput(messages=[_catalog_message(_stream("a"), _stream("a"))]))
+    with pytest.raises(pytest.skip.Exception):
+        _FakeSourceSuite().test_discover(ConnectorTestScenario(status="failed"))
+
+
+def test_discover_separates_advisory_and_enforced_problems(
+    discover_output: Callable[[EntrypointOutput], None],
+) -> None:
+    discover_output(
+        EntrypointOutput(
+            messages=[
+                _catalog_message(
+                    _stream("a", default_cursor_field=["missing"]),
+                    _stream("a", default_cursor_field=["missing"]),
+                )
+            ]
+        )
+    )
+    with (
+        pytest.warns(DiscoveredCatalogWarning) as warning_records,
+        pytest.raises(AssertionError) as assertion,
+    ):
+        _FakeSourceSuite().test_discover(ConnectorTestScenario(status="succeed"))
+
+    [warning_record] = warning_records
+    warning_text = str(warning_record.message)
+    assert "[cursor fields exist in schema]" in warning_text
+    assert "[stream names are unique]" not in warning_text
+    assertion_text = str(assertion.value)
+    assert "[stream names are unique]" in assertion_text
+    assert "[cursor fields exist in schema]" not in assertion_text
 
 
 _MANIFEST: dict[str, Any] = {

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 """Assertions on the catalog a source returns from `discover`.
 
 These restore the `TestDiscovery` assertions of the retired Connector Acceptance Tests (CAT).
@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import jsonschema
+from jsonschema.protocols import Validator
 
 from airbyte_cdk.models import AirbyteCatalog
 
@@ -67,7 +68,12 @@ TEMPORAL_FORMATS = frozenset({"date", "date-time", "time"})
 
 
 class DiscoveredCatalogWarning(UserWarning):
-    """A problem in the discovered catalog that the standard tests report but do not enforce."""
+    """A problem in the discovered catalog that the standard tests report but do not enforce.
+
+    To make these problems fail the test, turn the warning into an error, either with
+    `pytest -W error::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning` or with
+    `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning`.
+    """
 
 
 def _pointer(path: Sequence[str]) -> str:
@@ -113,6 +119,33 @@ def _json_types(schema: Mapping[str, Any]) -> set[str]:
     if isinstance(declared, list):
         return {item for item in declared if isinstance(item, str)}
     return set()
+
+
+def _json_types_with_alternatives(schema: Mapping[str, Any]) -> set[str]:
+    """Return the JSON types a schema declares, including those of its `anyOf`/`oneOf` branches.
+
+    A value typed as `{"anyOf": [{"type": "string"}, {"type": "null"}]}` can be any of the
+    branch types, so they are added to the types declared on the node itself.
+    """
+    types = _json_types(schema)
+    for keyword in ("anyOf", "oneOf"):
+        branches = schema.get(keyword)
+        if isinstance(branches, list):
+            for branch in branches:
+                if isinstance(branch, Mapping):
+                    types |= _json_types_with_alternatives(branch)
+    return types
+
+
+def _meta_validator(schema: Mapping[str, Any]) -> Validator:
+    """Return a validator for the meta-schema of the draft that `schema` declares in `$schema`.
+
+    Draft 7 is used when `$schema` is absent, not a string, or names an unknown draft.
+    """
+    validator_cls: type[Validator] = jsonschema.Draft7Validator
+    if isinstance(schema.get("$schema"), str):
+        validator_cls = jsonschema.validators.validator_for(schema, default=validator_cls)
+    return validator_cls(validator_cls.META_SCHEMA)
 
 
 _MISSING = object()
@@ -162,16 +195,17 @@ def check_streams_declare_sync_modes(catalog: AirbyteCatalog) -> list[str]:
 
 
 def check_schemas_are_valid_json_schema(catalog: AirbyteCatalog) -> list[str]:
-    """Every stream schema is a valid JSON Schema (Draft 7).
+    """Every stream schema is a valid JSON Schema.
 
-    Every violation is reported, ordered by location, rather than the single best match that
-    `check_schema` raises, so that fixing one does not reveal another on the next run.
+    Each schema is validated against the meta-schema of the draft it declares in `$schema`,
+    or Draft 7 when it declares none. Every violation is reported, ordered by location, rather
+    than the single best match that `check_schema` raises, so that fixing one does not reveal
+    another on the next run.
     """
-    meta_validator = jsonschema.Draft7Validator(jsonschema.Draft7Validator.META_SCHEMA)
     problems: list[str] = []
     for stream in catalog.streams:
         errors = sorted(
-            meta_validator.iter_errors(stream.json_schema),
+            _meta_validator(stream.json_schema).iter_errors(stream.json_schema),
             key=lambda error: [str(part) for part in error.absolute_path],
         )
         problems.extend(
@@ -270,8 +304,10 @@ def check_supported_data_types(catalog: AirbyteCatalog) -> list[str]:
     """Stream schemas stay within the Airbyte type system.
 
     The top level is an object, every `airbyte_type` is a known one and annotates a compatible
-    JSON type, and temporal formats annotate strings. Unknown JSON type names are already
-    rejected by `check_schemas_are_valid_json_schema`.
+    JSON type, and temporal formats annotate strings. The types of `anyOf`/`oneOf` branches
+    count as types of the annotated node, and an annotation on a node that declares no type at
+    all is not checked. Unknown JSON type names are already rejected by
+    `check_schemas_are_valid_json_schema`.
     """
     problems = []
     for stream in catalog.streams:
@@ -282,7 +318,7 @@ def check_supported_data_types(catalog: AirbyteCatalog) -> list[str]:
                 f"{sorted(top_level_types)}; it must be an object."
             )
         for path, subschema in _iter_subschemas(stream.json_schema):
-            json_types = _json_types(subschema)
+            json_types = _json_types_with_alternatives(subschema)
             airbyte_type = subschema.get("airbyte_type")
             if airbyte_type is not None:
                 compatible_types = (
@@ -295,7 +331,7 @@ def check_supported_data_types(catalog: AirbyteCatalog) -> list[str]:
                         f"Stream '{stream.name}' uses the unknown airbyte_type "
                         f"'{airbyte_type}' at {_pointer(path)}."
                     )
-                elif not json_types & compatible_types:
+                elif json_types and not json_types & compatible_types:
                     problems.append(
                         f"Stream '{stream.name}' uses airbyte_type '{airbyte_type}' on type "
                         f"{sorted(json_types)} at {_pointer(path)}; it requires one of "
@@ -305,6 +341,7 @@ def check_supported_data_types(catalog: AirbyteCatalog) -> list[str]:
             if (
                 isinstance(string_format, str)
                 and string_format in TEMPORAL_FORMATS
+                and json_types
                 and "string" not in json_types
             ):
                 problems.append(
@@ -360,7 +397,7 @@ def find_catalog_problems(
     for check in checks:
         try:
             problems = check.run(catalog)
-        except Exception as error:  # noqa: BLE001  # Reported, not raised; see docstring.
+        except Exception as error:  # Reported, not raised; see the docstring.
             problems = [f"The check could not run: {type(error).__name__}: {error}"]
         if problems:
             results[check] = problems
