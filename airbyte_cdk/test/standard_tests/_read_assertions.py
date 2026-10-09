@@ -339,6 +339,25 @@ class _StreamSchemaChecker:
         return "\n".join(lines) if lines else None
 
 
+def assert_schema_validation_opt_out_allowed(
+    *, validate_schema: bool, test_strictness_level: str | None
+) -> None:
+    """Reject `validate_schema: false` for a connector at `test_strictness_level: high`.
+
+    CAT refused the opt-out at high strictness (`TestBasicRead.test_read`), so certified
+    connectors cannot drop schema validation by config.
+    """
+    if validate_schema or test_strictness_level != "high":
+        return
+    raise AssertionError(
+        "`validate_schema: false` is not allowed for a connector with "
+        "`test_strictness_level: high` in `acceptance-test-config.yml` (CAT refused it too). Fix "
+        "the stream schemas (or the records) so the records validate, and remove "
+        "`validate_schema: false` from the config's `basic_read` entry; or lower the connector's "
+        "`test_strictness_level`."
+    )
+
+
 def assert_read_records(
     *,
     records: Iterable[AirbyteMessage],

@@ -14,7 +14,7 @@ This change is breaking for the connector test suites of connectors whose test a
 Migration steps:
 
 - A stream with no records for a `basic_read` config: add data to the test account, or list the stream under `empty_streams` for that config, with a `bypass_reason`. Declared empty streams are not read.
-- A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry, which CAT honoured too.
+- A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry. As in CAT, this is rejected for a connector at `test_strictness_level: high`, which has to fix the schema (or lower its strictness level).
 
 Rationale: The Standard Tests replaced CAT as the only `read` coverage for most connectors, and CAT's per-stream and schema checks were not carried over. A stream that silently stopped returning records, or a schema that drifted from the API, kept passing as long as some other stream returned a record.
 

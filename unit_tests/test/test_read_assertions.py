@@ -577,6 +577,7 @@ def _scenario(
 
 VALID_USERS = [{"id": 1, "name": "a"}]
 VALID_EVENTS = [{"id": "e1"}]
+MSG_STRICTNESS = "`validate_schema: false` is not allowed for a connector with"
 
 # (scenario, records by stream, expected failure message or None)
 BASIC_READ_MATRIX = [
@@ -650,6 +651,39 @@ BASIC_READ_MATRIX = [
         MSG_SCHEMA,
         id="no_status_schema_mismatch",
     ),
+    # CAT refused `validate_schema: false` at `test_strictness_level: high`.
+    pytest.param(
+        _scenario("connection", "basic_read", validate_schema=False, test_strictness_level="high"),
+        {"users": VALID_USERS, "events": VALID_EVENTS},
+        MSG_STRICTNESS,
+        id="high_strictness_rejects_validate_schema_false",
+    ),
+    pytest.param(
+        _scenario("connection", "basic_read", test_strictness_level="high"),
+        {"users": VALID_USERS, "events": VALID_EVENTS},
+        None,
+        id="high_strictness_validates_schema",
+    ),
+    pytest.param(
+        _scenario("connection", "basic_read", test_strictness_level="high"),
+        {"users": [{"id": "1"}], "events": VALID_EVENTS},
+        MSG_SCHEMA,
+        id="high_strictness_schema_mismatch",
+    ),
+    pytest.param(
+        _scenario("connection", "basic_read", validate_schema=False, test_strictness_level="low"),
+        {"users": [{"id": "1"}], "events": VALID_EVENTS},
+        None,
+        id="low_strictness_allows_validate_schema_false",
+    ),
+    pytest.param(
+        _scenario(
+            "connection", "full_refresh", validate_schema=False, test_strictness_level="high"
+        ),
+        {"users": VALID_USERS},
+        None,
+        id="high_strictness_full_refresh_only_ignores_validate_schema",
+    ),
 ]
 
 
@@ -671,28 +705,49 @@ def test_basic_read(
 # --- `validate_schema` in `acceptance-test-config.yml` ----------------------------------------
 
 
-def test_validate_schema_opt_out_survives_scenario_dedup(tmp_path: Path) -> None:
-    (tmp_path / ACCEPTANCE_TEST_CONFIG).write_text(
-        yaml.safe_dump(
-            {
-                "acceptance_tests": {
-                    "connection": {
-                        "tests": [{"config_path": "secrets/config.json", "status": "succeed"}]
-                    },
-                    "basic_read": {
-                        "tests": [{"config_path": "secrets/config.json", "validate_schema": False}]
-                    },
-                }
-            }
-        )
-    )
+def _get_scenarios(tmp_path: Path, config: Mapping[str, Any]) -> list[ConnectorTestScenario]:
+    (tmp_path / ACCEPTANCE_TEST_CONFIG).write_text(yaml.safe_dump(dict(config)))
 
     class _Suite(DockerConnectorTestSuite):
         @classmethod
         def get_connector_root_dir(cls) -> Path:
             return tmp_path
 
-    [scenario] = _Suite.get_scenarios()
+    return _Suite.get_scenarios()
+
+
+def test_validate_schema_opt_out_survives_scenario_dedup(tmp_path: Path) -> None:
+    [scenario] = _get_scenarios(
+        tmp_path,
+        {
+            "acceptance_tests": {
+                "connection": {
+                    "tests": [{"config_path": "secrets/config.json", "status": "succeed"}]
+                },
+                "basic_read": {
+                    "tests": [{"config_path": "secrets/config.json", "validate_schema": False}]
+                },
+            }
+        },
+    )
     assert scenario.validate_schema is False
     assert scenario.is_basic_read_config
     assert scenario.expected_outcome.expect_success()
+    assert scenario.test_strictness_level is None
+
+
+@pytest.mark.parametrize("level", ["high", "low"])
+def test_test_strictness_level_is_read_from_the_config(tmp_path: Path, level: str) -> None:
+    scenarios = _get_scenarios(
+        tmp_path,
+        {
+            "test_strictness_level": level,
+            "acceptance_tests": {
+                "connection": {
+                    "tests": [{"config_path": "secrets/config.json", "status": "succeed"}]
+                },
+                "basic_read": {"tests": [{"config_path": "secrets/other.json"}]},
+            },
+        },
+    )
+    assert [scenario.test_strictness_level for scenario in scenarios] == [level, level]

@@ -233,6 +233,7 @@ class DockerConnectorTestSuite:
             )
             return []
 
+        test_strictness_level = all_tests_config.get("test_strictness_level")
         test_scenarios: list[ConnectorTestScenario] = []
         for category in SCENARIO_SECTIONS:
             if (
@@ -250,7 +251,13 @@ class DockerConnectorTestSuite:
                     # We skip iam_role tests for now, as they are not supported in the test suite.
                     continue
 
-                scenario = ConnectorTestScenario.model_validate({**test, "sections": (category,)})
+                scenario = ConnectorTestScenario.model_validate(
+                    {
+                        **test,
+                        "sections": (category,),
+                        "test_strictness_level": test_strictness_level,
+                    }
+                )
 
                 test_scenarios.append(scenario)
 

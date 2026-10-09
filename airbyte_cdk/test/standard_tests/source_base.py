@@ -19,7 +19,10 @@ from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
-from airbyte_cdk.test.standard_tests._read_assertions import assert_read_records
+from airbyte_cdk.test.standard_tests._read_assertions import (
+    assert_read_records,
+    assert_schema_validation_opt_out_allowed,
+)
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
@@ -136,9 +139,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         A read expected to succeed must return records. For a config listed under `basic_read`,
         the records are also checked as in CAT's basic read test: every stream must return at
         least one record, and every record must match its stream's JSON schema (opt out with
-        `validate_schema: false`).
+        `validate_schema: false`, which a connector at `test_strictness_level: high` cannot).
         """
         skip_unless_runs(scenario, "read")
+        if scenario.is_basic_read_config:
+            assert_schema_validation_opt_out_allowed(
+                validate_schema=scenario.validate_schema,
+                test_strictness_level=scenario.test_strictness_level,
+            )
         connector_root = self.get_connector_root_dir()
         discover_result = run_test_job(
             self.create_connector(scenario),

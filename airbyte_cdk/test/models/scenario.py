@@ -104,6 +104,9 @@ class ConnectorTestScenario(BaseModel):
     status: Literal["succeed", "failed", "exception"] | None = None
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
+    # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
+    # by `get_scenarios()`; at `high`, `validate_schema: false` is rejected, as in CAT.
+    test_strictness_level: Literal["low", "high"] | None = None
     # The sections of `acceptance-test-config.yml` that list this config. Populated by
     # `get_scenarios()`; empty for scenarios built by hand, which run every command.
     sections: tuple[str, ...] = ()
