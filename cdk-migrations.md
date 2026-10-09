@@ -1,5 +1,30 @@
 # CDK Migration Guide
 
+## Upgrading to the next minor release (unreleased)
+
+The next minor release of the CDK adds a Standard Test that every connector runs through the Docker suite (`airbyte-cdk image test`), without opting in. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the test up with this release, without a per-connector CDK bump. There is no change to how connectors run.
+
+### New mandatory test: `test_docker_image_spec_backward_compatibility`
+
+`DockerConnectorTestSuite.test_docker_image_spec_backward_compatibility` fails when the connector's spec rejects configs that the published version accepted. It replaces the spec half of the `test_backward_compatibility` test of the retired Connector Acceptance Tests (CAT).
+
+The test downloads the `latest` spec of each registry the connector is published to (OSS and Cloud) from `connectors.airbyte.com`, runs `spec` in the image with that registry's deployment mode, and compares the two. Removed properties, newly required properties, added or tightened constraints, narrowed types or enums, removed destination sync modes, moved OAuth output paths, unmarked secrets and `oneOf` branches that overlap existing configs are breaking. Annotations, defaults, relaxed constraints, new optional properties and newly secret fields are compatible.
+
+The test is skipped, rather than failing, when:
+
+- the connector has no published version, or its `dockerImageTag` is older than the published one;
+- the registry cannot be reached after retries. The skip reason and a warning say that the spec was not compared.
+
+The compatible changes, and any waived breaking ones, are reported as a warning in the test run's warnings summary.
+
+Migration steps: when the test fails, do one of the following.
+
+- Make the change backward compatible, for example by keeping the old field or value, or by making a new field optional.
+- Release the change as a breaking change: bump the major version, declare it under `releases.breakingChanges` in `metadata.yaml`, and write a migration guide. The test is waived for every version after the published one, up to the declared one, so a patch on top of a major that is still rolling out is waived too.
+- If a config migration rewrites existing configs into the new shape, or a finding is a false positive, add `backward_compatibility_tests_config: {disable_for_version: "<published version>"}` to an entry of the `spec` section of `acceptance-test-config.yml`. This is the key CAT honored, in the current (`spec.tests`) and the legacy list layout. The waiver applies only while the published version equals the given one, so it expires with the next release. A connector without `acceptance-test-config.yml`, such as one rebuilt on a new base image without a version bump, can add a file that holds only this entry.
+
+Rationale: the platform validates saved configs against the new spec when a version rolls out, so a spec change that rejects them breaks existing connections at upgrade time. CAT caught this before merge; the Standard Tests did not.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.
