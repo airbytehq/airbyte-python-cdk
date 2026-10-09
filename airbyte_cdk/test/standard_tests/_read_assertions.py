@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from jsonschema import Draft7Validator, FormatChecker, validators
-from jsonschema.exceptions import FormatError, ValidationError
+from jsonschema.exceptions import FormatError, UnknownType, ValidationError, best_match
+from referencing.exceptions import Unresolvable
 
 from airbyte_cdk.models import AirbyteMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
@@ -31,6 +32,7 @@ MAX_SCHEMA_ERRORS_PER_STREAM = 5
 """How many distinct schema errors are reported per stream. The total is always reported."""
 
 _MAX_MESSAGE_CHARS = 300
+_MAX_CONSTRAINT_CHARS = 80
 
 # CAT's shape check for `date-time` values: a date, a ' ' or 'T' separator, a time, then anything
 # (fraction, offset, zone name). The value must also parse as a datetime.
@@ -63,7 +65,7 @@ class RecordFormatChecker(FormatChecker):
     def check(self, instance: object, format: str) -> None:
         if format == "date-time":
             if isinstance(instance, str) and not _is_valid_datetime(instance):
-                raise FormatError(f"{instance!r} is not a valid 'date-time'")
+                raise FormatError("is not a valid 'date-time'")
             return
 
         super().check(instance, format)
@@ -106,22 +108,52 @@ def _json_type_name(value: object) -> str:
 
 
 def _describe_error(error: ValidationError) -> str:
-    if error.validator == "type":
-        # The value can be a whole nested object, and record values end up in public CI logs:
-        # name its JSON type instead of printing it.
-        expected = error.validator_value
-        expected_types = [expected] if isinstance(expected, str) else list(expected)
-        return (
-            f"expected type {' or '.join(repr(name) for name in expected_types)}, "
-            f"got {_json_type_name(error.instance)}"
-        )
-    return _truncate(error.message)
+    """Describe a schema error without printing any part of the record.
+
+    jsonschema's own messages embed the failing value (for an `anyOf` the whole nested object),
+    and these messages end up in public CI logs. So only the validator keyword, the schema's own
+    constraint and the JSON type of the value are reported.
+    """
+    keyword = error.validator
+    got = _json_type_name(error.instance)
+    constraint = error.validator_value
+
+    if keyword == "type":
+        expected_types = [constraint] if isinstance(constraint, str) else list(constraint)
+        return f"expected type {' or '.join(repr(name) for name in expected_types)}, got {got}"
+
+    if keyword == "required" and isinstance(error.instance, Mapping):
+        # The names come from the schema, not from the record.
+        missing = [name for name in constraint if name not in error.instance]
+        return f"missing required field(s) {', '.join(repr(name) for name in missing)}"
+
+    description = f"fails `{keyword}`"
+    if isinstance(constraint, (str, int, float, bool)):
+        # A scalar constraint (`format`, `pattern`, `maxLength`, `const`...) is schema content.
+        description += f" {_truncate(repr(constraint), _MAX_CONSTRAINT_CHARS)}"
+    description += f", got {got}"
+
+    if error.context:
+        # `anyOf`/`oneOf`: name the closest option's failure, described the same way. An option
+        # whose type the value does not even have says the least, so it is the last resort.
+        candidates = [
+            option_error
+            for option_error in error.context
+            if not (option_error.validator == "type" and not option_error.relative_path)
+        ]
+        closest = best_match(candidates or error.context)
+        if closest is not None:
+            description += (
+                f"; closest option fails at `{format_record_path(closest.absolute_path)}`: "
+                f"{_describe_error(closest)}"
+            )
+    return description
 
 
-def _truncate(text: str) -> str:
-    if len(text) <= _MAX_MESSAGE_CHARS:
+def _truncate(text: str, limit: int = _MAX_MESSAGE_CHARS) -> str:
+    if len(text) <= limit:
         return text
-    return text[: _MAX_MESSAGE_CHARS - 3] + "..."
+    return text[: limit - 3] + "..."
 
 
 def _resolve_local_ref(root: Mapping[str, Any], ref: str) -> Any:
@@ -206,6 +238,22 @@ def get_record_paths(data: Any) -> set[str]:
     return paths
 
 
+def _describe_schema_problem(error: Exception) -> str:
+    """Describe an error the validator raised on a broken schema, without the record value.
+
+    The exceptions' own messages print the instance being checked (`While checking instance:`),
+    so only the schema part of the problem is reported.
+    """
+    if isinstance(error, UnknownType):
+        return f"unknown type {_truncate(repr(error.type), _MAX_CONSTRAINT_CHARS)}"
+    if isinstance(error, Unresolvable):
+        return f"unresolvable `$ref` {_truncate(repr(error.ref), _MAX_CONSTRAINT_CHARS)}"
+    if isinstance(error, re.error):
+        pattern = error.pattern if isinstance(error.pattern, str) else None
+        return f"invalid `pattern` {_truncate(repr(pattern), _MAX_CONSTRAINT_CHARS)}: {error.msg}"
+    return f"the validator raised {type(error).__name__}"
+
+
 @dataclass
 class _StreamSchemaReport:
     """Schema problems found in one stream's records."""
@@ -216,6 +264,8 @@ class _StreamSchemaReport:
     errors: dict[tuple[Any, ...], str] = field(default_factory=dict)
     unmatched_records: int = 0
     first_unmatched: str | None = None
+    # Set when the schema itself cannot be applied; the stream's records are not checked further.
+    invalid_schema: str | None = None
 
 
 class _StreamSchemaChecker:
@@ -229,10 +279,16 @@ class _StreamSchemaChecker:
 
     def check(self, data: Mapping[str, Any]) -> None:
         report = self.report
+        if report.invalid_schema is not None:
+            return
         record_number = report.records_checked
         report.records_checked += 1
 
-        errors: list[ValidationError] = list(self._validator.iter_errors(data))
+        try:
+            errors: list[ValidationError] = list(self._validator.iter_errors(data))
+        except Exception as schema_problem:  # noqa: BLE001  # Any error here is a schema problem.
+            report.invalid_schema = _describe_schema_problem(schema_problem)
+            return
         if errors:
             report.invalid_records += 1
             for error in errors:
@@ -240,7 +296,7 @@ class _StreamSchemaChecker:
                 if schema_rule not in report.errors:
                     report.errors[schema_rule] = (
                         f"record #{record_number} at `{format_record_path(error.absolute_path)}`: "
-                        f"{_describe_error(error)} "
+                        f"{_truncate(_describe_error(error))} "
                         f"(schema rule: `{'/'.join(str(part) for part in schema_rule)}`)"
                     )
 
@@ -259,6 +315,11 @@ class _StreamSchemaChecker:
     def describe_failures(self) -> str | None:
         report = self.report
         lines: list[str] = []
+        if report.invalid_schema is not None:
+            lines.append(
+                f"- Stream '{self._stream_name}': the stream's JSON schema is invalid "
+                f"({report.invalid_schema}), so its records cannot be validated. Fix the schema."
+            )
         if report.invalid_records:
             lines.append(
                 f"- Stream '{self._stream_name}': {report.invalid_records} of "

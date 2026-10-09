@@ -207,21 +207,21 @@ def test_valid_records_pass(schema: Mapping[str, Any], data: Mapping[str, Any]) 
             USERS_SCHEMA,
             {"id": 1, "updated_at": "2024-01-02"},
             "$.updated_at",
-            "is not a valid 'date-time'",
+            "fails `format` 'date-time', got string",
             id="date_time_without_time",
         ),
         pytest.param(
             USERS_SCHEMA,
             {"id": 1, "updated_at": "2024-13-45T00:00:00Z"},
             "$.updated_at",
-            "is not a valid 'date-time'",
+            "fails `format` 'date-time', got string",
             id="date_time_unparseable",
         ),
         pytest.param(
             {"type": "object", "properties": {"d": {"type": "string", "format": "date"}}},
             {"d": "2024-01-02T00:00:00Z"},
             "$.d",
-            "is not a 'date'",
+            "fails `format` 'date', got string",
             id="date_with_time",
         ),
         pytest.param(
@@ -269,6 +269,136 @@ def test_type_errors_name_the_type_instead_of_printing_the_value() -> None:
     assert message is not None
     assert "record #0 at `$.reason`: expected type 'null' or 'string', got object" in message
     assert "private value" not in message
+
+
+SENTINEL = "sk_live_SENTINEL_9f8e7d"
+"""A value that must never appear in a failure message: record values reach public CI logs."""
+
+_NESTED_USER = {
+    "type": "object",
+    "properties": {"email": {"type": "string"}, "role": {"type": "string"}},
+}
+
+
+@pytest.mark.parametrize(
+    "property_schema, value, expected_message",
+    [
+        pytest.param(
+            {"anyOf": [{"type": "null"}, _NESTED_USER]},
+            {"email": SENTINEL, "role": 1},
+            "fails `anyOf`, got object; closest option fails at `$.user.role`: "
+            "expected type 'string', got integer",
+            id="anyOf_nested_object",
+        ),
+        pytest.param(
+            {"oneOf": [{"type": "string", "maxLength": 3}, {"type": "integer"}]},
+            SENTINEL,
+            "fails `oneOf`, got string; closest option fails at `$.user`: "
+            "fails `maxLength` 3, got string",
+            id="oneOf_string",
+        ),
+        pytest.param(
+            {
+                "anyOf": [
+                    {"type": "null"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "inner": {
+                                "oneOf": [
+                                    {"type": "integer"},
+                                    {"type": "object", "properties": {"x": {"enum": [1, 2]}}},
+                                ]
+                            }
+                        },
+                    },
+                ]
+            },
+            {"inner": {"x": SENTINEL}},
+            "fails `anyOf`, got object",
+            id="anyOf_of_oneOf",
+        ),
+        pytest.param({"not": {"type": "object"}}, {"secret": SENTINEL}, "fails `not`", id="not"),
+        pytest.param(
+            {"allOf": [{"type": "object"}, {"properties": {"k": {"type": "integer"}}}]},
+            {"k": SENTINEL},
+            "expected type 'integer', got string",
+            id="allOf",
+        ),
+        pytest.param({"enum": ["a", "b"]}, SENTINEL, "fails `enum`, got string", id="enum"),
+        pytest.param({"const": "a"}, SENTINEL, "fails `const` 'a', got string", id="const"),
+        pytest.param(
+            {"type": "string", "pattern": "^Bearer "},
+            SENTINEL,
+            "fails `pattern` '^Bearer ', got string",
+            id="pattern",
+        ),
+        pytest.param(
+            {"type": "string", "format": "date-time"},
+            SENTINEL,
+            "fails `format` 'date-time', got string",
+            id="format_date_time",
+        ),
+        pytest.param(
+            {"type": "string", "format": "uuid"},
+            SENTINEL,
+            "fails `format` 'uuid', got string",
+            id="format_uuid",
+        ),
+        pytest.param(
+            {"type": "array", "uniqueItems": True},
+            [SENTINEL, SENTINEL],
+            "fails `uniqueItems` True, got array",
+            id="uniqueItems",
+        ),
+        pytest.param(
+            {"type": "object", "required": ["id"], "additionalProperties": False},
+            {SENTINEL.lower(): 1, "x": SENTINEL},
+            "missing required field(s) 'id'",
+            id="required",
+        ),
+    ],
+)
+def test_schema_errors_never_print_record_values(
+    property_schema: Mapping[str, Any], value: Any, expected_message: str
+) -> None:
+    schema = {"type": "object", "properties": {"user": property_schema}}
+    message = _schema_error(schema, {"user": value})
+    assert message is not None
+    assert "record #0 at `$.user" in message
+    assert expected_message in message
+    assert "(schema rule: `properties/user/" in message
+    assert SENTINEL not in message
+
+
+@pytest.mark.parametrize(
+    "property_schema, expected_problem",
+    [
+        pytest.param({"type": "int"}, "unknown type 'int'", id="unknown_type"),
+        pytest.param(
+            {"$ref": "#/definitions/missing"},
+            "unresolvable `$ref` '/definitions/missing'",
+            id="unresolvable_local_ref",
+        ),
+        pytest.param(
+            {"$ref": "https://example.invalid/schema.json"},
+            "unresolvable `$ref` 'https://example.invalid/schema.json'",
+            id="unresolvable_remote_ref",
+        ),
+        pytest.param(
+            {"type": "string", "pattern": "["}, "invalid `pattern` '['", id="invalid_pattern"
+        ),
+    ],
+)
+def test_invalid_schema_fails_with_the_stream_and_schema_problem(
+    property_schema: Mapping[str, Any], expected_problem: str
+) -> None:
+    schema = {"type": "object", "properties": {"token": property_schema}}
+    message = _schema_error(schema, {"token": SENTINEL}, {"token": SENTINEL})
+    assert message is not None
+    assert MSG_SCHEMA in message
+    assert f"Stream 's': the stream's JSON schema is invalid ({expected_problem}" in message
+    assert SENTINEL not in message
 
 
 def test_validate_schema_false_skips_schema_checks() -> None:
