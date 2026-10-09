@@ -22,8 +22,8 @@ from typing import (
 import orjson
 import yaml
 from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, StreamDescriptor
-from jsonschema.exceptions import ValidationError
-from jsonschema.validators import validate
+from jsonschema.exceptions import ValidationError, best_match
+from jsonschema.validators import validator_for
 
 from airbyte_cdk.config_observation import create_connector_config_control_message
 from airbyte_cdk.connector_builder.models import (
@@ -345,12 +345,23 @@ class ConcurrentDeclarativeSource(Source):
         Validates the connector manifest against the declarative component schema
         """
 
+        # The component schema ships with the CDK and is checked against its metaschema in unit
+        # tests, so a valid manifest skips `check_schema`. On failure the schema is checked first,
+        # so a broken schema is reported as `SchemaError` rather than blamed on the manifest.
+        # `best_match` keeps the error `jsonschema.validate` would raise.
+        validator_class = validator_for(self._declarative_component_schema)
         try:
-            validate(self._source_config, self._declarative_component_schema)
-        except ValidationError as e:
+            error = best_match(
+                validator_class(self._declarative_component_schema).iter_errors(self._source_config)
+            )
+        except Exception:
+            validator_class.check_schema(self._declarative_component_schema)
+            raise
+        if error is not None:
+            validator_class.check_schema(self._declarative_component_schema)
             raise ValidationError(
                 "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-            ) from e
+            ) from error
 
     def _migrate_and_transform_config(
         self,
