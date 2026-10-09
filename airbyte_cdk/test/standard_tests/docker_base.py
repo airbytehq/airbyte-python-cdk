@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import shutil
 import sys
@@ -82,8 +83,13 @@ def _assert_check_outcome(
         )
 
 
+@functools.cache
 def _run_docker_spec(connector_image: str, *, connector_name: str) -> ConnectorSpecification:
-    """Run `spec` in the connector image and return the single spec it emits."""
+    """Run `spec` in the connector image and return the single spec it emits.
+
+    The result is cached per image for the test session, so the spec test and every check
+    scenario share one `docker run`. The image under a tag does not change within a session.
+    """
     spec_result = run_docker_airbyte_command(
         [
             "docker",

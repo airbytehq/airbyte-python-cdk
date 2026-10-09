@@ -657,6 +657,13 @@ class _DockerSuite(DockerConnectorTestSuite):
         return POKEAPI_CONNECTOR_ROOT
 
 
+@pytest.fixture(autouse=True)
+def _clear_docker_spec_cache() -> Iterator[None]:
+    docker_base._run_docker_spec.cache_clear()
+    yield
+    docker_base._run_docker_spec.cache_clear()
+
+
 def _fake_docker(
     monkeypatch: pytest.MonkeyPatch,
     outputs: dict[str, EntrypointOutput],
@@ -784,6 +791,21 @@ def test_docker_check_test_still_asserts_the_outcome_without_a_leak(
 
     with pytest.raises(AssertionError, match="did not succeed"):
         _run_docker_check(scenario)
+
+
+def test_docker_check_tests_share_one_spec_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    check_output = _output(_connection_status("FAILED", "Invalid API key"))
+    commands = _fake_docker(
+        monkeypatch, {"spec": _output(_SECRET_SPEC_MESSAGE), "check": check_output}
+    )
+    _DockerSuite().test_docker_image_build_and_spec(
+        connector_image_override="source-test:dev",
+        connector_base_image_override=None,
+    )
+    for _ in range(2):
+        _run_docker_check(ConnectorTestScenario(config_dict={"api_key": SECRET}, status="failed"))
+
+    assert [command[-1] for command in commands if "spec" in command] == ["spec"]
 
 
 class _LeakySource(Source):
