@@ -89,7 +89,7 @@ def _record(stream: str, data: Mapping[str, Any]) -> AirbyteMessage:
 
 
 def _assert(
-    records: list[AirbyteMessage],
+    records: Iterable[AirbyteMessage],
     catalog: ConfiguredAirbyteCatalog,
     *,
     require_records_per_stream: bool = True,
@@ -401,6 +401,19 @@ def test_invalid_schema_fails_with_the_stream_and_schema_problem(
     assert SENTINEL not in message
 
 
+def test_read_without_records_fails() -> None:
+    with pytest.raises(AssertionError, match=MSG_NO_RECORDS):
+        _assert([], _catalog(), require_records_per_stream=False)
+
+
+def test_records_are_consumed_in_one_pass() -> None:
+    def _records() -> Iterable[AirbyteMessage]:
+        yield _record("users", {"id": 1})
+        yield _record("events", {"id": "a"})
+
+    _assert(_records(), _catalog(users=USERS_SCHEMA, events=EVENTS_SCHEMA))
+
+
 def test_validate_schema_false_skips_schema_checks() -> None:
     assert _schema_error(USERS_SCHEMA, {"id": "not an integer"}, validate_schema=False) is None
 
@@ -508,12 +521,15 @@ def test_get_expected_schema_paths() -> None:
 
 
 class _FakeReadSource(Source):
-    """A source that discovers the given streams and reads the given records for each one."""
+    """A source that discovers the given streams and reads the given records for each one.
+
+    With `records=None`, the read raises instead.
+    """
 
     def __init__(
         self,
         schemas: Mapping[str, Mapping[str, Any]],
-        records: Mapping[str, list[Mapping[str, Any]]],
+        records: Mapping[str, list[Mapping[str, Any]]] | None,
     ) -> None:
         self._schemas = schemas
         self._records = records
@@ -543,6 +559,8 @@ class _FakeReadSource(Source):
         catalog: ConfiguredAirbyteCatalog,
         state: list[AirbyteStateMessage] | None = None,
     ) -> Iterable[AirbyteMessage]:
+        if self._records is None:
+            raise RuntimeError("The read failed.")
         for configured_stream in catalog.streams:
             for data in self._records.get(configured_stream.stream.name, []):
                 yield _record(configured_stream.stream.name, data)
@@ -551,7 +569,7 @@ class _FakeReadSource(Source):
 def _run_basic_read(
     tmp_path: Path,
     scenario: ConnectorTestScenario,
-    records: Mapping[str, list[Mapping[str, Any]]],
+    records: Mapping[str, list[Mapping[str, Any]]] | None,
 ) -> None:
     source = _FakeReadSource({"users": USERS_SCHEMA, "events": EVENTS_SCHEMA}, records)
 
@@ -577,6 +595,7 @@ def _scenario(
 
 VALID_USERS = [{"id": 1, "name": "a"}]
 VALID_EVENTS = [{"id": "e1"}]
+READ_FAILS = None
 MSG_STRICTNESS = "`validate_schema: false` is not allowed for a connector with"
 
 # (scenario, records by stream, expected failure message or None)
@@ -651,6 +670,37 @@ BASIC_READ_MATRIX = [
         MSG_SCHEMA,
         id="no_status_schema_mismatch",
     ),
+    pytest.param(
+        _scenario("connection", "basic_read"),
+        {},
+        MSG_NO_RECORDS,
+        id="basic_read_no_records",
+    ),
+    # A read expected to fail has no records to check: it only has to fail.
+    pytest.param(
+        _scenario("connection", "basic_read", status="failed"),
+        READ_FAILS,
+        None,
+        id="status_failed_read_fails",
+    ),
+    pytest.param(
+        _scenario("connection", "basic_read", status="exception"),
+        READ_FAILS,
+        None,
+        id="status_exception_read_fails",
+    ),
+    pytest.param(
+        _scenario("connection", "basic_read", status="failed"),
+        {"users": VALID_USERS, "events": VALID_EVENTS},
+        "Expected exception but got none",
+        id="status_failed_read_succeeds",
+    ),
+    pytest.param(
+        _scenario("connection", "basic_read", status="succeed"),
+        READ_FAILS,
+        "The read failed",
+        id="status_succeed_read_fails",
+    ),
     # CAT refused `validate_schema: false` at `test_strictness_level: high`.
     pytest.param(
         _scenario("connection", "basic_read", validate_schema=False, test_strictness_level="high"),
@@ -691,14 +741,14 @@ BASIC_READ_MATRIX = [
 def test_basic_read(
     tmp_path: Path,
     scenario: ConnectorTestScenario,
-    records: Mapping[str, list[Mapping[str, Any]]],
+    records: Mapping[str, list[Mapping[str, Any]]] | None,
     failure_match: str | None,
 ) -> None:
     if failure_match is None:
         _run_basic_read(tmp_path, scenario, records)
         return
 
-    with pytest.raises(AssertionError, match=failure_match):
+    with pytest.raises(Exception, match=failure_match):
         _run_basic_read(tmp_path, scenario, records)
 
 
@@ -734,6 +784,32 @@ def test_validate_schema_opt_out_survives_scenario_dedup(tmp_path: Path) -> None
     assert scenario.is_basic_read_config
     assert scenario.expected_outcome.expect_success()
     assert scenario.test_strictness_level is None
+
+
+@pytest.mark.parametrize(
+    "validate_schema_values",
+    [
+        pytest.param((False, True), id="false_then_true"),
+        pytest.param((True, False), id="true_then_false"),
+    ],
+)
+def test_validate_schema_opt_out_is_kept_in_either_order(
+    tmp_path: Path, validate_schema_values: tuple[bool, bool]
+) -> None:
+    [scenario] = _get_scenarios(
+        tmp_path,
+        {
+            "acceptance_tests": {
+                "basic_read": {
+                    "tests": [
+                        {"config_path": "secrets/config.json", "validate_schema": value}
+                        for value in validate_schema_values
+                    ]
+                },
+            }
+        },
+    )
+    assert scenario.validate_schema is False
 
 
 @pytest.mark.parametrize("level", ["high", "low"])

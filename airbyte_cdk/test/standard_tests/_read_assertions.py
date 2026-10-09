@@ -367,6 +367,9 @@ def assert_read_records(
 ) -> None:
     """Assert the records a `read` returned against the configured catalog.
 
+    The read must return at least one record, as any `read` expected to succeed must. The
+    records are consumed once, so a lazy iterator over a large read is fine.
+
     Args:
         records: The `RECORD` messages from the read.
         configured_catalog: The catalog the read ran with. Streams declared in `empty_streams`
@@ -398,6 +401,8 @@ def assert_read_records(
             checker.check(record.data)
 
     failures: list[str] = []
+    if not record_counts:
+        failures.append("Expected records but got none.")
     if require_records_per_stream:
         streams_without_records = [
             configured_stream.stream.name

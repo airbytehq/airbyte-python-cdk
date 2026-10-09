@@ -189,16 +189,16 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             # The read failed as expected (asserted by `run_test_job`); there are no records to check.
             return
 
-        if not result.records:
-            raise AssertionError("Expected records but got none.")
-
         if scenario.is_basic_read_config:
+            # Also asserts that the read returned records, in the same pass over them.
             assert_read_records(
                 records=result.records_iterator,
                 configured_catalog=configured_catalog,
                 require_records_per_stream=True,
                 validate_schema=scenario.validate_schema,
             )
+        elif next(result.records_iterator, None) is None:
+            raise AssertionError("Expected records but got none.")
 
     def test_incremental_read(
         self,
