@@ -3,6 +3,7 @@
 #
 
 import logging
+from contextlib import suppress
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, List, Mapping, Optional, Tuple, Union
@@ -262,6 +263,10 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._access_token is not None
 
     def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`.
+        if not isinstance(value, datetime):
+            with suppress(ValueError, OverflowError):
+                value = self._parse_token_expiration_date(value)
         self._token_expiry_date = value
 
     def get_assertion_name(self) -> str:

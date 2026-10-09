@@ -14,6 +14,10 @@ from airbyte_cdk.sources.types import StreamSlice, StreamState
 class Retriever:
     """
     Responsible for fetching a stream's records from an HTTP API source.
+
+    A stream creates one retriever and reads all its partitions through it: `read_records` is called from several
+    threads at once, one call per stream slice. Implementations, custom ones included, must keep per-read state such
+    as page tokens, counters or recursion depth in local variables rather than on the instance or its components.
     """
 
     @abstractmethod

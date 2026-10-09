@@ -37,7 +37,7 @@ class DayClampingStrategy(ClampingStrategy):
 
     def clamp(self, value: datetime) -> datetime:  # type: ignore  # datetime implements method from CursorValueType
         return_value = value.replace(hour=0, minute=0, second=0, microsecond=0)
-        if self._is_ceiling:
+        if self._is_ceiling and return_value != value:
             return return_value + timedelta(days=1)
         return return_value
 
@@ -93,7 +93,7 @@ class WeekClampingStrategy(ClampingStrategy):
         )
         delta = (
             timedelta(days_diff_to_ceiling)
-            if self._is_ceiling
+            if self._is_ceiling or days_diff_to_ceiling == 0
             else timedelta(days_diff_to_ceiling - 7)
         )
         return value.replace(hour=0, minute=0, second=0, microsecond=0) + delta

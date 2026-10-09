@@ -1919,3 +1919,131 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     }
     assert resolved_manifest.record.data["manifest"] == expected_resolved_manifest
     assert resolved_manifest.record.stream == "full_resolve_manifest"
+
+
+_PAGE_SIZE_REDUCTION_STREAM_NAME = "reducing_stream"
+_PAGE_SIZE_REDUCTION_MANIFEST = {
+    "version": "0.30.3",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": [_PAGE_SIZE_REDUCTION_STREAM_NAME]},
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "name": _PAGE_SIZE_REDUCTION_STREAM_NAME,
+            "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+            "retriever": {
+                "type": "SimpleRetriever",
+                "page_size_reduction": {"type": "PageSizeReduction"},
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://demonslayers.com/api/v1/",
+                    "path": "hashiras",
+                    "http_method": "GET",
+                    "error_handler": {
+                        "type": "DefaultErrorHandler",
+                        "response_filters": [
+                            {
+                                "type": "HttpResponseFilter",
+                                "http_codes": [502],
+                                "action": "REDUCE_PAGE_SIZE",
+                            }
+                        ],
+                    },
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": ["result"]},
+                },
+                "paginator": {
+                    "type": "DefaultPaginator",
+                    "page_size_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "first",
+                    },
+                    # `page_size_reduction` rejects a RequestPath page token: the next-page URL built by the
+                    # API already carries the page size, so the reduced one would be sent next to it.
+                    "page_token_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "after",
+                    },
+                    "pagination_strategy": {
+                        "type": "CursorPagination",
+                        "page_size": 100,
+                        "cursor_value": "{{ response._metadata.next }}",
+                        "stop_condition": "{{ not response._metadata.next }}",
+                    },
+                },
+            },
+        }
+    ],
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+        },
+        "documentation_url": "https://example.org",
+        "type": "Spec",
+    },
+}
+
+
+def _create_502_page_response():
+    response = requests.Response()
+    response.status_code = 502
+    response._content = b"{}"
+    response.headers["Content-Type"] = "application/json"
+    response.request = _create_request()
+    return response
+
+
+@patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep", lambda _: None)
+@patch.object(
+    requests.Session,
+    "send",
+    side_effect=(
+        _create_502_page_response(),
+        _create_page_response({"result": [{"id": 0}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 1}], "_metadata": {}}),
+    ),
+)
+def test_given_page_size_reduction_when_test_read_then_the_retry_does_not_count_as_a_page(
+    mock_http_stream,
+):
+    """
+    The Connector Builder bounds a slice by the number of request/response logs it sees, not by the paginator's
+    own counter. A response that only triggers a reduction is never a page of the stream, so counting it would
+    show empty error pages and report "limit reached" on a read that merely retried.
+    """
+    # three responses are served but only two of them are pages, so the limit is not reached
+    limits = TestLimits(max_records=100, max_pages_per_slice=3, max_slices=2)
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name=_PAGE_SIZE_REDUCTION_STREAM_NAME,
+                    json_schema={},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+    config = {"__injected_declarative_manifest": _PAGE_SIZE_REDUCTION_MANIFEST}
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
+
+    output_data = read_stream(source, config, catalog, None, limits).record.data
+
+    pages = output_data["slices"][0]["pages"]
+    assert [page["response"]["status"] for page in pages] == [200, 200]
+    assert [record["id"] for page in pages for record in page["records"]] == [0, 1]
+    assert output_data["test_read_limit_reached"] is False
+    # the failed attempt stays visible, just not as a page
+    assert [
+        auxiliary_request["response"]["status"]
+        for auxiliary_request in output_data["auxiliary_requests"]
+    ] == [502]

@@ -34,7 +34,9 @@ _STREAM_NAME = "items"
 
 
 def _manifest(
-    is_client_side_incremental: bool = False, partition_router: Optional[Mapping[str, Any]] = None
+    is_client_side_incremental: bool = False,
+    partition_router: Optional[Mapping[str, Any]] = None,
+    lookback_window: Optional[str] = None,
 ) -> Mapping[str, Any]:
     incremental_sync: dict[str, Any] = {
         "type": "DatetimeBasedCursor",
@@ -49,6 +51,8 @@ def _manifest(
     }
     if is_client_side_incremental:
         incremental_sync["is_client_side_incremental"] = True
+    if lookback_window:
+        incremental_sync["lookback_window"] = lookback_window
 
     retriever: dict[str, Any] = {
         "type": "SimpleRetriever",
@@ -206,6 +210,37 @@ def test_given_no_already_synced_records_then_paginate_until_the_end(
 
     assert pages_fetched == ["1", "2"]
     assert record_ids == ["0", "1", "2", "3", "4"]
+
+
+@pytest.mark.parametrize("is_client_side_incremental", [False, True])
+def test_given_lookback_window_then_paginate_through_the_lookback_and_emit_its_records(
+    is_client_side_incremental: bool,
+) -> None:
+    pages_fetched, record_ids = _read(
+        _manifest(is_client_side_incremental=is_client_side_incremental, lookback_window="P1D"),
+        _state({"updated_at": "2021-01-01T00:00:00Z"}),
+        pages={
+            # full pages, so that pagination is only stopped by the record older than the lookback window
+            "1": [
+                {"id": "fresh_1", "updated_at": "2022-06-01T00:00:00Z"},
+                {"id": "fresh_2", "updated_at": "2022-05-01T00:00:00Z"},
+                {"id": "fresh_3", "updated_at": "2022-04-01T00:00:00Z"},
+                {"id": "in_lookback", "updated_at": "2020-12-31T12:00:00Z"},
+            ],
+            "2": [
+                {"id": "before_lookback_1", "updated_at": "2020-12-30T00:00:00Z"},
+                {"id": "before_lookback_2", "updated_at": "2020-12-29T00:00:00Z"},
+                {"id": "before_lookback_3", "updated_at": "2020-12-28T00:00:00Z"},
+                {"id": "before_lookback_4", "updated_at": "2020-12-27T00:00:00Z"},
+            ],
+            "3": [
+                {"id": "never_requested", "updated_at": "2020-12-26T00:00:00Z"},
+            ],
+        },
+    )
+
+    assert pages_fetched == ["1", "2"]
+    assert record_ids == ["fresh_1", "fresh_2", "fresh_3", "in_lookback"]
 
 
 def test_given_record_dated_in_the_future_then_filter_it_out() -> None:

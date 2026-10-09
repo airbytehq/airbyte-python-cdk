@@ -9,6 +9,7 @@ import importlib
 import inspect
 import json
 import logging
+import math
 import re
 from functools import partial
 from typing import (
@@ -109,9 +110,12 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
     OnNoRecords,
+    ParentFieldPath,
     RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
     DpathExtractor,
     RecordFilter,
     RecordSelector,
@@ -137,6 +141,9 @@ from airbyte_cdk.sources.declarative.models import (
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     DEPRECATION_LOGS_TAG,
     BaseModelWithDeprecations,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action as HttpResponseFilterActionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Action1 as PaginationResetActionModel,
@@ -167,6 +174,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComplexFieldType as ComplexFieldTypeModel,
@@ -385,10 +395,16 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PageSizeReduction as PageSizeReductionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PaginationReset as PaginationResetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentFieldPath as ParentFieldPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
@@ -493,6 +509,10 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     AirbyteCustomCodeNotPermittedError,
     custom_code_execution_permitted,
 )
+from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
+    StopConditionSafety,
+    classify_stop_condition,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -579,7 +599,14 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
+)
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -687,6 +714,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -699,6 +727,23 @@ _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 # Ideally this should use the value defined in ConcurrentDeclarativeSource, but
 # this would be a circular import
 MAX_SLICES = 5
+
+# Smallest duration each `DatetimeParser`/`strftime` directive can distinguish, used by
+# `_smallest_datetime_format_unit` to check `datetime_format` can represent `cursor_granularity`. A format with
+# no entry here (e.g. a bare `%Y`/`%m`) is treated as "cannot determine" rather than rejected.
+_DATETIME_FORMAT_DIRECTIVE_GRANULARITY: List[Tuple[str, datetime.timedelta]] = [
+    ("%epoch_microseconds", datetime.timedelta(microseconds=1)),
+    ("%s_as_float", datetime.timedelta(microseconds=1)),
+    ("%f", datetime.timedelta(microseconds=1)),
+    ("%_ms", datetime.timedelta(milliseconds=1)),
+    ("%ms", datetime.timedelta(milliseconds=1)),
+    ("%S", datetime.timedelta(seconds=1)),
+    ("%s", datetime.timedelta(seconds=1)),
+    ("%M", datetime.timedelta(minutes=1)),
+    ("%H", datetime.timedelta(hours=1)),
+    ("%I", datetime.timedelta(hours=1)),
+    ("%d", datetime.timedelta(days=1)),
+]
 
 LOGGER = logging.getLogger(f"airbyte.model_to_component_factory")
 
@@ -784,6 +829,7 @@ class ModelToComponentFactory:
             DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
+            CombinedExtractorModel: self.create_combined_extractor,
             DpathExtractorModel: self.create_dpath_extractor,
             DpathValidatorModel: self.create_dpath_validator,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
@@ -824,6 +870,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            ParentFieldPathModel: self.create_parent_field_path,
             RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
@@ -1195,8 +1242,14 @@ class ModelToComponentFactory:
         )
 
     def create_session_token_authenticator(
-        self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
+        self, model: SessionTokenAuthenticatorModel, config: Config, *, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
+        self._reject_reduce_page_size_action(
+            model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
+        )
+        self._reject_split_request_window_action(
+            model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
+        )
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -1598,6 +1651,7 @@ class ModelToComponentFactory:
             slice_range=step_length,
             cursor_granularity=cursor_granularity,
             clamping_strategy=clamping_strategy,
+            is_compare_strictly=datetime_based_cursor_model.is_compare_strictly or False,
         )
 
     def create_concurrent_cursor_from_incrementing_count_cursor(
@@ -1811,8 +1865,15 @@ class ModelToComponentFactory:
             raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
-        self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: CursorPaginationModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
     ) -> CursorPaginationStrategy:
+        # None when nested under a custom component, which cannot pass a decoder
+        if decoder is None:
+            decoder = JsonDecoder(parameters={})
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
         else:
@@ -2428,7 +2489,9 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2472,6 +2535,81 @@ class ModelToComponentFactory:
             return PaginatorTestReadDecorator(paginator, self._limit_pages_fetched_per_slice)
         return paginator
 
+    @staticmethod
+    def _is_decoder_downgraded_by_connector_builder(decoder: Decoder) -> bool:
+        """Is this the buffered stand-in the Connector Builder builds for a streaming decoder?
+
+        `create_csv_decoder`, `create_jsonl_decoder`, `create_json_items_decoder` and
+        `create_gzip_decoder` build a `CompositeRawDecoder` with `stream_response=False` when
+        `_emit_connector_builder_messages` is set, so a Builder test read can be replayed. Those
+        four instances are the only ones that stream in production while reporting
+        `is_stream_response() == False` in the Builder.
+
+        The match is on the exact class and on the parser, not on `isinstance`: a `CustomDecoder`
+        subclassing `CompositeRawDecoder` with `stream_response=False`, or a buffered
+        `CompositeRawDecoder` built around a `JsonParser`, reads the body from `response.content`
+        in production too and must not be rejected.
+        """
+        return type(decoder) is CompositeRawDecoder and isinstance(
+            decoder.parser, (CsvParser, JsonLineParser, JsonItemsParser, GzipParser)
+        )
+
+    def _reject_combined_extractor_over_streaming_decoder(self, decoder: Optional[Decoder]) -> None:
+        """Refuse to build a `CombinedExtractor` whose response body can only be read once.
+
+        Every sub-extractor is handed the same `requests.Response`. A streaming decoder consumes
+        and closes `response.raw`, so every sub-extractor after the first reads a closed
+        `urllib3.HTTPResponse`, which returns an empty body instead of raising: `union` emits only
+        the first sub-extractor's records and `first_match` emits nothing when the first path
+        misses. Rejecting the manifest is the only way to make that loud.
+
+        The Connector Builder downgrades those same decoders to `stream_response=False` so a test
+        read can be replayed, which would let a manifest look correct in the Builder and lose
+        records once published. The downgraded decoders are therefore rejected in the Builder too.
+        """
+        if decoder is None:
+            return
+        inner_decoder = (
+            decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
+        )
+        streams_in_production = inner_decoder.is_stream_response() or (
+            self._emit_connector_builder_messages
+            and self._is_decoder_downgraded_by_connector_builder(inner_decoder)
+        )
+        if not streams_in_production:
+            return
+        raise AirbyteTracedException(
+            message="CombinedExtractor is not supported with a streaming decoder.",
+            internal_message=(
+                f"CombinedExtractor was configured with {type(inner_decoder).__name__}, which "
+                f"streams the response and can only be read once. Sub-extractors after the first "
+                f"would read a closed response and silently return no records. The streaming "
+                f"decoders are CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder and "
+                f"IterableDecoder; use JsonDecoder, XmlDecoder or ZipfileDecoder, or declare a "
+                f"single extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    def create_combined_extractor(
+        self,
+        model: CombinedExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
+    ) -> CombinedExtractor:
+        self._reject_combined_extractor_over_streaming_decoder(decoder)
+        extractors = [
+            self._create_component_from_model(model=sub_extractor, config=config, decoder=decoder)
+            for sub_extractor in model.extractors
+        ]
+        return CombinedExtractor(
+            extractors=extractors,
+            mode=CombineMode(model.mode.value) if model.mode else CombineMode.union,
+            skip_empty_records=bool(model.skip_empty_records),
+            parameters=model.parameters or {},
+        )
+
     def create_dpath_extractor(
         self,
         model: DpathExtractorModel,
@@ -2506,14 +2644,72 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RecordExpander:
+        truncated_list_retriever = None
+        suppress_incomplete_fetch_warning = False
+        if model.truncated_list_retriever:
+            retriever_model = model.truncated_list_retriever
+            name = "record_expander_truncated_list"
+            # `CustomRetriever` allows extra fields, so read from the dumped model to cover both types.
+            retriever_fields = retriever_model.dict()
+            for unsupported_option in ("partition_router", "pagination_reset"):
+                if retriever_fields.get(unsupported_option):
+                    raise ValueError(
+                        f"`{unsupported_option}` is not supported on `truncated_list_retriever`."
+                    )
+            log_formatter = lambda response: format_http_message(
+                response,
+                f"Record expander '{name}' request",
+                "Request performed in order to fetch the complete nested list of a truncated record.",
+                name,
+                is_auxiliary=True,
+            )
+            # `name`/`primary_key`/`transformations` are also what a `CustomRetriever` forwards to its
+            # nested `requester`/`record_selector`, so they are passed for both retriever types.
+            truncated_list_retriever = self._create_component_from_model(
+                model=retriever_model,
+                config=config,
+                name=name,
+                primary_key=None,
+                transformations=[],
+                log_formatter=log_formatter,
+            )
+            # Only a capped paginator makes a shortfall expected; `NoPagination` and retrievers
+            # without a paginator are never capped.
+            suppress_incomplete_fetch_warning = isinstance(
+                truncated_list_retriever, SimpleRetriever
+            ) and isinstance(truncated_list_retriever.paginator, PaginatorTestReadDecorator)
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
             config=config,
             parameters=model.parameters or {},
             remain_original_record=model.remain_original_record or False,
+            parent_fields=[
+                self._create_component_from_model(model=parent_field, config=config)
+                for parent_field in model.parent_fields
+            ]
+            if model.parent_fields
+            else None,
+            merge_parent=model.merge_parent or False,
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,
+            truncation_indicator_path=model.truncation_indicator_path,
+            truncated_list_retriever=truncated_list_retriever,
+            message_repository=self._message_repository,
+            suppress_incomplete_fetch_warning=suppress_incomplete_fetch_warning,
+        )
+
+    @staticmethod
+    def create_parent_field_path(
+        model: ParentFieldPathModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> ParentFieldPath:
+        return ParentFieldPath(
+            parent_path=model.parent_path,
+            record_path=model.record_path,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
@@ -2607,6 +2803,9 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             message_repository=self._message_repository,
             use_cache=should_use_cache,
+            connect_timeout_in_seconds=model.connect_timeout_in_seconds,
+            read_timeout_in_seconds=model.read_timeout_in_seconds,
+            use_tcp_keepalive=model.use_tcp_keepalive or False,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
         )
@@ -2704,14 +2903,22 @@ class ModelToComponentFactory:
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
         name = "dynamic_properties"
+        partition_router = self._build_stream_slicer_from_partition_router(model.retriever, config)
+        retriever_kwargs: Dict[str, Any] = {}
+        if isinstance(model.retriever, AsyncRetrieverModel):
+            if model.retriever.partition_router:
+                raise ValueError(
+                    "DynamicSchemaLoader does not support an AsyncRetriever with a partition_router: only the first record is read, so jobs for other partitions would be orphaned. Remove the partition_router from the schema loader's AsyncRetriever."
+                )
+            # create_async_retriever requires stream_slicer; passing it to a CustomRetriever would override its own
+            retriever_kwargs["stream_slicer"] = partition_router
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=name,
             primary_key=None,
-            partition_router=self._build_stream_slicer_from_partition_router(
-                model.retriever, config
-            ),
+            partition_router=partition_router,
+            **retriever_kwargs,
             transformations=[],
             use_cache=True,
             log_formatter=(
@@ -3067,14 +3274,78 @@ class ModelToComponentFactory:
         # returning default values we think cover most cases
         return (400,), "error", ("invalid_grant", "invalid_permissions")
 
+    @staticmethod
+    def _reject_union_combined_extractor_for_offset_increment(
+        extractor_model: Optional[BaseModel],
+    ) -> None:
+        """Refuse an `OffsetIncrement` paginator driven by a `union` `CombinedExtractor`.
+
+        `OffsetIncrement.next_page_token` advances the offset by the number of records its
+        extractor returns for the page. Under `union` that number is the sum over all
+        sub-extractors, so the offset overshoots the API page size and every page after the first
+        starts past the records that were never read: with two sub-extractors returning two records
+        each and `page_size: 2`, the requested offsets are 0, 4, 8 instead of 0, 2, 4 and two
+        thirds of the records are silently dropped.
+
+        `first_match` returns the winning sub-extractor's count, which does not inflate the count,
+        and is left alone. A `union` nested anywhere in the tree inflates the count of the node
+        above it, so the whole tree is walked.
+        """
+        if not isinstance(extractor_model, CombinedExtractorModel):
+            return
+        if not ModelToComponentFactory._combined_extractor_tree_contains_union(extractor_model):
+            return
+        raise AirbyteTracedException(
+            message=(
+                'CombinedExtractor mode "union" is not supported with an OffsetIncrement paginator.'
+            ),
+            internal_message=(
+                "OffsetIncrement counts the records of its extractor to advance the offset. A "
+                "`union` CombinedExtractor returns the sum of its sub-extractors' records, which "
+                "overshoots the page the API returned, so records would be skipped. Use the "
+                "`first_match` mode, a CursorPagination or PageIncrement paginator, or a single "
+                "extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    @staticmethod
+    def _combined_extractor_tree_contains_union(model: CombinedExtractorModel) -> bool:
+        mode = CombineMode(model.mode.value) if model.mode else CombineMode.union
+        if mode == CombineMode.union:
+            return True
+        return any(
+            isinstance(sub_extractor, CombinedExtractorModel)
+            and ModelToComponentFactory._combined_extractor_tree_contains_union(sub_extractor)
+            for sub_extractor in model.extractors
+        )
+
+    @staticmethod
+    def _count_dropped_empty_records(extractor: RecordExtractor) -> None:
+        """Make the record selector count the empty records a `CombinedExtractor` drops.
+
+        `OffsetIncrement` and `PageIncrement` stop when that count falls below the page size, so a
+        full page holding a null would otherwise look short and silently end pagination.
+        """
+        if not isinstance(extractor, CombinedExtractor):
+            return
+        extractor.count_dropped_empty_records = True
+        for sub_extractor in extractor.extractors:
+            ModelToComponentFactory._count_dropped_empty_records(sub_extractor)
+
     def create_offset_increment(
         self,
         model: OffsetIncrementModel,
         config: Config,
-        decoder: Decoder,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> OffsetIncrement:
+        # None when nested under a custom component, which cannot pass a decoder
+        if decoder is None:
+            decoder = JsonDecoder(parameters={})
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
         else:
@@ -3088,18 +3359,7 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
-        # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
-        # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
-        # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
-        # behavior by having two separate extractors with identical behavior since they use the same extractor model.
-        # When we have more time to investigate we can look into reusing the same component.
-        extractor = (
-            self._create_component_from_model(
-                model=extractor_model, config=config, decoder=decoder_to_use
-            )
-            if extractor_model
-            else None
-        )
+        self._reject_union_combined_extractor_for_offset_increment(extractor_model)
 
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
@@ -3111,28 +3371,14 @@ class ModelToComponentFactory:
             page_size=page_size,
             config=config,
             decoder=decoder_to_use,
-            extractor=extractor,
             inject_on_first_request=model.inject_on_first_request or False,
             parameters=model.parameters or {},
         )
 
+    @staticmethod
     def create_page_increment(
-        self,
-        model: PageIncrementModel,
-        config: Config,
-        decoder: Optional[Decoder] = None,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
-        **kwargs: Any,
+        model: PageIncrementModel, config: Config, **kwargs: Any
     ) -> PageIncrement:
-        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
-        # RecordSelector's so the strategy can count the raw records in the response. This ensures
-        # pagination is driven by the API's page size, not the post-filter record count.
-        extractor = (
-            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
-            if extractor_model
-            else None
-        )
-
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -3144,7 +3390,6 @@ class ModelToComponentFactory:
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
-            extractor=extractor,
             parameters=model.parameters or {},
         )
 
@@ -3343,6 +3588,7 @@ class ModelToComponentFactory:
         extractor = self._create_component_from_model(
             model=model.extractor, decoder=decoder, config=config
         )
+        self._count_dropped_empty_records(extractor)
         record_filter = (
             self._create_component_from_model(model.record_filter, config=config)
             if model.record_filter
@@ -3401,11 +3647,27 @@ class ModelToComponentFactory:
         )
 
     def create_selective_authenticator(
-        self, model: SelectiveAuthenticatorModel, config: Config, **kwargs: Any
+        self,
+        model: SelectiveAuthenticatorModel,
+        config: Config,
+        *,
+        name: Optional[str] = None,
+        url_base: Optional[str] = None,
+        **kwargs: Any,
     ) -> DeclarativeAuthenticator:
+        # Keyword-only so that _create_nested_component also fills them under a custom component,
+        # from the parent's kwargs or $parameters. None is not forwarded, so a missing required one
+        # keeps its hint.
+        nested_kwargs = {
+            key: value
+            for key, value in {"name": name, "url_base": url_base}.items()
+            if value is not None
+        }
         authenticators = {
-            name: self._create_component_from_model(model=auth, config=config)
-            for name, auth in model.authenticators.items()
+            key: self._create_component_from_model(
+                model=auth, config=config, **nested_kwargs, **kwargs
+            )
+            for key, auth in model.authenticators.items()
         }
         # SelectiveAuthenticator will return instance of DeclarativeAuthenticator or raise ValueError error
         return SelectiveAuthenticator(  # type: ignore[abstract]
@@ -3614,14 +3876,45 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        if (
+        reads_parent_stream_lazily = bool(
             model.partition_router
             and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-            and not bool(self._connector_state_manager.get_stream_state(name, None))
             and any(
                 parent_stream_config.lazy_read_pointer
                 for parent_stream_config in model.partition_router.parent_stream_configs
             )
+        )
+        if reads_parent_stream_lazily and (
+            model.page_size_reduction
+            or self._uses_reduce_page_size_action(getattr(model.requester, "error_handler", None))
+        ):
+            # Checked outside of the LazySimpleRetriever branch below, which only applies on the first
+            # sync of a stream: gating it on the absence of state would accept the same manifest from the
+            # second sync onwards. LazySimpleRetriever paginates the parent's embedded pages, so there is
+            # no page of its own to re-issue with a smaller page size.
+            raise ValueError(
+                f"`page_size_reduction` and the REDUCE_PAGE_SIZE response action are not supported when "
+                f"reading a parent stream lazily. Remove either the page size reduction or the parent "
+                f"stream's `lazy_read_pointer` for stream {name}."
+            )
+
+        if reads_parent_stream_lazily and (
+            model.request_window_splitting
+            or self._uses_split_request_window_action(
+                getattr(model.requester, "error_handler", None)
+            )
+        ):
+            # Same reasoning as the page_size_reduction check above: LazySimpleRetriever reads records
+            # embedded in the parent's own pages rather than requesting a window of its own, so there is
+            # nothing here for a split child window to be read from.
+            raise ValueError(
+                f"`request_window_splitting` and the SPLIT_REQUEST_WINDOW response action are not "
+                f"supported when reading a parent stream lazily. Remove either the request window "
+                f"splitting or the parent stream's `lazy_read_pointer` for stream {name}."
+            )
+
+        if reads_parent_stream_lazily and not bool(
+            self._connector_state_manager.get_stream_state(name, None)
         ):
             if incremental_sync:
                 if incremental_sync.type != "DatetimeBasedCursor":
@@ -3660,6 +3953,9 @@ class ModelToComponentFactory:
         ):
             raise ValueError("PaginationResetLimits are not supported while having record filter.")
 
+        request_window_splitting = self._create_request_window_splitting(
+            model, name, cursor, incremental_sync, query_properties, file_uploader
+        )
         return SimpleRetriever(
             name=name,
             paginator=paginator,
@@ -3675,9 +3971,521 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
+            page_size_reduction=self._create_page_size_reduction(
+                model, name, query_properties, file_uploader
+            ),
+            request_window_splitting=request_window_splitting,
+            request_window_splitter=(
+                cursor.split_request_window
+                if request_window_splitting and hasattr(cursor, "split_request_window")
+                else None
+            ),
             post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
+
+    def _create_page_size_reduction(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> Optional[PageSizeReduction]:
+        # A CustomRequester does not necessarily define an error handler. A CustomRequester that does define
+        # one keeps it as a raw dict rather than a typed model, so this returns False for it as well.
+        error_handler = getattr(model.requester, "error_handler", None)
+        uses_action = self._uses_reduce_page_size_action(error_handler)
+        if uses_action and not model.page_size_reduction:
+            raise ValueError(
+                f"Stream {name} has a response filter with the REDUCE_PAGE_SIZE action but the retriever does not "
+                f"define `page_size_reduction`. Add a `page_size_reduction` block to the retriever."
+            )
+
+        if not model.page_size_reduction:
+            return None
+
+        if not uses_action:
+            # Not raised: a CustomErrorHandler can resolve to REDUCE_PAGE_SIZE without us being able to see
+            # it, so the only safe reaction to a block we cannot tie to an action is a warning. Without it a
+            # misspelled action leaves the feature silently dead on a stream that only exists because it
+            # would otherwise fail.
+            LOGGER.warning(
+                f"Stream {name} defines `page_size_reduction` but no response filter with the "
+                f"REDUCE_PAGE_SIZE action was found on its requester. The page size will never be reduced "
+                f"unless a custom error handler resolves to that action."
+            )
+
+        self._validate_page_size_reduction_is_supported(
+            model, name, query_properties, file_uploader
+        )
+
+        reset_policy = model.page_size_reduction.reset_policy
+        return PageSizeReduction(
+            reduction_factor=model.page_size_reduction.reduction_factor,  # type: ignore[arg-type]  # the schema defines a default
+            minimum_page_size=model.page_size_reduction.minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
+            max_attempts=model.page_size_reduction.max_attempts,  # type: ignore[arg-type]  # the schema defines a default
+            backoff_seconds=model.page_size_reduction.backoff_seconds,  # type: ignore[arg-type]  # the schema defines a default
+            retries_at_minimum_page_size=model.page_size_reduction.retries_at_minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
+            failure_message=model.page_size_reduction.failure_message,
+            reset_policy=PageSizeResetPolicy(reset_policy.value)
+            if reset_policy is not None
+            else PageSizeResetPolicy.NEVER,
+        )
+
+    def _validate_page_size_reduction_is_supported(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> None:
+        """
+        Page size reduction re-issues the same page with a smaller page size. That is only correct when the next
+        page does not depend on the page size, and it only has an effect when the paginator injects the page size
+        in the request. A custom pagination strategy is accepted when it can receive the reduced page size, which
+        is checked by inspecting its signature rather than by recognizing its type.
+        """
+        if query_properties:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with query properties on stream {name}. Records "
+                f"from the earlier property chunks have already been emitted when a chunk asks for a smaller page, "
+                f"so retrying the page would emit them twice."
+            )
+
+        if file_uploader:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with a `file_uploader` on stream {name}. The "
+                f"file uploader sends one request per record from inside the page's record generator, so a "
+                f"reduction asked for halfway through a page would re-emit the records already yielded by it."
+            )
+
+        if not isinstance(model.paginator, DefaultPaginatorModel):
+            raise ValueError(
+                f"`page_size_reduction` requires a DefaultPaginator on stream {name} so that the connector can "
+                f"send a smaller page size."
+            )
+
+        if not model.paginator.page_size_option:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size_option` on the paginator of stream {name}: without it "
+                f"the connector cannot tell the API to send a smaller page."
+            )
+
+        if isinstance(model.paginator.page_token_option, RequestPathModel):
+            # A RequestPath page token is a full URL built by the API, and it already carries the page size the
+            # API echoed back. The reduced page size is injected as a request option on top of that URL, so the
+            # request goes out with the page size twice - the original one from the URL and the reduced one -
+            # and which of the two the API honors is up to the API. Every page after the first would then keep
+            # asking for the page size that just failed.
+            raise ValueError(
+                f"`page_size_reduction` does not support a `page_token_option` of type RequestPath on stream "
+                f"{name}. The next page is then requested through a URL returned by the API, which already "
+                f"carries the page size, so the reduced page size would be sent alongside the original one. Use "
+                f"a CursorPagination strategy with a `page_token_option` of type RequestOption instead."
+            )
+
+        strategy = model.paginator.pagination_strategy
+        if isinstance(strategy, PageIncrementModel):
+            raise ValueError(
+                f"`page_size_reduction` does not support the PageIncrement pagination strategy used by stream "
+                f"{name}. Pages are addressed as page number * page size, so a smaller page size shifts every "
+                f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+            )
+        if isinstance(strategy, CustomPaginationStrategyModel):
+            # A custom strategy is written by the same person enabling the reduction, so the
+            # question is not whether we recognize it but whether it can be told the reduced
+            # page size. Checking the signature keeps a strategy that would raise TypeError
+            # mid-sync from being accepted at config time.
+            custom_class = self._get_class_from_fully_qualified_class_name(strategy.class_name)
+            if isinstance(custom_class, type) and issubclass(custom_class, PageIncrement):
+                # `PageIncrement.next_page_token` declares `page_size_override` only to reject it, so a
+                # subclass that does not override the method would pass the signature check below and only
+                # fail once the first reduction is requested, mid-sync.
+                raise ValueError(
+                    f"`page_size_reduction` does not support the PageIncrement pagination strategy that the "
+                    f"custom pagination strategy {strategy.class_name} used by stream {name} inherits from. "
+                    f"Pages are addressed as page number * page size, so a smaller page size shifts every "
+                    f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+                )
+            try:
+                parameters = inspect.signature(custom_class.next_page_token).parameters
+            except (AttributeError, TypeError, ValueError) as exception:
+                raise ValueError(
+                    f"`page_size_reduction` could not check the signature of `next_page_token` on the custom "
+                    f"pagination strategy {strategy.class_name} used by stream {name}: {exception}. Make sure "
+                    f"`class_name` points at a PaginationStrategy subclass whose `next_page_token` accepts a "
+                    f"`page_size_override` keyword argument."
+                )
+            accepts_override = "page_size_override" in parameters or any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+            )
+            if not accepts_override:
+                raise ValueError(
+                    f"`page_size_reduction` requires the custom pagination strategy "
+                    f"{strategy.class_name} used by stream {name} to accept a `page_size_override` keyword "
+                    f"argument in `next_page_token`, so that it can honor the reduced page size. Add "
+                    f"`page_size_override: Optional[int] = None` to its signature; a strategy that does not "
+                    f"use its page size as a stop condition can ignore the value."
+                )
+        elif not isinstance(strategy, (CursorPaginationModel, OffsetIncrementModel)):
+            raise ValueError(
+                f"`page_size_reduction` only supports the CursorPagination, OffsetIncrement and "
+                f"CustomPaginationStrategy pagination strategies. Stream {name} uses "
+                f"{type(strategy).__name__}."
+            )
+        else:
+            # A CustomPaginationStrategy carries its page size in its own code, so this is only checkable
+            # for the strategies the CDK defines. `page_size` is optional on both of them, and without it
+            # `get_page_size` returns None, the paginator injects nothing, and the reduction is a dead end
+            # that only surfaces on the first failing response - after records have been emitted.
+            self._validate_page_size_is_reducible(strategy, model.page_size_reduction, name)
+            if isinstance(strategy, CursorPaginationModel):
+                self._validate_stop_condition_is_reduction_aware(
+                    strategy, model.page_size_reduction, name
+                )
+
+    @staticmethod
+    def _validate_stop_condition_is_reduction_aware(
+        strategy: CursorPaginationModel,
+        page_size_reduction: Optional[PageSizeReductionModel],
+        name: str,
+    ) -> None:
+        """
+        A `stop_condition` comparing `last_page_size` to a hardcoded page size reads a full reduced page as a
+        short page and ends the pagination early, dropping the rest of the partition without failing. The
+        strategy exposes the page size that was actually requested as `page_size`, so the condition can be
+        written correctly - but only if it is, which is what this checks.
+
+        The condition is parsed as a Jinja expression rather than matched as a string: only the AST tells
+        `page_size`, which follows the reduction, apart from `config['page_size']`, which does not, and only the
+        AST tells an inequality, which a reduction can invalidate, apart from `last_page_size == 0`, which it
+        cannot. A condition that never names `last_page_size` is not waved through: a count read from the
+        response body - `{{ response['data'] | length < 100 }}` - truncates in exactly the same way, and which
+        response field counts the records of a page is not knowable here. A shape the analysis does not
+        understand is warned about rather than rejected - this runs at stream construction, so a false
+        rejection takes `check`, `discover` and `read` down with it.
+        """
+        stop_condition = strategy.stop_condition
+        if not stop_condition:
+            return
+
+        minimum_page_size = (
+            page_size_reduction.minimum_page_size if page_size_reduction else None
+        ) or 1
+        verdict, reason = classify_stop_condition(stop_condition, minimum_page_size)
+        if verdict is StopConditionSafety.TRUNCATES:
+            raise ValueError(
+                f"`page_size_reduction` on stream {name} cannot be used with the `stop_condition` "
+                f"{stop_condition!r}: {reason}. The pagination would then end early, silently dropping the "
+                f"rest of the partition. Compare against the `page_size` interpolation variable instead, "
+                f"which holds the page size that was actually requested (for example "
+                f"`{{{{ last_page_size < page_size }}}}`), or test the page for emptiness with "
+                f"`{{{{ last_page_size == 0 }}}}`."
+            )
+        if verdict is StopConditionSafety.UNKNOWN:
+            LOGGER.warning(
+                f"Stream {name} uses `page_size_reduction` with the `stop_condition` {stop_condition!r}, "
+                f"which could not be checked against the reduction because {reason}. Make sure a page that is "
+                f"full at a reduced page size does not satisfy it, otherwise the pagination ends early and the "
+                f"rest of the partition is silently dropped. Comparing against the `page_size` interpolation "
+                f"variable, which holds the page size that was actually requested, is always safe."
+            )
+
+    @staticmethod
+    def _validate_page_size_is_reducible(
+        strategy: Union[CursorPaginationModel, OffsetIncrementModel],
+        page_size_reduction: Optional[PageSizeReductionModel],
+        name: str,
+    ) -> None:
+        page_size = strategy.page_size
+        if page_size is None:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size` on the pagination strategy of stream {name}: "
+                f"without it the paginator does not send a page size, so there is nothing to reduce."
+            )
+
+        # The schema allows a string so that the page size can be interpolated. `page_size` is
+        # `Optional[Union[int, str]]` and pydantic v1 tries `int` first, so both `100` and `"100"` arrive as
+        # an int and only a genuinely non-numeric template stays a str. Such a template is only known once
+        # the config is available, so it is left to the runtime check in `PageSizeReducer.reduce`.
+        try:
+            configured_page_size: Optional[int] = int(page_size)
+        except ValueError:
+            configured_page_size = None
+
+        minimum_page_size = (
+            page_size_reduction.minimum_page_size if page_size_reduction else None
+        ) or 1
+        if configured_page_size is not None and configured_page_size <= minimum_page_size:
+            raise ValueError(
+                f"`page_size_reduction` on stream {name} can never reduce its page size: the pagination "
+                f"strategy's `page_size` is {configured_page_size} and `minimum_page_size` is "
+                f"{minimum_page_size}. Lower `minimum_page_size` or raise `page_size`."
+            )
+
+        # Each reduction divides the page size by `reduction_factor` and spends one attempt, so an unbroken
+        # run of failures bottoms out at `page_size / reduction_factor ** max_attempts` whatever
+        # `minimum_page_size` says. Only warned about, and not raised: pages that succeed in between restart
+        # the budget while `NEVER` keeps the page size, so the floor is reachable over a partition even when
+        # it is out of reach of a single run - and a manifest that deliberately gives up earlier than its
+        # floor is not wrong, only worth pointing out.
+        reduction_factor = (
+            page_size_reduction.reduction_factor if page_size_reduction else None
+        ) or 2.0
+        max_attempts = (page_size_reduction.max_attempts if page_size_reduction else None) or 5
+        # Only when there is a floor worth reaching. The default of 1 is out of reach of the default budget on
+        # any page size above 32, so this would otherwise fire on nearly every stream that opts in - and
+        # `__fields_set__` would not help, since it records that a value was supplied and not that it differs
+        # from the default, so spelling `minimum_page_size: 1` out longhand would earn the warning.
+        if (
+            configured_page_size is not None
+            and minimum_page_size > 1
+            and reduction_factor**max_attempts < configured_page_size / minimum_page_size
+        ):
+            reachable_page_size = max(
+                minimum_page_size, int(configured_page_size // reduction_factor**max_attempts)
+            )
+            LOGGER.warning(
+                f"Stream {name} sets `minimum_page_size` to {minimum_page_size}, which `page_size_reduction` "
+                f"cannot reach in one run of failing pages: `max_attempts` is {max_attempts} and "
+                f"`reduction_factor` is {reduction_factor}, so {max_attempts} reductions of a page size of "
+                f"{configured_page_size} stop at {reachable_page_size} records per page and the sync then "
+                f"fails with a transient error. Whichever of the two bounds is tighter wins; reaching "
+                f"{minimum_page_size} in one run needs `max_attempts` of at least "
+                f"{math.ceil(math.log(configured_page_size / minimum_page_size, reduction_factor))}."
+            )
+
+    def _reject_reduce_page_size_action(self, requester: Any, description: str) -> None:
+        """
+        `error_handler` is defined on `HttpRequester`, which is referenced by requesters that have no page of
+        their own, so REDUCE_PAGE_SIZE is schema-legal in places where nothing can honor it. Only
+        `SimpleRetriever._read_pages` re-issues a page, so every other requester is rejected here rather than
+        surfacing the exception mid-sync as a generic failure.
+        """
+        if requester is None:
+            return
+        if self._uses_reduce_page_size_action(getattr(requester, "error_handler", None)):
+            raise ValueError(
+                f"The REDUCE_PAGE_SIZE response action is not supported on the {description}: only the main "
+                f"requester of a SimpleRetriever can re-issue its page with a smaller page size. Use a "
+                f"different action on that error handler."
+            )
+
+    def _uses_reduce_page_size_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_reduce_page_size_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.REDUCE_PAGE_SIZE
+                for response_filter in error_handler.response_filters or []
+            )
+        # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
+
+    def _create_request_window_splitting(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        cursor: Optional[Cursor],
+        incremental_sync: Optional[
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+        ] = None,
+        query_properties: Optional[QueryProperties] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> Optional[RequestWindowSplitting]:
+        # A CustomRequester does not necessarily define an error handler. A CustomRequester that does define
+        # one keeps it as a raw dict rather than a typed model, so this returns False for it as well.
+        error_handler = getattr(model.requester, "error_handler", None)
+        uses_action = self._uses_split_request_window_action(error_handler)
+        if uses_action and not model.request_window_splitting:
+            raise ValueError(
+                f"Stream {name} has a response filter with the SPLIT_REQUEST_WINDOW action but the "
+                f"retriever does not define `request_window_splitting`. Add a `request_window_splitting` "
+                f"block to the retriever."
+            )
+
+        if not model.request_window_splitting:
+            return None
+
+        if not uses_action:
+            # Not raised: a CustomErrorHandler can resolve to SPLIT_REQUEST_WINDOW without us being able to
+            # see it, and custom code can raise RequestWindowSplitRequiredException directly without
+            # going through any error handler at all - so the only safe reaction to a block we cannot tie to
+            # a known trigger is a warning.
+            LOGGER.warning(
+                f"Stream {name} defines `request_window_splitting` but no response filter with the "
+                f"SPLIT_REQUEST_WINDOW action was found on its requester. The request window will never "
+                f"be split unless a custom error handler or custom code resolves to that action."
+            )
+
+        self._validate_request_window_splitting_is_supported(
+            name,
+            cursor,
+            incremental_sync,
+            model.request_window_splitting.min_split_window,
+            query_properties,
+            file_uploader,
+        )
+
+        return RequestWindowSplitting(
+            failure_message=model.request_window_splitting.failure_message,
+            min_split_window=parse_duration(model.request_window_splitting.min_split_window)
+            if model.request_window_splitting.min_split_window
+            else None,
+        )
+
+    def _validate_request_window_splitting_is_supported(
+        self,
+        name: str,
+        cursor: Optional[Cursor],
+        incremental_sync: Optional[
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+        ] = None,
+        min_split_window: Optional[str] = None,
+        query_properties: Optional[QueryProperties] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> None:
+        """
+        Request window splitting replaces a failing slice with smaller children derived from the stream's own
+        cursor, so it only makes sense on a stream whose cursor exposes a `split_request_window` method and it
+        is rejected for the same structural reasons `page_size_reduction` is: `additional_query_properties` and
+        a `file_uploader` both mean records of the failing window may already have been emitted by the time the
+        split is requested, from inside the record generator rather than from a page boundary this retriever
+        controls.
+        """
+        if not hasattr(cursor, "split_request_window"):
+            raise ValueError(
+                f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
+                f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
+                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set."
+            )
+
+        if not (
+            isinstance(incremental_sync, DatetimeBasedCursorModel)
+            and incremental_sync.cursor_granularity
+        ):
+            # `cursor_granularity` is both the smallest window the connector will ever request and what keeps
+            # two child windows from overlapping at their shared edge, so `split_request_window` cannot split
+            # at all without it - checked here, on the manifest model, rather than by reaching into the
+            # cursor's private state from outside the class it belongs to.
+            raise ValueError(
+                f"`request_window_splitting` requires `cursor_granularity` on the `DatetimeBasedCursor` of "
+                f"stream {name}: without it there is no smallest window to stop splitting at, and no way to "
+                f"keep two child windows from overlapping at their shared edge."
+            )
+
+        if incremental_sync.is_client_side_incremental:
+            # A client-side-incremental cursor filters records after they are read rather than sending the
+            # window as request parameters, so every child window sends the exact same request as its parent:
+            # splitting changes nothing, and the sync would keep splitting all the way to `min_split_window`
+            # or the safety-net depth before failing.
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with `is_client_side_incremental` on "
+                f"stream {name}: the window is filtered client-side rather than sent to the API, so splitting "
+                f"it would not change the request and could not resolve a SPLIT_REQUEST_WINDOW response."
+            )
+
+        parsed_cursor_granularity = parse_duration(incremental_sync.cursor_granularity)
+        if isinstance(
+            parsed_cursor_granularity, datetime.timedelta
+        ) and parsed_cursor_granularity <= datetime.timedelta(0):
+            # Passes the truthy check above (the string is non-empty), but a zero-or-negative granularity can
+            # never produce a child strictly smaller than the parent.
+            raise ValueError(
+                f"`request_window_splitting` requires a `cursor_granularity` greater than zero on stream "
+                f"{name}: `{incremental_sync.cursor_granularity}` parses to a zero-length duration, which can "
+                f"never produce a smaller child window."
+            )
+
+        smallest_format_unit = self._smallest_datetime_format_unit(incremental_sync.datetime_format)
+        if (
+            smallest_format_unit is not None
+            and isinstance(parsed_cursor_granularity, datetime.timedelta)
+            and parsed_cursor_granularity < smallest_format_unit
+        ):
+            # Two children split closer together than `datetime_format` can render would format to the same
+            # boundary value instead of splitting.
+            raise ValueError(
+                f"`request_window_splitting` requires `cursor_granularity` to be no finer than what "
+                f"`datetime_format` can represent on stream {name}: `datetime_format` "
+                f"{incremental_sync.datetime_format!r} cannot represent a value finer than "
+                f"{smallest_format_unit}, but `cursor_granularity` {incremental_sync.cursor_granularity!r} is "
+                f"finer than that. Use a `datetime_format` precise enough to represent `cursor_granularity`, "
+                f"or a coarser `cursor_granularity`."
+            )
+
+        if min_split_window:
+            parsed_min_split_window = parse_duration(min_split_window)
+            if not isinstance(
+                parsed_min_split_window, datetime.timedelta
+            ) or parsed_min_split_window <= datetime.timedelta(0):
+                # A duration with years or months (e.g. `P1M`) parses to an `isodate.Duration`, which has no
+                # fixed length to compare a window's span against - `split_request_window` would raise
+                # mid-sync trying to. A zero-or-negative duration would never stop splitting.
+                raise ValueError(
+                    f"`min_split_window` must be a positive duration expressible as a fixed number of "
+                    f"days/hours/minutes/seconds on stream {name}: `{min_split_window}` is not."
+                )
+
+        if query_properties:
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with query properties on stream {name}. "
+                f"Records from the earlier property chunks may have already been emitted when a chunk asks to "
+                f"split the window, so splitting and re-reading it could duplicate them."
+            )
+
+        if file_uploader:
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with a `file_uploader` on stream {name}. "
+                f"The file uploader sends one request per record from inside the window's record generator, so "
+                f"a split requested partway through could re-emit records already yielded by it."
+            )
+
+    @staticmethod
+    def _smallest_datetime_format_unit(datetime_format: str) -> Optional[datetime.timedelta]:
+        """
+        :return: the finest duration `datetime_format` can distinguish, per
+            `_DATETIME_FORMAT_DIRECTIVE_GRANULARITY`, or `None` if it contains none of those directives.
+        """
+        matches = [
+            granularity
+            for directive, granularity in _DATETIME_FORMAT_DIRECTIVE_GRANULARITY
+            if directive in datetime_format
+        ]
+        return min(matches) if matches else None
+
+    def _reject_split_request_window_action(self, requester: Any, description: str) -> None:
+        """
+        `error_handler` is defined on `HttpRequester`, which is referenced by requesters that have no window of
+        their own to split, so SPLIT_REQUEST_WINDOW is schema-legal in places where nothing can honor it. Only
+        the main requester of a `SimpleRetriever` reads a cursor-sliced window, so every other requester is
+        rejected here rather than surfacing the exception mid-sync as a generic failure.
+        """
+        if requester is None:
+            return
+        if self._uses_split_request_window_action(getattr(requester, "error_handler", None)):
+            raise ValueError(
+                f"The SPLIT_REQUEST_WINDOW response action is not supported on the {description}: only the "
+                f"main requester of a SimpleRetriever reads a window that can be split. Use a different "
+                f"action on that error handler."
+            )
+
+    def _uses_split_request_window_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_split_request_window_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.SPLIT_REQUEST_WINDOW
+                for response_filter in error_handler.response_filters or []
+            )
+        # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
 
     def _create_pagination_tracker_factory(
         self, model: Optional[PaginationResetModel], cursor: Cursor
@@ -3946,9 +4754,27 @@ class ModelToComponentFactory:
                 f"`download_target_extractor` required if using a `download_target_requester`"
             )
 
+        for requester_field in (
+            "creation_requester",
+            "polling_requester",
+            "download_requester",
+            "download_target_requester",
+            "abort_requester",
+            "delete_requester",
+        ):
+            self._reject_reduce_page_size_action(
+                getattr(model, requester_field, None),
+                f"`{requester_field}` of the AsyncRetriever of stream {name}",
+            )
+            self._reject_split_request_window_action(
+                getattr(model, requester_field, None),
+                f"`{requester_field}` of the AsyncRetriever of stream {name}",
+            )
+
         def _get_download_retriever(
             requester: Requester, extractor: RecordExtractor, _decoder: Decoder
         ) -> SimpleRetriever:
+            self._count_dropped_empty_records(extractor)
             # We create a record selector for the download retriever
             # with no schema normalization and no transformations, neither record filter
             # as all this occurs in the record_selector of the AsyncRetriever
@@ -3967,6 +4793,12 @@ class ModelToComponentFactory:
                     decoder=_decoder,
                     config=config,
                     url_base="",
+                    # Only read by the `union` rejection of `OffsetIncrement`.
+                    extractor_model=(
+                        model.download_extractor
+                        if isinstance(model.download_extractor, CombinedExtractorModel)
+                        else None
+                    ),
                 )
                 if model.download_paginator
                 else NoPagination(parameters={})
@@ -4308,8 +5140,15 @@ class ModelToComponentFactory:
                 )
 
                 if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
-                    cursor_values = child_state.values()
-                    if cursor_values and len(cursor_values) == 1:
+                    cursor_values = list(child_state.values())
+                    # Only a scalar legacy cursor value can seed the parent. Sentinels such as
+                    # `{"__ab_full_refresh_sync_complete": true}` or legacy per-partition `states`
+                    # would crash the parent cursor initialization.
+                    if (
+                        len(cursor_values) == 1
+                        and isinstance(cursor_values[0], (str, int, float))
+                        and not isinstance(cursor_values[0], bool)
+                    ):
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
@@ -4330,9 +5169,7 @@ class ModelToComponentFactory:
                                 stream_descriptor=StreamDescriptor(
                                     name=parent_stream_name, namespace=None
                                 ),
-                                stream_state=AirbyteStateBlob(
-                                    {cursor_field: list(cursor_values)[0]}
-                                ),
+                                stream_state=AirbyteStateBlob({cursor_field: cursor_values[0]}),
                             ),
                         )
             return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
@@ -4393,12 +5230,14 @@ class ModelToComponentFactory:
     def create_http_components_resolver(
         self, model: HttpComponentsResolverModel, config: Config, stream_name: Optional[str] = None
     ) -> Any:
+        partition_router = self._build_stream_slicer_from_partition_router(model.retriever, config)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            stream_slicer=partition_router,
+            partition_router=partition_router,
             transformations=[],
         )
 
@@ -4418,7 +5257,10 @@ class ModelToComponentFactory:
 
         return HttpComponentsResolver(
             retriever=retriever,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            # AsyncRetriever reads records only from the job slices its own slicer yields
+            stream_slicer=retriever.stream_slicer
+            if isinstance(retriever, AsyncRetriever)
+            else partition_router,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},
@@ -4559,6 +5401,8 @@ class ModelToComponentFactory:
     def create_file_uploader(
         self, model: FileUploaderModel, config: Config, **kwargs: Any
     ) -> FileUploader:
+        self._reject_reduce_page_size_action(model.requester, "requester of a `file_uploader`")
+        self._reject_split_request_window_action(model.requester, "requester of a `file_uploader`")
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,

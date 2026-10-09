@@ -24,8 +24,13 @@ class DayClampingStrategyTest(TestCase):
         assert result.microsecond == 0
 
     def test_given_last_day_of_month_when_clamp_then_result_is_next_month(self) -> None:
-        result = self._strategy.clamp(datetime(2024, 1, 31))
+        result = self._strategy.clamp(datetime(2024, 1, 31, 20, 23, 3, 2039))
         assert result == datetime(2024, 2, 1)
+
+    def test_given_midnight_when_clamp_then_return_same_date(self) -> None:
+        midnight = datetime(2024, 1, 1)
+        result = self._strategy.clamp(midnight)
+        assert result == midnight
 
     def test_given_is_not_ceiling_when_clamp_then_just_remove_unit_smaller_than_days(self) -> None:
         strategy = DayClampingStrategy(is_ceiling=False)
@@ -100,6 +105,11 @@ class WeekClampingStrategyTest(TestCase):
             _DATETIME_ON_WEDNESDAY.month,
             _DATETIME_ON_WEDNESDAY.day + 2,
         )
+
+    def test_given_not_ceiling_and_same_weekday_when_clamp_then_return_same_date(self) -> None:
+        strategy = WeekClampingStrategy(Weekday.TUESDAY, is_ceiling=False)
+        result = strategy.clamp(_DATETIME_ON_TUESDAY)
+        assert result == _DATETIME_ON_TUESDAY
 
     def test_given_not_ceiling_when_clamp_then_round_down(self) -> None:
         strategy = WeekClampingStrategy(Weekday.FRIDAY, is_ceiling=False)

@@ -128,7 +128,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             return
 
         assert len(result.connection_status_messages) == 1, (
-            f"Expected exactly one CONNECTION_STATUS message. "
+            "Expected exactly one CONNECTION_STATUS message. "
             f"Got: {result.connection_status_messages!s}"
         )
 
