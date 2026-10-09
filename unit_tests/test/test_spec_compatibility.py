@@ -17,8 +17,8 @@ import requests
 import requests_mock
 import yaml
 
-from airbyte_cdk.test.standard_tests import backward_compatibility, docker_base
-from airbyte_cdk.test.standard_tests.backward_compatibility import (
+from airbyte_cdk.test.standard_tests import _spec_compatibility, docker_base
+from airbyte_cdk.test.standard_tests._spec_compatibility import (
     BREAKING_CHANGES_DOCS_URL,
     MAX_REPORTED_CHANGES,
     REGISTRY_TIMEOUT_SECONDS,
@@ -1113,7 +1113,7 @@ def test_fetch_published_spec_retries_transient_errors(
 ) -> None:
     with _ScriptedRegistry(statuses) as registry:
         monkeypatch.setattr(
-            backward_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
+            _spec_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
         )
 
         published = fetch_published_spec("airbyte/source-test", "oss")
@@ -1138,7 +1138,7 @@ def test_fetch_published_spec_raises_when_retries_do_not_help(
 ) -> None:
     with _ScriptedRegistry(statuses) as registry:
         monkeypatch.setattr(
-            backward_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
+            _spec_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
         )
 
         with pytest.raises(error):
@@ -1152,7 +1152,7 @@ def test_fetch_published_spec_does_not_retry_a_missing_entry(
 ) -> None:
     with _ScriptedRegistry([404]) as registry:
         monkeypatch.setattr(
-            backward_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
+            _spec_compatibility, "REGISTRY_ENTRY_URL_TEMPLATE", registry.url_template
         )
 
         assert fetch_published_spec("airbyte/source-test", "oss") is None
@@ -1165,7 +1165,7 @@ def test_unreachable_registry_fails_fast(monkeypatch: pytest.MonkeyPatch) -> Non
         closed.bind(("127.0.0.1", 0))
         port = closed.getsockname()[1]
     monkeypatch.setattr(
-        backward_compatibility,
+        _spec_compatibility,
         "REGISTRY_ENTRY_URL_TEMPLATE",
         f"http://127.0.0.1:{port}/{{docker_repository}}/{{version}}/{{registry}}.json",
     )

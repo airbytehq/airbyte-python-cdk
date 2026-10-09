@@ -29,7 +29,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
-from airbyte_cdk.test.standard_tests.backward_compatibility import (
+from airbyte_cdk.test.standard_tests._spec_compatibility import (
     DEPLOYMENT_MODE_ENV_VARS,
     DeploymentMode,
     compare_specs,
