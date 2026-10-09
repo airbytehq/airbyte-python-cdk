@@ -1,5 +1,28 @@
 # CDK Migration Guide
 
+## Upgrading to the next minor release (unreleased)
+
+The next minor release of the CDK adds two checks to the standard tests. Every Python and manifest-only connector that runs the standard tests, for example through `airbyte-cdk connector test` or `airbyte-cdk image test`, picks them up when it moves to this release. There is no change to how connectors run.
+
+### `airbyte_secret` marking in the spec tests
+
+`SourceTestSuiteBase.test_spec` and `test_docker_image_build_and_spec` now require exactly one `SPEC` message and lint its `connectionSpecification`. The test fails when:
+
+- a property whose name denotes a credential (such as `api_key`, `client_secret`, `password` or `*_token`) can hold a string or number but is not marked `airbyte_secret: true`;
+- a property is marked `airbyte_secret: true` but its type (boolean, object, array, or a `const`) cannot hold a secret;
+- `airbyte_secret` is not a boolean, such as the string `"true"`;
+- `airbyte_secret: true` sits under `anyOf` or `allOf`, or under a combinator at the top level of the spec, where the CDK's secret filter does not look.
+
+Migration steps: mark the property `airbyte_secret: true`, or move the flag to the property that declares the `anyOf`. If a flagged property holds no secret, set `airbyte_secret: false` on it explicitly; the lint accepts that as a reviewed decision.
+
+### Secret leak check in the `check` tests
+
+`test_check` and `test_docker_image_build_and_check` now fail when an `airbyte_secret` value from the scenario's config, of at least 8 characters and containing a digit, appears in the connector's output: any non-`CONTROL` message, and stderr on the Docker path. The failure names the config path of each leaked secret and where it was found, never the secret itself.
+
+Migration steps: stop printing the value; a `CONNECTION_STATUS` message that the connector builds itself is the usual cause. A leak in a `CONNECTION_STATUS` labeled as built by the CDK's config validation comes from an older CDK in the connector image, which did not mask secrets there; upgrade `airbyte-cdk`.
+
+Rationale: these checks restore the `test_secret_is_properly_marked` assertion of the retired Connector Acceptance Tests, and add the leak check that `test_secret_never_in_the_output` never implemented.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.
