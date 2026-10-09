@@ -22,6 +22,7 @@ from airbyte_cdk.test.standard_tests._spec_compatibility import (
     BREAKING_CHANGES_DOCS_URL,
     MAX_REPORTED_CHANGES,
     REGISTRY_TIMEOUT_SECONDS,
+    REGISTRY_UNAVAILABLE_ERRORS,
     PublishedSpec,
     SpecComparison,
     compare_specs,
@@ -32,6 +33,7 @@ from airbyte_cdk.test.standard_tests._spec_compatibility import (
     format_spec_change_summary,
     is_newer_version,
     registry_retry,
+    registry_session,
 )
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 
@@ -1268,16 +1270,39 @@ def test_disabled_for_version_reads_every_spec_entry() -> None:
     assert disabled_for_version(acceptance_test_config) == ["1.2.3", "2.0"]
 
 
+def test_disabled_for_version_reads_the_legacy_list_layout() -> None:
+    acceptance_test_config = {
+        "acceptance_tests": {
+            "spec": [
+                {"spec_path": "source_test/spec.yaml"},
+                {"backward_compatibility_tests_config": {"disable_for_version": "1.2.3"}},
+            ]
+        }
+    }
+
+    assert disabled_for_version(acceptance_test_config) == ["1.2.3"]
+
+
 @pytest.mark.parametrize(
     "acceptance_test_config",
     [
+        pytest.param(None, id="empty-file"),
+        pytest.param([], id="list-file"),
         pytest.param({}, id="empty"),
+        pytest.param({"acceptance_tests": None}, id="null-acceptance-tests"),
+        pytest.param({"acceptance_tests": []}, id="list-acceptance-tests"),
         pytest.param({"acceptance_tests": {}}, id="no-spec-section"),
         pytest.param({"acceptance_tests": {"spec": {"bypass_reason": "n/a"}}}, id="no-tests"),
         pytest.param({"acceptance_tests": {"spec": {"tests": [None]}}}, id="null-entry"),
+        pytest.param({"acceptance_tests": {"spec": {"tests": "x"}}}, id="tests-not-a-list"),
+        pytest.param({"acceptance_tests": {"spec": [{"spec_path": "x"}]}}, id="legacy-no-waiver"),
+        pytest.param(
+            {"acceptance_tests": {"spec": [{"backward_compatibility_tests_config": "x"}]}},
+            id="malformed-waiver",
+        ),
     ],
 )
-def test_disabled_for_version_without_waivers(acceptance_test_config: dict[str, Any]) -> None:
+def test_disabled_for_version_without_waivers(acceptance_test_config: Any) -> None:
     assert disabled_for_version(acceptance_test_config) == []
 
 
@@ -1307,8 +1332,60 @@ def test_fetch_published_spec_raises_when_the_registry_errors() -> None:
     with requests_mock.Mocker() as mocker:
         mocker.get(_REGISTRY_URL, status_code=403)
 
-        with pytest.raises(requests.HTTPError):
+        with pytest.raises(requests.HTTPError) as error:
             fetch_published_spec("airbyte/source-test", "oss")
+
+    assert not isinstance(error.value, REGISTRY_UNAVAILABLE_ERRORS)
+
+
+@pytest.mark.parametrize(
+    "response, expected_message",
+    [
+        pytest.param({"text": "<html>"}, "invalid JSON", id="not-json"),
+        pytest.param(
+            {"json": {"spec": {}}}, "no `spec` object or no `dockerImageTag`", id="no-tag"
+        ),
+        pytest.param(
+            {"json": {"dockerImageTag": "1.2.3"}},
+            "no `spec` object or no `dockerImageTag`",
+            id="no-spec",
+        ),
+        pytest.param(
+            {"json": {"dockerImageTag": "1.2.3", "spec": "x"}},
+            "no `spec` object or no `dockerImageTag`",
+            id="spec-not-an-object",
+        ),
+        pytest.param({"json": []}, "(found: list)", id="not-an-object"),
+    ],
+)
+def test_fetch_published_spec_rejects_a_malformed_entry(
+    response: dict[str, Any], expected_message: str
+) -> None:
+    with requests_mock.Mocker() as mocker:
+        mocker.get(_REGISTRY_URL, **response)
+
+        with pytest.raises(AssertionError) as error:
+            fetch_published_spec("airbyte/source-test", "oss")
+
+    assert expected_message in str(error.value)
+    assert _REGISTRY_URL in str(error.value)
+
+
+@pytest.mark.parametrize("scheme", ["https", "http"])
+def test_registry_session_retries_every_scheme(scheme: str) -> None:
+    with registry_session() as session:
+        adapter = session.get_adapter(f"{scheme}://connectors.airbyte.com/files/metadata")
+
+    assert adapter.max_retries.total == registry_retry().total  # type: ignore[attr-defined]
+    assert set(adapter.max_retries.status_forcelist) >= {500, 503}  # type: ignore[attr-defined]
+
+
+def test_registry_retry_does_not_need_urllib3_1_26() -> None:
+    # `allowed_methods` was added in urllib3 1.26, which the CDK does not require. GET is
+    # retried by the default policy of every urllib3 version.
+    retry = registry_retry()
+
+    assert retry.is_retry("GET", 503)
 
 
 class _ScriptedRegistry:
@@ -1511,6 +1588,7 @@ def _make_suite(
     docker_image_tag: str = "1.2.4",
     breaking_changes: dict[str, Any] | None = None,
     acceptance_test_config: dict[str, Any] | None = None,
+    acceptance_test_config_text: str | None = None,
 ) -> type[DockerConnectorTestSuite]:
     connector_root = tmp_path / "source-test"
     connector_root.mkdir()
@@ -1523,9 +1601,9 @@ def _make_suite(
         data["releases"] = {"breakingChanges": breaking_changes}
     (connector_root / "metadata.yaml").write_text(yaml.safe_dump({"data": data}))
     if acceptance_test_config is not None:
-        (connector_root / "acceptance-test-config.yml").write_text(
-            yaml.safe_dump(acceptance_test_config)
-        )
+        acceptance_test_config_text = yaml.safe_dump(acceptance_test_config)
+    if acceptance_test_config_text is not None:
+        (connector_root / "acceptance-test-config.yml").write_text(acceptance_test_config_text)
 
     return type(
         "TestSuite",
@@ -1539,15 +1617,20 @@ def _patch_specs(
     *,
     published: dict[str, dict[str, Any]],
     current: dict[str, dict[str, Any]],
+    versions: dict[str, str] | None = None,
 ) -> list[str]:
-    """Serve `published` from the registry and `current` from the image; record modes run."""
+    """Serve `published` from the registry and `current` from the image; record modes run.
+
+    Each registry publishes version 1.2.3 unless `versions` says otherwise.
+    """
     modes_run: list[str] = []
 
     def fake_fetch(docker_repository: str, registry: str) -> PublishedSpec | None:
         assert docker_repository == "airbyte/source-test"
         if registry not in published:
             return None
-        return PublishedSpec(version="1.2.3", spec=published[registry], url=f"{registry}.json")
+        version = (versions or {}).get(registry, "1.2.3")
+        return PublishedSpec(version=version, spec=published[registry], url=f"{registry}.json")
 
     def fake_run_spec(connector_image: str, deployment_mode: str) -> dict[str, Any]:
         assert connector_image == "airbyte/source-test:dev"
@@ -1559,11 +1642,23 @@ def _patch_specs(
     return modes_run
 
 
+class _Skipped(Exception):
+    """The test under test skipped.
+
+    A `pytest.skip` that escapes a unit test skips the unit test itself, so a test that expects
+    a failure would silently pass when the test under test skips instead. `_run_test` turns the
+    skip into this error, which a test expecting a failure does not catch.
+    """
+
+
 def _run_test(suite: type[DockerConnectorTestSuite]) -> None:
-    suite().test_docker_image_spec_backward_compatibility(
-        connector_image_override="airbyte/source-test:dev",
-        connector_base_image_override=None,
-    )
+    try:
+        suite().test_docker_image_spec_backward_compatibility(
+            connector_image_override="airbyte/source-test:dev",
+            connector_base_image_override=None,
+        )
+    except pytest.skip.Exception as skip:
+        raise _Skipped(skip.msg) from skip
 
 
 def test_compatible_spec_passes_in_every_published_registry(
@@ -1629,7 +1724,7 @@ def test_registry_without_an_entry_is_not_compared(
 def test_unpublished_connector_is_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     modes_run = _patch_specs(monkeypatch, published={}, current={})
 
-    with pytest.raises(pytest.skip.Exception, match="no published version"):
+    with pytest.raises(_Skipped, match="no published version"):
         _run_test(_make_suite(tmp_path))
 
     assert modes_run == []
@@ -1644,7 +1739,7 @@ def test_version_older_than_the_published_one_is_skipped(
         current={"oss": _BREAKING_SPEC},
     )
 
-    with pytest.raises(pytest.skip.Exception, match="older than the published version 1.2.3"):
+    with pytest.raises(_Skipped, match="older than the published version 1.2.3"):
         _run_test(_make_suite(tmp_path, docker_image_tag="1.2.2"))
 
     assert modes_run == []
@@ -1660,7 +1755,7 @@ def test_declared_breaking_change_waives_the_findings(
         breaking_changes={"2.0.0": {"message": "Removes `start_date`."}},
     )
 
-    with pytest.raises(pytest.skip.Exception, match="declared as breaking in 2.0.0"):
+    with pytest.raises(_Skipped, match="declared as breaking in 2.0.0"):
         _run_test(suite)
 
 
@@ -1691,7 +1786,7 @@ def test_disable_for_version_matching_the_published_version_waives_the_findings(
         },
     )
 
-    with pytest.raises(pytest.skip.Exception, match="disable_for_version: 1.2.3"):
+    with pytest.raises(_Skipped, match="disable_for_version: 1.2.3"):
         _run_test(suite)
 
 
@@ -1726,35 +1821,36 @@ def test_release_candidate_of_a_declared_major_is_waived(
         breaking_changes={"2.0.0": {"message": "Removes `start_date`."}},
     )
 
-    with pytest.raises(pytest.skip.Exception, match="declared as breaking in 2.0.0"):
+    with pytest.raises(_Skipped, match="declared as breaking in 2.0.0"):
         _run_test(suite)
 
 
-def test_compatible_changes_are_printed_on_pass(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_compatible_changes_are_reported_as_a_warning_on_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     extended = _spec({**_BASE_PROPERTIES, "page_size": {"type": "integer"}})
     _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": extended})
 
-    _run_test(_make_suite(tmp_path))
+    with pytest.warns(UserWarning, match="judged safe or waived") as warned:
+        _run_test(_make_suite(tmp_path))
 
-    printed = capsys.readouterr().out
-    assert "OSS spec compared with the published version 1.2.3" in printed
-    assert "`connectionSpecification.properties.page_size` was added" in printed
+    message = str(warned[0].message)
+    assert "OSS spec compared with the published version 1.2.3" in message
+    assert "`connectionSpecification.properties.page_size` was added" in message
 
 
-def test_nothing_is_printed_for_an_unchanged_spec(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_nothing_is_reported_for_an_unchanged_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recwarn: pytest.WarningsRecorder
 ) -> None:
     _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _PREVIOUS_SPEC})
 
     _run_test(_make_suite(tmp_path))
 
-    assert capsys.readouterr().out == ""
+    assert not [w for w in recwarn if "judged safe" in str(w.message)]
 
 
-def test_waived_changes_are_printed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_waived_changes_are_reported_as_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _BREAKING_SPEC})
     suite = _make_suite(
@@ -1763,27 +1859,192 @@ def test_waived_changes_are_printed(
         breaking_changes={"2.0.0": {"message": "Removes `start_date`."}},
     )
 
-    with pytest.raises(pytest.skip.Exception):
-        _run_test(suite)
+    with pytest.warns(UserWarning, match="judged safe or waived") as warned:
+        with pytest.raises(_Skipped):
+            _run_test(suite)
 
-    printed = capsys.readouterr().out
-    assert "Breaking changes, waived (declared as breaking in 2.0.0):" in printed
-    assert "`connectionSpecification.properties.start_date` was removed" in printed
+    message = str(warned[0].message)
+    assert "Breaking changes, waived (declared as breaking in 2.0.0):" in message
+    assert "`connectionSpecification.properties.start_date` was removed" in message
 
 
-def test_unreachable_registry_fails_with_how_to_deselect(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(requests.ConnectionError("connection refused"), id="connection-error"),
+        pytest.param(requests.exceptions.ProxyError("blocked by proxy"), id="proxy-error"),
+        pytest.param(requests.exceptions.ReadTimeout("read timed out"), id="timeout"),
+        pytest.param(requests.exceptions.RetryError("too many 503 responses"), id="retries"),
+    ],
+)
+def test_unreachable_registry_skips_with_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
     def unreachable(docker_repository: str, registry: str) -> PublishedSpec | None:
-        raise requests.ConnectionError("connection refused")
+        raise error
 
     monkeypatch.setattr(docker_base, "fetch_published_spec", unreachable)
 
-    with pytest.raises(pytest.fail.Exception) as error:
+    with pytest.warns(UserWarning, match="could not be reached") as warned:
+        with pytest.raises(_Skipped) as skipped:
+            _run_test(_make_suite(tmp_path))
+
+    assert str(error) in str(skipped.value)
+    assert "not compared with the published version" in str(warned[0].message)
+
+
+def test_registry_client_error_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(docker_repository: str, registry: str) -> PublishedSpec | None:
+        raise requests.HTTPError("403 Client Error: Forbidden")
+
+    monkeypatch.setattr(docker_base, "fetch_published_spec", forbidden)
+
+    with pytest.raises(pytest.fail.Exception, match="403 Client Error"):
         _run_test(_make_suite(tmp_path))
 
-    assert "connection refused" in str(error.value)
-    assert "-k 'not test_docker_image_spec_backward_compatibility'" in str(error.value)
+
+def test_unreachable_registry_skips_the_real_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket() as closed:
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+    monkeypatch.setattr(
+        _spec_compatibility,
+        "REGISTRY_ENTRY_URL_TEMPLATE",
+        f"http://127.0.0.1:{port}/{{docker_repository}}/{{version}}/{{registry}}.json",
+    )
+
+    with pytest.warns(UserWarning, match="could not be reached"):
+        with pytest.raises(_Skipped):
+            _run_test(_make_suite(tmp_path))
+
+
+# Registries that publish different versions
+
+
+def test_registry_ahead_of_the_image_is_not_compared_but_the_other_one_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    modes_run = _patch_specs(
+        monkeypatch,
+        published={"oss": _PREVIOUS_SPEC, "cloud": _PREVIOUS_SPEC},
+        current={"oss": _BREAKING_SPEC, "cloud": _BREAKING_SPEC},
+        versions={"oss": "1.3.0", "cloud": "1.2.3"},
+    )
+
+    with pytest.raises(pytest.fail.Exception) as error:
+        _run_test(_make_suite(tmp_path, docker_image_tag="1.2.4"))
+
+    assert modes_run == ["cloud"]
+    assert "The CLOUD spec of `source-test` 1.2.4" in str(error.value)
+    assert "published version 1.2.3" in str(error.value)
+
+
+def test_waiver_for_one_registry_does_not_hide_a_break_in_the_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Cloud is still on 1.2.2, for example because it is pinned there, so a waiver for the OSS
+    # version 1.2.3 does not cover it.
+    _patch_specs(
+        monkeypatch,
+        published={"oss": _PREVIOUS_SPEC, "cloud": _PREVIOUS_SPEC},
+        current={"oss": _BREAKING_SPEC, "cloud": _BREAKING_SPEC},
+        versions={"oss": "1.2.3", "cloud": "1.2.2"},
+    )
+    suite = _make_suite(
+        tmp_path,
+        acceptance_test_config={
+            "acceptance_tests": {
+                "spec": {
+                    "tests": [
+                        {"backward_compatibility_tests_config": {"disable_for_version": "1.2.3"}}
+                    ]
+                }
+            }
+        },
+    )
+
+    with pytest.warns(UserWarning, match="disable_for_version: 1.2.3"):
+        with pytest.raises(pytest.fail.Exception) as error:
+            _run_test(suite)
+
+    assert "The CLOUD spec of `source-test` 1.2.4" in str(error.value)
+    assert "The OSS spec" not in str(error.value)
+
+
+def test_image_is_built_when_no_image_is_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _PREVIOUS_SPEC})
+    builds: list[dict[str, Any]] = []
+
+    def fake_build(**kwargs: Any) -> str:
+        builds.append(kwargs)
+        return "airbyte/source-test:dev"
+
+    monkeypatch.setattr(docker_base, "build_connector_image", fake_build)
+
+    _make_suite(tmp_path)().test_docker_image_spec_backward_compatibility(
+        connector_image_override=None,
+        connector_base_image_override="airbyte/python-connector-base:9.9.9",
+    )
+
+    assert len(builds) == 1
+    assert builds[0]["connector_name"] == "source-test"
+    assert builds[0]["tag"] == "dev-latest"
+    assert builds[0]["base_image_override"] == "airbyte/python-connector-base:9.9.9"
+
+
+# acceptance-test-config.yml layouts
+
+
+_LEGACY_LIST_LAYOUT = """\
+acceptance_tests:
+  spec:
+    - spec_path: source_test/spec.yaml
+      backward_compatibility_tests_config:
+        disable_for_version: "1.2.3"
+"""
+
+
+def test_legacy_list_layout_waiver_is_honored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _BREAKING_SPEC})
+    suite = _make_suite(tmp_path, acceptance_test_config_text=_LEGACY_LIST_LAYOUT)
+
+    with pytest.warns(UserWarning):
+        with pytest.raises(_Skipped, match="disable_for_version: 1.2.3"):
+            _run_test(suite)
+
+
+@pytest.mark.parametrize(
+    "acceptance_test_config_text",
+    [
+        pytest.param("", id="empty-file"),
+        pytest.param("acceptance_tests:\n  spec:\n    - spec_path: x\n", id="legacy-no-waiver"),
+        pytest.param("tests: {}\n", id="no-acceptance-tests"),
+        pytest.param("acceptance_tests: [\n", id="invalid-yaml"),
+    ],
+)
+def test_unusable_acceptance_test_config_does_not_crash_the_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, acceptance_test_config_text: str
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _BREAKING_SPEC})
+    suite = _make_suite(tmp_path, acceptance_test_config_text=acceptance_test_config_text)
+
+    with pytest.raises(pytest.fail.Exception, match="start_date` was removed"):
+        _run_test(suite)
+
+
+def test_acceptance_test_config_is_not_read_for_a_compatible_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_specs(monkeypatch, published={"oss": _PREVIOUS_SPEC}, current={"oss": _PREVIOUS_SPEC})
+    suite = _make_suite(tmp_path, acceptance_test_config_text="acceptance_tests: [\n")
+
+    _run_test(suite)
 
 
 def test_run_spec_in_image_returns_the_raw_spec(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1826,5 +2087,80 @@ def test_run_spec_in_image_without_a_spec_message_fails(monkeypatch: pytest.Monk
         lambda cmd, **_: subprocess.CompletedProcess(cmd, 0, stdout="", stderr="boom"),
     )
 
-    with pytest.raises(AssertionError, match="emitted no SPEC message"):
+    with pytest.raises(AssertionError, match="emitted no SPEC message") as error:
+        docker_base._run_spec_in_image("image:tag", "oss")
+
+    assert "Stderr:\nboom" in str(error.value)
+
+
+def test_failing_spec_reports_what_the_connector_printed(monkeypatch: pytest.MonkeyPatch) -> None:
+    trace = {
+        "type": "TRACE",
+        "trace": {
+            "type": "ERROR",
+            "emitted_at": 0,
+            "error": {
+                "message": "Cloud mode needs a secret store.",
+                "internal_message": "KeyError: 'SECRET_STORE'",
+                "stack_trace": "Traceback (most recent call last):\n  KeyError: 'SECRET_STORE'",
+            },
+        },
+    }
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "LOG", "log": {"level": "INFO", "message": "starting spec"}}),
+            "plain stdout marker",
+            json.dumps(trace),
+        ]
+    )
+    calls: list[dict[str, Any]] = []
+
+    def failing_run_docker_command(
+        cmd: list[str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(cmd, 1, stdout=stdout, stderr="stderr marker")
+
+    monkeypatch.setattr(docker_base, "run_docker_command", failing_run_docker_command)
+
+    with pytest.raises(AssertionError) as error:
+        docker_base._run_spec_in_image("image:tag", "cloud")
+
+    message = str(error.value)
+    assert calls[0]["raise_if_errors"] is False
+    assert "`spec` in image 'image:tag' (cloud mode) exited with code 1." in message
+    assert "Error reported by the connector: Cloud mode needs a secret store." in message
+    assert "Internal message: KeyError: 'SECRET_STORE'" in message
+    assert "Traceback (most recent call last)" in message
+    assert "starting spec" in message
+    assert "plain stdout marker" in message
+    assert "Stderr:\nstderr marker" in message
+
+
+def test_failing_spec_output_is_truncated(monkeypatch: pytest.MonkeyPatch) -> None:
+    stderr = "\n".join(f"line {index}" for index in range(200))
+    monkeypatch.setattr(
+        docker_base,
+        "run_docker_command",
+        lambda cmd, **_: subprocess.CompletedProcess(cmd, 2, stdout="", stderr=stderr),
+    )
+
+    with pytest.raises(AssertionError) as error:
+        docker_base._run_spec_in_image("image:tag", "oss")
+
+    message = str(error.value)
+    assert "... (150 earlier lines omitted)" in message
+    assert "line 199" in message
+    assert "line 149\n" not in message
+
+
+def test_spec_message_with_a_non_zero_exit_still_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    stdout = json.dumps({"type": "SPEC", "spec": {"connectionSpecification": {}}})
+    monkeypatch.setattr(
+        docker_base,
+        "run_docker_command",
+        lambda cmd, **_: subprocess.CompletedProcess(cmd, 1, stdout=stdout, stderr="crashed"),
+    )
+
+    with pytest.raises(AssertionError, match="exited with code 1"):
         docker_base._run_spec_in_image("image:tag", "oss")

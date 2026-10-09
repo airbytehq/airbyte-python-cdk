@@ -31,6 +31,7 @@ from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
 from airbyte_cdk.test.standard_tests._spec_compatibility import (
     DEPLOYMENT_MODE_ENV_VARS,
+    REGISTRY_UNAVAILABLE_ERRORS,
     DeploymentMode,
     compare_specs,
     declared_breaking_changes,
@@ -89,11 +90,17 @@ def _assert_check_outcome(
         )
 
 
+_SPEC_FAILURE_OUTPUT_LINES = 50
+"""How many trailing lines of the connector's output a failed `spec` run reports."""
+
+
 def _run_spec_in_image(connector_image: str, deployment_mode: DeploymentMode) -> dict[str, Any]:
     """Run `spec` in the image as the registry publisher does, and return the raw spec object.
 
     The raw JSON is compared rather than the parsed protocol model, because the registry stores
-    the raw output and parsing would drop or add keys that are not in the model.
+    the raw output and parsing would drop or add keys that are not in the model. If `spec` exits
+    with an error or emits no SPEC message, the error names the exit code and includes what the
+    connector reported: its last error TRACE message, its last log lines and its stderr.
     """
     env_args = [
         arg
@@ -104,18 +111,58 @@ def _run_spec_in_image(connector_image: str, deployment_mode: DeploymentMode) ->
         ["docker", "run", "--rm", *env_args, connector_image, "spec"],
         capture_stdout=True,
         capture_stderr=True,
+        raise_if_errors=False,
     )
+
+    spec: dict[str, Any] | None = None
+    error_trace: dict[str, Any] | None = None
+    log_lines: list[str] = []
     for line in result.stdout.splitlines():
         try:
             message = orjson.loads(line)
         except orjson.JSONDecodeError:
+            log_lines.append(line)
             continue
-        if isinstance(message, dict) and message.get("type") == "SPEC":
-            return cast(dict[str, Any], message["spec"])
+        if not isinstance(message, dict):
+            continue
+        if message.get("type") == "SPEC" and spec is None:
+            spec = cast(dict[str, Any], message["spec"])
+        elif message.get("type") == "LOG":
+            log_lines.append(str((message.get("log") or {}).get("message", "")))
+        elif message.get("type") == "TRACE" and (message.get("trace") or {}).get("error"):
+            error_trace = message["trace"]["error"]
 
-    raise AssertionError(
-        f"`spec` in image '{connector_image}' ({deployment_mode} mode) emitted no SPEC message. "
-        f"Stderr: {result.stderr}"
+    if spec is not None and result.returncode == 0:
+        return spec
+
+    problem = (
+        f"exited with code {result.returncode}"
+        if result.returncode != 0
+        else "emitted no SPEC message"
+    )
+    details = [
+        f"`spec` in image '{connector_image}' ({deployment_mode} mode) {problem}.",
+    ]
+    if error_trace:
+        details.append(f"Error reported by the connector: {error_trace.get('message')}")
+        if error_trace.get("internal_message"):
+            details.append(f"Internal message: {error_trace['internal_message']}")
+        if error_trace.get("stack_trace"):
+            details.append(f"Stack trace:\n{_tail(str(error_trace['stack_trace']))}")
+    if log_lines:
+        log_text = "\n".join(log_lines)
+        details.append(f"Last log lines:\n{_tail(log_text)}")
+    details.append(f"Stderr:\n{_tail(result.stderr or '') or '(empty)'}")
+    raise AssertionError("\n".join(details))
+
+
+def _tail(text: str) -> str:
+    lines = text.rstrip().splitlines()
+    if len(lines) <= _SPEC_FAILURE_OUTPUT_LINES:
+        return "\n".join(lines)
+    omitted = len(lines) - _SPEC_FAILURE_OUTPUT_LINES
+    return "\n".join(
+        [f"... ({omitted} earlier lines omitted)", *lines[-_SPEC_FAILURE_OUTPUT_LINES:]]
     )
 
 
@@ -309,16 +356,25 @@ class DockerConnectorTestSuite:
     ) -> None:
         """Fail if the image's spec rejects configs that the published version accepted.
 
-        The spec is compared against the `latest` version in the public connector registry,
-        once per registry the connector is published to, with `spec` run in the matching
-        deployment mode. A connector that was never published, or whose version is older than
-        the published one, has nothing to compare against.
+        The spec is compared against the `latest` version in the public connector registry
+        (connectors.airbyte.com), once per registry the connector is published to, with `spec`
+        run in the matching deployment mode. A connector that was never published, or whose
+        version is older than the published one, has nothing to compare against. If the
+        registry cannot be reached after retries, the test is skipped with a warning rather
+        than failing every connector's tests during an outage.
 
-        Breaking findings are waived, and the test is skipped, when the change goes through the
-        breaking-change process (a `releases.breakingChanges` entry in metadata.yaml for a
-        version after the published one), or when `disable_for_version` in
-        acceptance-test-config.yml names the published version. The compatible changes, and
-        any waived breaking ones, are printed (pytest shows them with `-rA`).
+        Breaking findings are waived, and the test is skipped, in two cases:
+
+        - The change goes through the breaking-change process: `releases.breakingChanges` in
+          metadata.yaml declares a version after the published one, up to `dockerImageTag`.
+        - `backward_compatibility_tests_config.disable_for_version` in an entry of the `spec`
+          section of acceptance-test-config.yml names the published version. The waiver
+          expires when a newer version is published. A connector without that file, such as
+          one rebuilt on a new base image without a version bump, can add a file that holds
+          only this entry.
+
+        The compatible changes, and the waived breaking ones, are reported as a warning, so they
+        appear in the warnings summary of the test run.
         """
         connector_root = self.get_connector_root_dir().absolute()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
@@ -331,13 +387,18 @@ class DockerConnectorTestSuite:
                 for registry in DEPLOYMENT_MODE_ENV_VARS
                 if (published := fetch_published_spec(metadata.data.dockerRepository, registry))
             }
+        except REGISTRY_UNAVAILABLE_ERRORS as error:
+            message = (
+                f"Skipping the spec backward-compatibility check of `{self.connector_name}`: the "
+                f"connector registry could not be reached ({error}). The spec was not compared "
+                "with the published version."
+            )
+            warnings.warn(message, category=UserWarning, stacklevel=1)
+            pytest.skip(message)
         except requests.RequestException as error:
             pytest.fail(
                 f"Could not fetch the published spec of `{self.connector_name}` from the connector "
-                f"registry: {error}\n"
-                "This test compares the spec against the published version, so it needs access "
-                "to connectors.airbyte.com. To run the other tests without it, deselect this one "
-                "with `-k 'not test_docker_image_spec_backward_compatibility'`."
+                f"registry: {error}"
             )
         if not published_specs:
             pytest.skip(f"`{self.connector_name}` has no published version to compare against.")
@@ -371,20 +432,16 @@ class DockerConnectorTestSuite:
                 base_image_override=connector_base_image_override,
             )
 
-        try:
-            disabled_versions = disabled_for_version(self.acceptance_test_config)
-        except (FileNotFoundError, ValueError):
-            disabled_versions = []
-
         failures: list[str] = []
         waivers: list[str] = []
+        summaries: list[str] = []
         for registry, published in published_specs.items():
             comparison = compare_specs(
                 published.spec, _run_spec_in_image(connector_image, registry)
             )
             if comparison.is_backward_compatible:
                 if comparison.compatible:
-                    print(
+                    summaries.append(
                         format_spec_change_summary(
                             registry=registry, published=published, comparison=comparison
                         )
@@ -394,13 +451,13 @@ class DockerConnectorTestSuite:
             declared = declared_breaking_changes(metadata_data, published.version, current_version)
             if declared:
                 waiver: str | None = f"declared as breaking in {', '.join(declared)}"
-            elif published.version in disabled_versions:
+            elif published.version in self._spec_compatibility_disabled_versions():
                 waiver = f"waived by `disable_for_version: {published.version}`"
             else:
                 waiver = None
 
             if waiver:
-                print(
+                summaries.append(
                     format_spec_change_summary(
                         registry=registry, published=published, comparison=comparison, waiver=waiver
                     )
@@ -420,10 +477,29 @@ class DockerConnectorTestSuite:
                     )
                 )
 
+        if summaries:
+            warnings.warn(
+                f"Spec changes of `{self.connector_name}` {current_version} judged safe or "
+                "waived:\n" + "\n".join(summaries),
+                category=UserWarning,
+                stacklevel=1,
+            )
         if failures:
             pytest.fail("\n\n".join(failures))
         if waivers:
             pytest.skip("; ".join(waivers))
+
+    def _spec_compatibility_disabled_versions(self) -> list[str]:
+        """The `disable_for_version` waivers of acceptance-test-config.yml, if it has any.
+
+        A missing, empty or malformed file has none. The file is only read once a comparison
+        is breaking, so its layout cannot fail a connector whose spec is compatible.
+        """
+        try:
+            acceptance_test_config = self.acceptance_test_config
+        except (FileNotFoundError, ValueError, TypeError, yaml.YAMLError):
+            return []
+        return disabled_for_version(acceptance_test_config)
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,

@@ -36,8 +36,20 @@ REGISTRY_ENTRY_URL_TEMPLATE = (
 REGISTRY_TIMEOUT_SECONDS = (5.0, 10.0)
 """Connect and read timeouts of one registry request.
 
-With the retries of `registry_retry`, an unreachable registry fails the test in about 30 seconds
+With the retries of `registry_retry`, an unreachable registry is given up on in about 30 seconds
 rather than holding every image-test run for minutes.
+"""
+
+REGISTRY_UNAVAILABLE_ERRORS: tuple[type[requests.RequestException], ...] = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.RetryError,
+)
+"""Errors that mean the registry could not be reached or kept failing, rather than answering.
+
+The test is skipped, with a warning, when one of these persists after retries: a registry outage
+or a network without access to it must not fail every connector's tests. Any other error, such as
+a client error status or an entry that is not a registry entry, still fails the test.
 """
 
 BREAKING_CHANGES_DOCS_URL = (
@@ -902,13 +914,22 @@ def registry_retry() -> Retry:
     Transient server errors and rate limits are retried twice with a short backoff. A
     `Retry-After` header is not honored, so a rate-limited registry cannot stall the test.
     """
+    # GET is retried by default, so `allowed_methods`, which needs urllib3 1.26, is not passed.
     return Retry(
         total=2,
         backoff_factor=0.5,
         status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=("GET",),
         respect_retry_after_header=False,
     )
+
+
+def registry_session() -> requests.Session:
+    """A session that applies `registry_retry` to every registry request."""
+    session = requests.Session()
+    adapter = HTTPAdapter(max_retries=registry_retry())
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 def fetch_published_spec(
@@ -930,24 +951,39 @@ def fetch_published_spec(
         case for a connector that was never released or is disabled in that registry.
 
     Raises:
-        requests.RequestException: If the registry cannot be reached after retries.
+        requests.RequestException: If the registry cannot be reached after retries, or answers
+            with an error status other than 404. `REGISTRY_UNAVAILABLE_ERRORS` lists the errors
+            that mean it could not be reached.
+        AssertionError: If the registry answers with something that is not a registry entry.
     """
     url = REGISTRY_ENTRY_URL_TEMPLATE.format(
         docker_repository=docker_repository,
         version=version,
         registry=registry,
     )
-    with requests.Session() as session:
-        adapter = HTTPAdapter(max_retries=registry_retry())
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
+    with registry_session() as session:
         response = session.get(url, timeout=REGISTRY_TIMEOUT_SECONDS)
 
     if response.status_code == 404:
         return None
     response.raise_for_status()
 
-    entry = response.json()
+    try:
+        entry = response.json()
+    except ValueError as error:
+        raise AssertionError(
+            f"The connector registry returned invalid JSON at {url}: {error}"
+        ) from error
+    if (
+        not isinstance(entry, dict)
+        or not isinstance(entry.get("spec"), dict)
+        or entry.get("dockerImageTag") is None
+    ):
+        keys = sorted(entry) if isinstance(entry, dict) else type(entry).__name__
+        raise AssertionError(
+            f"The connector registry entry at {url} has no `spec` object or no `dockerImageTag` "
+            f"(found: {keys}), so the published spec cannot be compared."
+        )
     return PublishedSpec(version=str(entry["dockerImageTag"]), spec=entry["spec"], url=url)
 
 
@@ -1066,21 +1102,34 @@ def _capped(changes: list[str]) -> list[str]:
     return lines
 
 
-def disabled_for_version(acceptance_test_config: Mapping[str, Any]) -> list[str]:
+def disabled_for_version(acceptance_test_config: Any) -> list[str]:
     """Return the versions the spec backward-compatibility test is disabled for.
 
     Reads `backward_compatibility_tests_config.disable_for_version` from the entries of the
     `spec` section of `acceptance-test-config.yml`, the same setting the legacy acceptance tests
     honored. The test is skipped only while the published `latest` version equals one of these,
     so the waiver expires on its own once the new version is released.
+
+    Both layouts of the section are read: the current one, where the entries are under
+    `spec.tests`, and the legacy one, where `spec` is the list of entries itself. A config of
+    any other shape, including an empty file, has no waivers.
     """
-    spec_section = (acceptance_test_config.get("acceptance_tests") or {}).get("spec") or {}
+    if not isinstance(acceptance_test_config, Mapping):
+        return []
+    acceptance_tests = acceptance_test_config.get("acceptance_tests")
+    if not isinstance(acceptance_tests, Mapping):
+        return []
+    spec_section = acceptance_tests.get("spec")
+    tests = spec_section.get("tests") if isinstance(spec_section, Mapping) else spec_section
+    if not isinstance(tests, list):
+        return []
+
     versions: list[str] = []
-    for test in spec_section.get("tests") or []:
-        if not isinstance(test, dict):
+    for test in tests:
+        if not isinstance(test, Mapping):
             continue
-        config = test.get("backward_compatibility_tests_config") or {}
-        version = config.get("disable_for_version")
+        config = test.get("backward_compatibility_tests_config")
+        version = config.get("disable_for_version") if isinstance(config, Mapping) else None
         if version is not None:
             versions.append(str(version))
     return versions
