@@ -76,31 +76,6 @@ def get_discovered_streams(
     return list(catalog_message.catalog.streams)
 
 
-def _configured_stream(
-    stream: AirbyteStream,
-    *,
-    prefer_incremental: bool,
-) -> ConfiguredAirbyteStream:
-    """Configure a stream for the Docker read.
-
-    With `prefer_incremental`, a stream that supports incremental sync and has a cursor the
-    catalog can name (source-defined, or a default cursor field) is read incrementally; any
-    other stream is read in its first supported sync mode.
-    """
-    sync_modes = stream.supported_sync_modes or [SyncMode.full_refresh]
-    incremental = (
-        prefer_incremental
-        and SyncMode.incremental in sync_modes
-        and bool(stream.source_defined_cursor or stream.default_cursor_field)
-    )
-    return ConfiguredAirbyteStream(
-        stream=stream,
-        sync_mode=SyncMode.incremental if incremental else sync_modes[0],
-        cursor_field=stream.default_cursor_field if incremental else None,
-        destination_sync_mode=DestinationSyncMode.append,
-    )
-
-
 class DockerConnectorTestSuite:
     """Base class for connector test suites."""
 
@@ -212,8 +187,8 @@ class DockerConnectorTestSuite:
         Every section with a `tests` list contributes its configs (`SCENARIO_SECTIONS`), and each
         config runs the command of the section(s) that list it: `spec` validates the config
         against the spec, `connection` runs `check` against the declared `status`, `discovery`
-        runs `discover`, `basic_read` and `full_refresh` run a full-refresh `read`, and
-        `incremental` runs an incremental `read` (`SECTION_COMMANDS`).
+        runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read`
+        (`SECTION_COMMANDS`). The `incremental` section is not collected.
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
@@ -465,9 +440,8 @@ class DockerConnectorTestSuite:
         """Read from the connector's Docker image.
 
         This test builds the connector image and runs the `read` command inside the container,
-        for configs listed under `basic_read`, `full_refresh` or `incremental` in
-        `acceptance-test-config.yml`. A config listed only under `incremental` is read in
-        incremental mode where the stream supports it.
+        for configs listed under `basic_read` or `full_refresh` in
+        `acceptance-test-config.yml`.
 
         Note:
           - If the --connector-image arg is provided, it will be used instead of building the image.
@@ -475,7 +449,7 @@ class DockerConnectorTestSuite:
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
 
-        skip_unless_runs(scenario, "read", "incremental_read")
+        skip_unless_runs(scenario, "read")
 
         if scenario.expected_outcome.expect_exception():
             pytest.skip("Skipping (expected to fail).")
@@ -555,10 +529,14 @@ class DockerConnectorTestSuite:
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
-                    _configured_stream(
-                        stream,
-                        # Listed only under `incremental`: read incrementally where supported.
-                        prefer_incremental=not scenario.runs("read"),
+                    ConfiguredAirbyteStream(
+                        stream=stream,
+                        sync_mode=(
+                            stream.supported_sync_modes[0]
+                            if stream.supported_sync_modes
+                            else SyncMode.full_refresh
+                        ),
+                        destination_sync_mode=DestinationSyncMode.append,
                     )
                     for stream in discovered_streams
                     if stream.name in streams_list

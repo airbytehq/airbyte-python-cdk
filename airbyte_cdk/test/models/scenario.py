@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Mapping
 
 
-ScenarioCommand = Literal["spec", "check", "discover", "read", "incremental_read"]
+ScenarioCommand = Literal["spec", "check", "discover", "read"]
 """A connector command the standard tests run for a scenario. See `SECTION_COMMANDS`."""
 
 SECTION_COMMANDS: Mapping[str, frozenset[ScenarioCommand]] = MappingProxyType(
@@ -35,7 +35,6 @@ SECTION_COMMANDS: Mapping[str, frozenset[ScenarioCommand]] = MappingProxyType(
         "discovery": frozenset({"discover"}),
         "basic_read": frozenset({"read"}),
         "full_refresh": frozenset({"read"}),
-        "incremental": frozenset({"incremental_read"}),
     }
 )
 """The command that runs for a config listed under each section of `acceptance-test-config.yml`.
@@ -48,10 +47,10 @@ with, and the standard tests run that command for the config:
 - `discovery`: `discover` must succeed and return streams (`test_discover`).
 - `basic_read`, `full_refresh`: a full-refresh `read` of every discovered stream must succeed
   and return records (`test_basic_read`, `test_fail_read_with_bad_catalog`).
-- `incremental`: a `read` must reject a bad catalog (`test_fail_read_with_bad_catalog`); the
-  Docker read test reads the config in incremental mode where a stream supports it.
 
-A config listed under several sections runs the union of their commands.
+A config listed under several sections runs the union of their commands. Configs listed only
+under `incremental` are not collected: without input state, an incremental `read` checks the same
+thing as a full-refresh one.
 """
 
 SCENARIO_SECTIONS: tuple[str, ...] = tuple(SECTION_COMMANDS)

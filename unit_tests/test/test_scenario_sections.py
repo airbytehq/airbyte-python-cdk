@@ -2,8 +2,8 @@
 """Each config in `acceptance-test-config.yml` runs the command of the section that lists it.
 
 `spec` validates the config against the spec, `connection` runs `check`, `discovery` runs
-`discover`, `basic_read` and `full_refresh` run a full-refresh `read`, and `incremental` runs an
-incremental `read`. A config listed under several sections runs the union of their commands.
+`discover`, and `basic_read` and `full_refresh` run a full-refresh `read`. The `incremental`
+section is not collected. A config listed under several sections runs the union of their commands.
 """
 
 from __future__ import annotations
@@ -201,10 +201,9 @@ def test_every_section_maps_to_the_command_cat_ran_it_with() -> None:
         "discovery": {"discover"},
         "basic_read": {"read"},
         "full_refresh": {"read"},
-        "incremental": {"incremental_read"},
     }
     assert SCENARIO_SECTIONS == tuple(SECTION_COMMANDS)
-    assert ALL_COMMANDS == {"spec", "check", "discover", "read", "incremental_read"}
+    assert ALL_COMMANDS == {"spec", "check", "discover", "read"}
 
 
 def test_get_scenarios_collects_every_section(tmp_path: Path) -> None:
@@ -215,10 +214,12 @@ def test_get_scenarios_collects_every_section(tmp_path: Path) -> None:
         "integration_tests/invalid_config.json",
         "secrets/config.json",
         "secrets/config_full_refresh.json",
-        "secrets/config_incremental.json",
         "secrets/config_old.json",
         "secrets/config_read_only.json",
-    ], "iam_role configs and entries without config_path are skipped; the rest are deduplicated"
+    ], (
+        "iam_role configs, entries without config_path and the `incremental` section are "
+        "skipped; the rest are deduplicated"
+    )
 
     full = scenarios["secrets/config.json"]
     # Sections are recorded in collection order (`SCENARIO_SECTIONS`), not file order.
@@ -233,13 +234,12 @@ def test_get_scenarios_collects_every_section(tmp_path: Path) -> None:
     assert invalid.status == "failed"
 
     read_only = scenarios["secrets/config_read_only.json"]
-    assert read_only.sections == ("basic_read", "incremental")
-    assert read_only.commands == {"read", "incremental_read"}
+    assert read_only.sections == ("basic_read",), "its `incremental` entry is ignored"
+    assert read_only.commands == {"read"}
 
     for config_path, section, command in [
         ("secrets/config_old.json", "discovery", "discover"),
         ("secrets/config_full_refresh.json", "full_refresh", "read"),
-        ("secrets/config_incremental.json", "incremental", "incremental_read"),
     ]:
         scenario = scenarios[config_path]
         assert scenario.sections == (section,)
@@ -271,8 +271,7 @@ def test_dedup_scenarios_unions_sections() -> None:
         pytest.param(("discovery",), {"discover"}, id="discovery"),
         pytest.param(("basic_read",), {"read"}, id="basic_read"),
         pytest.param(("full_refresh",), {"read"}, id="full_refresh"),
-        pytest.param(("incremental",), {"incremental_read"}, id="incremental"),
-        pytest.param(("incremental", "basic_read"), {"read", "incremental_read"}, id="mixed"),
+        pytest.param(("discovery", "basic_read"), {"discover", "read"}, id="mixed"),
         pytest.param(SCENARIO_SECTIONS, ALL_COMMANDS, id="every_section"),
     ],
 )
@@ -293,9 +292,10 @@ def test_commands_property(sections: tuple[str, ...], expected: set[ScenarioComm
         assert derived.commands == expected
 
 
-def test_unknown_section_is_rejected() -> None:
+@pytest.mark.parametrize("section", ["sequential_reads", "incremental"])
+def test_unknown_section_is_rejected(section: str) -> None:
     with pytest.raises(ValidationError, match="Unknown `acceptance-test-config.yml` section"):
-        _scenario("sequential_reads")
+        _scenario(section)
 
 
 @pytest.mark.parametrize(
@@ -316,16 +316,16 @@ def test_with_default_success(status: str | None, expected: str) -> None:
 
 
 def test_skip_unless_runs_names_the_commands_and_sections() -> None:
-    incremental_only = _scenario("incremental", name="config_incremental")
+    discovery_only = _scenario("discovery", name="config_old")
 
     with pytest.raises(pytest.skip.Exception) as exc_info:
-        skip_unless_runs(incremental_only, "read")
+        skip_unless_runs(discovery_only, "read")
     assert str(exc_info.value) == (
-        "`read` does not run for scenario 'config_incremental': its config is listed under "
-        "`incremental` in `acceptance-test-config.yml`, which runs `incremental_read`."
+        "`read` does not run for scenario 'config_old': its config is listed under "
+        "`discovery` in `acceptance-test-config.yml`, which runs `discover`."
     )
 
-    skip_unless_runs(incremental_only, "read", "incremental_read")  # no skip
+    skip_unless_runs(discovery_only, "read", "discover")  # no skip
     for command in ALL_COMMANDS:
         skip_unless_runs(_scenario(), command)  # hand-built scenarios never skip
 
@@ -337,7 +337,7 @@ SUITE_TEST_COMMANDS: dict[str, frozenset[ScenarioCommand]] = {
     "test_config_matches_spec": frozenset({"spec"}),
     "test_discover": frozenset({"discover"}),
     "test_basic_read": frozenset({"read"}),
-    "test_fail_read_with_bad_catalog": frozenset({"read", "incremental_read"}),
+    "test_fail_read_with_bad_catalog": frozenset({"read"}),
 }
 
 
@@ -381,7 +381,7 @@ DOCKER_TEST_COMMANDS: dict[str, frozenset[ScenarioCommand]] = {
     "test_docker_image_build_and_check": frozenset({"check"}),
     "test_docker_image_build_and_config_matches_spec": frozenset({"spec"}),
     "test_docker_image_build_and_discover": frozenset({"discover"}),
-    "test_docker_image_build_and_read": frozenset({"read", "incremental_read"}),
+    "test_docker_image_build_and_read": frozenset({"read"}),
 }
 
 
@@ -478,7 +478,7 @@ def test_assert_config_matches_spec_requires_a_spec_message() -> None:
         )
 
 
-# --- `discovery`, `basic_read` and `incremental` sections ----------------------------------------
+# --- `discovery` and `basic_read` sections -------------------------------------------------------
 
 
 class _ReadSource(Source):
@@ -729,13 +729,7 @@ FULL_REFRESH_CATALOG = [("users", "full_refresh", None), ("events", "full_refres
     [
         pytest.param(("basic_read",), FULL_REFRESH_CATALOG, id="basic_read"),
         pytest.param(("full_refresh",), FULL_REFRESH_CATALOG, id="full_refresh"),
-        pytest.param(("basic_read", "incremental"), FULL_REFRESH_CATALOG, id="mixed"),
-        # Listed only under `incremental`: streams with a known cursor are read incrementally.
-        pytest.param(
-            ("incremental",),
-            [("users", "incremental", ["updated_at"]), ("events", "full_refresh", None)],
-            id="incremental",
-        ),
+        pytest.param(("discovery", "basic_read"), FULL_REFRESH_CATALOG, id="mixed"),
     ],
 )
 def test_docker_read_configures_the_catalog_for_the_section(
