@@ -24,6 +24,7 @@ from airbyte_cdk.test.standard_tests.connector_base import (
 )
 from airbyte_cdk.test.standard_tests.docker_base import (
     get_discovered_streams,
+    get_read_streams,
     skip_unless_runs,
 )
 
@@ -130,7 +131,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         `acceptance-test-config.yml`. This test is designed to validate the connector's ability
         to read data from the source and return records. It first runs a `discover` job to
         obtain the catalog of streams, and then it runs a full-refresh `read` job to fetch
-        records from those streams.
+        records from the streams of the config's `configured_catalog_path`, or from every
+        discovered stream when it declares none, minus its `empty_streams` (see
+        `get_read_streams`).
         """
         skip_unless_runs(scenario, "read")
         connector_root = self.get_connector_root_dir()
@@ -145,12 +148,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             return
         if discover_result.errors:
             raise discover_result.as_exception()
-        streams = get_discovered_streams(discover_result, connector_root.absolute().name)
-
-        if scenario.empty_streams:
-            # Filter out streams marked as empty in the scenario.
-            empty_stream_names = [stream.name for stream in scenario.empty_streams]
-            streams = [s for s in streams if s.name not in empty_stream_names]
+        streams = get_read_streams(
+            scenario,
+            get_discovered_streams(discover_result, connector_root.absolute().name),
+            connector_root,
+        )
 
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[

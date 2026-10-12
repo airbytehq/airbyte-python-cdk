@@ -45,8 +45,10 @@ with, and the standard tests run that command for the config:
 - `spec`: the config must validate against the connector's spec (`test_config_matches_spec`).
 - `connection`: `check` must report the declared `status` (`test_check`).
 - `discovery`: `discover` must succeed and return streams (`test_discover`).
-- `basic_read`, `full_refresh`: a full-refresh `read` of every discovered stream must succeed
-  and return records (`test_basic_read`, `test_fail_read_with_bad_catalog`).
+- `basic_read`, `full_refresh`: a full-refresh `read` must succeed and return records
+  (`test_basic_read`, `test_fail_read_with_bad_catalog`). It reads the streams of the config's
+  `configured_catalog_path`, or every discovered stream when it declares none, minus its
+  `empty_streams`.
 
 A config listed under several sections runs the union of their commands. Configs listed only
 under `incremental` are not collected: without input state, an incremental `read` checks the same

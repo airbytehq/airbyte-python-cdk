@@ -262,6 +262,59 @@ def test_dedup_scenarios_unions_sections() -> None:
     assert deduped[0].commands == {"discover", "check"}
 
 
+CATALOG_A = Path("integration_tests/configured_catalog.json")
+CATALOG_B = Path("integration_tests/full_refresh_catalog.json")
+
+
+@pytest.mark.parametrize(
+    "entries, expected",
+    [
+        pytest.param(
+            [("basic_read", CATALOG_A), ("full_refresh", CATALOG_A)],
+            CATALOG_A,
+            id="same_catalog_everywhere",
+        ),
+        pytest.param([("full_refresh", CATALOG_A)], CATALOG_A, id="single_read_entry"),
+        pytest.param(
+            [("spec", None), ("connection", None), ("basic_read", CATALOG_A)],
+            CATALOG_A,
+            id="non_read_entries_do_not_count",
+        ),
+        pytest.param(
+            [("basic_read", None), ("full_refresh", CATALOG_A)],
+            None,
+            id="one_read_entry_without_catalog_reads_everything",
+        ),
+        pytest.param(
+            [("full_refresh", CATALOG_A), ("basic_read", None)],
+            None,
+            id="order_does_not_matter",
+        ),
+        pytest.param(
+            [("basic_read", CATALOG_A), ("full_refresh", CATALOG_B)],
+            None,
+            id="different_catalogs_read_everything",
+        ),
+        pytest.param([("connection", CATALOG_A)], CATALOG_A, id="not_read_left_alone"),
+    ],
+)
+def test_dedup_scenarios_merges_the_read_catalogs(
+    entries: list[tuple[str, Path | None]], expected: Path | None
+) -> None:
+    deduped = DockerConnectorTestSuite._dedup_scenarios(
+        [
+            ConnectorTestScenario(
+                config_path=Path("secrets/config.json"),
+                configured_catalog_path=catalog,
+                sections=(section,),
+            )
+            for section, catalog in entries
+        ]
+    )
+    assert len(deduped) == 1
+    assert deduped[0].configured_catalog_path == expected
+
+
 @pytest.mark.parametrize(
     "sections, expected",
     [
@@ -581,6 +634,91 @@ def test_basic_read_reads_every_stream_full_refresh(tmp_path: Path) -> None:
     ]
 
 
+def _write_declared_catalog(tmp_path: Path, *stream_names: str) -> Path:
+    """Write a configured catalog naming `stream_names` (incremental, with a stale schema)."""
+    catalog_path = Path("integration_tests/configured_catalog.json")
+    file_path = tmp_path / "source-test" / catalog_path
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(
+        json.dumps(
+            {
+                "streams": [
+                    {
+                        "stream": {
+                            "name": name,
+                            "json_schema": {"type": "object", "properties": {"stale": {}}},
+                            "supported_sync_modes": ["full_refresh", "incremental"],
+                        },
+                        "sync_mode": "incremental",
+                        "cursor_field": ["updated_at"],
+                        "destination_sync_mode": "append",
+                    }
+                    for name in stream_names
+                ]
+            }
+        )
+    )
+    return catalog_path
+
+
+@pytest.mark.parametrize("section", ["basic_read", "full_refresh"])
+def test_basic_read_reads_the_declared_catalog_full_refresh(tmp_path: Path, section: str) -> None:
+    """A declared `configured_catalog_path` picks the streams; `discover` supplies their schemas."""
+    catalogs: list[ConfiguredAirbyteCatalog] = []
+    suite = _read_suite(tmp_path, "records", [USERS, EVENTS, STATIC], catalogs)
+    catalog_path = _write_declared_catalog(tmp_path, "static", "users", "events")
+
+    suite.test_basic_read(
+        _scenario(
+            section,
+            configured_catalog_path=catalog_path,
+            empty_streams=[{"name": "events", "bypass_reason": "no data"}],
+        )
+    )
+
+    assert _configured(catalogs[-1]) == [
+        ("static", SyncMode.full_refresh, None),
+        ("users", SyncMode.full_refresh, None),
+    ], "the catalog's streams, in its order, full refresh, minus `empty_streams`"
+    assert [s.stream for s in catalogs[-1].streams] == [STATIC, USERS], (
+        "each stream keeps the definition `discover` reported, not the catalog's stale one"
+    )
+
+
+def test_basic_read_fails_on_a_declared_stream_that_is_not_discovered(tmp_path: Path) -> None:
+    catalogs: list[ConfiguredAirbyteCatalog] = []
+    suite = _read_suite(tmp_path, "records", [USERS], catalogs)
+    catalog_path = _write_declared_catalog(tmp_path, "users", "removed_stream")
+
+    with pytest.raises(
+        AssertionError,
+        match=(
+            r"The configured catalog `integration_tests/configured_catalog.json` of config "
+            r"'config' lists streams that connector 'source-test' does not discover: "
+            r"'removed_stream'\."
+        ),
+    ):
+        suite.test_basic_read(_scenario("basic_read", configured_catalog_path=catalog_path))
+    assert catalogs == [], "nothing is read"
+
+
+def test_basic_read_fails_on_a_missing_declared_catalog(tmp_path: Path) -> None:
+    catalogs: list[ConfiguredAirbyteCatalog] = []
+    suite = _read_suite(tmp_path, "records", [USERS], catalogs)
+
+    with pytest.raises(
+        AssertionError,
+        match=(
+            r"The configured catalog `integration_tests/missing.json` of config 'config' does "
+            r"not exist in connector 'source-test'"
+        ),
+    ):
+        suite.test_basic_read(
+            _scenario("basic_read", configured_catalog_path=Path("integration_tests/missing.json"))
+        )
+    assert catalogs == [], "nothing is read"
+
+
 @pytest.mark.parametrize(
     "behavior, expected_exception, match",
     [
@@ -765,3 +903,55 @@ def test_docker_read_configures_the_catalog_for_the_section(
         (s["stream"]["name"], s["sync_mode"], s.get("cursor_field"))
         for s in catalogs[-1]["streams"]
     ] == expected
+
+
+def test_docker_read_uses_the_declared_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalogs: list[dict[str, Any]] = []
+    _stub_docker(
+        monkeypatch,
+        {
+            "discover": [
+                _catalog_message(
+                    _stream_json("users", ["incremental", "full_refresh"], ["updated_at"]),
+                    _stream_json("events", ["full_refresh", "incremental"]),
+                    _stream_json("static", ["full_refresh"]),
+                )
+            ],
+            "read": [_record_message("users")],
+        },
+        read_catalogs=catalogs,
+    )
+    suite = _suite_class(tmp_path, {}, base=DockerConnectorTestSuite)()
+    catalog_path = _write_declared_catalog(tmp_path, "static", "users", "events")
+    kwargs = _docker_kwargs("test_docker_image_build_and_read")
+
+    suite.test_docker_image_build_and_read(
+        _scenario(
+            "full_refresh",
+            configured_catalog_path=catalog_path,
+            empty_streams=[{"name": "static", "bypass_reason": "no data"}],
+        ),
+        **kwargs,
+    )
+    assert [
+        (s["stream"]["name"], s["sync_mode"], s.get("cursor_field"), s["stream"]["json_schema"])
+        for s in catalogs[-1]["streams"]
+    ] == [
+        ("users", "full_refresh", None, {"type": "object"}),
+        ("events", "full_refresh", None, {"type": "object"}),
+    ], "the catalog's streams, full refresh even when incremental comes first, discovered schemas"
+
+    # `--read-from-streams` narrows the declared catalog further.
+    suite.test_docker_image_build_and_read(
+        _scenario("full_refresh", configured_catalog_path=catalog_path),
+        **(kwargs | {"read_from_streams": ["users", "not_in_catalog"]}),
+    )
+    assert [s["stream"]["name"] for s in catalogs[-1]["streams"]] == ["users"]
+
+    _write_declared_catalog(tmp_path, "users", "removed_stream")
+    with pytest.raises(AssertionError, match=r"does not discover: 'removed_stream'"):
+        suite.test_docker_image_build_and_read(
+            _scenario("basic_read", configured_catalog_path=catalog_path), **kwargs
+        )
