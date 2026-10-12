@@ -48,8 +48,8 @@ with, and the standard tests run that command for the config:
 - `discovery`: `discover` must succeed and return streams (`test_discover`).
 - `basic_read`, `full_refresh`: a full-refresh `read` of every discovered stream must succeed
   and return records (`test_basic_read`, `test_fail_read_with_bad_catalog`).
-- `incremental`: an incremental `read` of every stream that supports it must succeed and emit
-  state (`test_incremental_read`, `test_fail_read_with_bad_catalog`).
+- `incremental`: a `read` must reject a bad catalog (`test_fail_read_with_bad_catalog`); the
+  Docker read test reads the config in incremental mode where a stream supports it.
 
 A config listed under several sections runs the union of their commands.
 """
