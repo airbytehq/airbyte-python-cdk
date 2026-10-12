@@ -11,6 +11,7 @@ fake source:
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -744,6 +745,60 @@ def test_basic_read(
     records: Mapping[str, list[Mapping[str, Any]]] | None,
     failure_match: str | None,
 ) -> None:
+    if failure_match is None:
+        _run_basic_read(tmp_path, scenario, records)
+        return
+
+    with pytest.raises(Exception, match=failure_match):
+        _run_basic_read(tmp_path, scenario, records)
+
+
+@pytest.mark.parametrize(
+    "declared_streams, records, failure_match",
+    [
+        pytest.param(
+            ["users"], {"users": VALID_USERS}, None, id="undeclared_empty_stream_not_read"
+        ),
+        pytest.param(
+            ["users", "events"], {"users": VALID_USERS}, MSG_MISSING_STREAMS, id="declared_empty"
+        ),
+        pytest.param(
+            ["users"], {"users": [{"id": "1"}]}, MSG_SCHEMA, id="validated_against_discovered"
+        ),
+    ],
+)
+def test_basic_read_checks_the_streams_of_the_declared_catalog(
+    tmp_path: Path,
+    declared_streams: list[str],
+    records: Mapping[str, list[Mapping[str, Any]]],
+    failure_match: str | None,
+) -> None:
+    """With a `configured_catalog_path`, only its streams must return records.
+
+    The records are validated against the schema `discover` reports, not the catalog's own.
+    """
+    catalog_path = tmp_path / "integration_tests" / "configured_catalog.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "streams": [
+                    {
+                        # A stale schema that accepts anything.
+                        "stream": {"name": name, "json_schema": {}, "supported_sync_modes": []},
+                        "sync_mode": "full_refresh",
+                        "destination_sync_mode": "overwrite",
+                    }
+                    for name in declared_streams
+                ]
+            }
+        )
+    )
+    scenario = _scenario(
+        "connection",
+        "basic_read",
+        configured_catalog_path="integration_tests/configured_catalog.json",
+    )
     if failure_match is None:
         _run_basic_read(tmp_path, scenario, records)
         return
