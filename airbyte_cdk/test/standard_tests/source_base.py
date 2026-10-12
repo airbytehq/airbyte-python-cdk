@@ -28,6 +28,7 @@ from airbyte_cdk.test.standard_tests.connector_base import (
 )
 from airbyte_cdk.test.standard_tests.docker_base import (
     get_discovered_streams,
+    get_read_streams,
     skip_unless_runs,
 )
 
@@ -134,12 +135,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         `acceptance-test-config.yml`. This test is designed to validate the connector's ability
         to read data from the source and return records. It first runs a `discover` job to
         obtain the catalog of streams, and then it runs a full-refresh `read` job to fetch
-        records from those streams, except the ones declared in `empty_streams`.
+        records from the streams of the config's `configured_catalog_path`, or from every
+        discovered stream when it declares none, minus its `empty_streams` (see
+        `get_read_streams`).
 
         A read expected to succeed must return records. For a config listed under `basic_read`,
-        the records are also checked as in CAT's basic read test: every stream must return at
-        least one record, and every record must match its stream's JSON schema (opt out with
-        `validate_schema: false`, which a connector at `test_strictness_level: high` cannot).
+        the records are also checked as in CAT's basic read test: every stream it reads must
+        return at least one record, and every record must match its stream's JSON schema (opt out
+        with `validate_schema: false`, which a connector at `test_strictness_level: high` cannot).
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:
@@ -159,12 +162,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             return
         if discover_result.errors:
             raise discover_result.as_exception()
-        streams = get_discovered_streams(discover_result, connector_root.absolute().name)
-
-        if scenario.empty_streams:
-            # Filter out streams marked as empty in the scenario.
-            empty_stream_names = [stream.name for stream in scenario.empty_streams]
-            streams = [s for s in streams if s.name not in empty_stream_names]
+        streams = get_read_streams(
+            scenario,
+            get_discovered_streams(discover_result, connector_root.absolute().name),
+            connector_root,
+        )
 
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[

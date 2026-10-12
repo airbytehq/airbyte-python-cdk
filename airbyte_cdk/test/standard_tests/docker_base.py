@@ -76,6 +76,56 @@ def get_discovered_streams(
     return list(catalog_message.catalog.streams)
 
 
+def get_read_streams(
+    scenario: ConnectorTestScenario,
+    discovered_streams: list[AirbyteStream],
+    connector_root: Path,
+) -> list[AirbyteStream]:
+    """Return the streams that the `read` of `scenario` configures, minus its `empty_streams`.
+
+    When the scenario declares a `configured_catalog_path`, the streams named in that catalog are
+    read, in its order, as the Connector Acceptance Tests did: the catalog picks the streams, and
+    each stream keeps the definition (and JSON schema) that `discover` reported. A stream of the
+    catalog that `discover` does not report fails the test. Without a declared catalog, every
+    discovered stream is read.
+    """
+    streams = discovered_streams
+    if scenario.configured_catalog_path:
+        catalog_path = scenario.configured_catalog_path
+        if not catalog_path.is_absolute():
+            catalog_path = connector_root / catalog_path
+        if not catalog_path.is_file():
+            raise AssertionError(
+                f"The configured catalog `{scenario.configured_catalog_path}` of config "
+                f"'{scenario.id}' does not exist in connector "
+                f"'{connector_root.absolute().name}'. Fix its `configured_catalog_path`, or remove "
+                "it to read every discovered stream."
+            )
+        declared_catalog = orjson.loads(catalog_path.read_bytes())
+        # A stream listed twice in the catalog is read once.
+        declared_names = list(
+            dict.fromkeys(
+                configured["stream"]["name"] for configured in declared_catalog["streams"]
+            )
+        )
+        discovered_by_name = {stream.name: stream for stream in discovered_streams}
+        undiscovered = [name for name in declared_names if name not in discovered_by_name]
+        if undiscovered:
+            raise AssertionError(
+                f"The configured catalog `{scenario.configured_catalog_path}` of config "
+                f"'{scenario.id}' lists streams that connector '{connector_root.absolute().name}' "
+                f"does not discover: {', '.join(repr(name) for name in undiscovered)}. Remove "
+                "them from the catalog, or point `configured_catalog_path` at a current catalog."
+            )
+        streams = [discovered_by_name[name] for name in declared_names]
+
+    if scenario.empty_streams:
+        empty_stream_names = {stream.name for stream in scenario.empty_streams}
+        streams = [stream for stream in streams if stream.name not in empty_stream_names]
+
+    return streams
+
+
 class DockerConnectorTestSuite:
     """Base class for connector test suites."""
 
@@ -142,7 +192,20 @@ class DockerConnectorTestSuite:
         `ConnectorTestScenario.commands`).
 
         A `validate_schema: false` opt-out declared by any entry for the config is kept.
+
+        A config is read once, however many read sections (`basic_read`, `full_refresh`) list it.
+        It keeps a `configured_catalog_path` only when every read entry for it declares that same
+        catalog. If one of them declares none, or they declare different catalogs, the merged
+        scenario declares none, and every discovered stream is read: a superset of what each
+        entry asked for.
         """
+        read_catalogs: dict[Path | None, set[Path | None]] = {}
+        for scenario in scenarios:
+            if scenario.runs("read"):
+                read_catalogs.setdefault(scenario.config_path, set()).add(
+                    scenario.configured_catalog_path
+                )
+
         deduped_scenarios: list[ConnectorTestScenario] = []
 
         for scenario in scenarios:
@@ -180,6 +243,16 @@ class DockerConnectorTestSuite:
             else:
                 # If a scenario does not exist with the config, add the new scenario to the list.
                 deduped_scenarios.append(scenario)
+
+        for index, scenario in enumerate(deduped_scenarios):
+            catalogs = read_catalogs.get(scenario.config_path)
+            if catalogs is None:
+                continue
+            catalog = next(iter(catalogs)) if len(catalogs) == 1 else None
+            if scenario.configured_catalog_path != catalog:
+                deduped_scenarios[index] = scenario.model_copy(
+                    update={"configured_catalog_path": catalog}
+                )
         return deduped_scenarios
 
     @classmethod
@@ -191,8 +264,9 @@ class DockerConnectorTestSuite:
         Every section with a `tests` list contributes its configs (`SCENARIO_SECTIONS`), and each
         config runs the command of the section(s) that list it: `spec` validates the config
         against the spec, `connection` runs `check` against the declared `status`, `discovery`
-        runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read`
-        (`SECTION_COMMANDS`). The `incremental` section is not collected.
+        runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read` of the
+        streams of the config's `configured_catalog_path`, or of every discovered stream when it
+        declares none (`SECTION_COMMANDS`). The `incremental` section is not collected.
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
@@ -450,9 +524,11 @@ class DockerConnectorTestSuite:
     ) -> None:
         """Read from the connector's Docker image.
 
-        This test builds the connector image and runs the `read` command inside the container,
-        for configs listed under `basic_read` or `full_refresh` in
-        `acceptance-test-config.yml`.
+        This test builds the connector image and runs a full-refresh `read` command inside the
+        container, for configs listed under `basic_read` or `full_refresh` in
+        `acceptance-test-config.yml`. The read covers the streams of the config's
+        `configured_catalog_path`, or every discovered stream when it declares none, minus its
+        `empty_streams` (see `get_read_streams`), narrowed further by `--read-from-streams`.
 
         Note:
           - If the --connector-image arg is provided, it will be used instead of building the image.
@@ -522,35 +598,28 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
-            discovered_streams = get_discovered_streams(discover_result, connector_name)
-
-            streams_list = [stream.name for stream in discovered_streams]
+            read_streams = get_read_streams(
+                scenario,
+                get_discovered_streams(discover_result, connector_name),
+                connector_root,
+            )
             if read_from_streams == "default" and metadata.data.suggestedStreams:
-                # set `streams_list` to be the intersection of discovered and suggested streams.
-                streams_list = list(set(streams_list) & set(metadata.data.suggestedStreams.streams))
+                # Read only the suggested streams.
+                suggested_streams = set(metadata.data.suggestedStreams.streams)
+                read_streams = [s for s in read_streams if s.name in suggested_streams]
 
             if isinstance(read_from_streams, list):
-                # If `read_from_streams` is a list, we filter the discovered streams.
-                streams_list = list(set(streams_list) & set(read_from_streams))
-
-            if scenario.empty_streams:
-                # Filter out streams marked as empty in the scenario.
-                empty_stream_names = [stream.name for stream in scenario.empty_streams]
-                streams_list = [s for s in streams_list if s not in empty_stream_names]
+                # If `read_from_streams` is a list, read only those streams.
+                read_streams = [s for s in read_streams if s.name in read_from_streams]
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
                     ConfiguredAirbyteStream(
                         stream=stream,
-                        sync_mode=(
-                            stream.supported_sync_modes[0]
-                            if stream.supported_sync_modes
-                            else SyncMode.full_refresh
-                        ),
+                        sync_mode=SyncMode.full_refresh,
                         destination_sync_mode=DestinationSyncMode.append,
                     )
-                    for stream in discovered_streams
-                    if stream.name in streams_list
+                    for stream in read_streams
                 ]
             )
             configured_catalog_path = temp_dir / "catalog.json"
