@@ -23,15 +23,11 @@ from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteRecordMessage,
-    AirbyteStateBlob,
     AirbyteStateMessage,
-    AirbyteStateType,
     AirbyteStream,
-    AirbyteStreamState,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
     Status,
-    StreamDescriptor,
     SyncMode,
     Type,
 )
@@ -341,7 +337,6 @@ SUITE_TEST_COMMANDS: dict[str, frozenset[ScenarioCommand]] = {
     "test_config_matches_spec": frozenset({"spec"}),
     "test_discover": frozenset({"discover"}),
     "test_basic_read": frozenset({"read"}),
-    "test_incremental_read": frozenset({"incremental_read"}),
     "test_fail_read_with_bad_catalog": frozenset({"read", "incremental_read"}),
 }
 
@@ -490,8 +485,7 @@ class _ReadSource(Source):
     """A source over `streams` whose `read` behaves as instructed.
 
     Behaviours:
-    - `records_and_state`: one record per configured stream, one STATE per incremental stream.
-    - `records_only`: records without state.
+    - `records`: one record per configured stream.
     - `no_records`: nothing at all.
     - `raise`: an uncaught error during `read`.
     - `discover_raises`: an uncaught error during `discover`.
@@ -542,20 +536,6 @@ class _ReadSource(Source):
                     stream=name, data={"id": 1, "updated_at": "2026-01-01"}, emitted_at=0
                 ),
             )
-            if (
-                configured_stream.sync_mode == SyncMode.incremental
-                and self._behavior == "records_and_state"
-            ):
-                yield AirbyteMessage(
-                    type=Type.STATE,
-                    state=AirbyteStateMessage(
-                        type=AirbyteStateType.STREAM,
-                        stream=AirbyteStreamState(
-                            stream_descriptor=StreamDescriptor(name=name),
-                            stream_state=AirbyteStateBlob(updated_at="2026-01-01"),
-                        ),
-                    ),
-                )
 
 
 def _read_suite(
@@ -584,14 +564,14 @@ def test_discover_fails_on_errors_without_a_declared_status(tmp_path: Path) -> N
 
 
 def test_discover_fails_on_an_empty_catalog(tmp_path: Path) -> None:
-    suite = _read_suite(tmp_path, "records_and_state", [])
+    suite = _read_suite(tmp_path, "records", [])
     with pytest.raises(ValueError, match="Discovered catalog for connector 'source-test' is empty"):
         suite.test_discover(_scenario("discovery"))
 
 
 def test_basic_read_reads_every_stream_full_refresh(tmp_path: Path) -> None:
     catalogs: list[ConfiguredAirbyteCatalog] = []
-    suite = _read_suite(tmp_path, "records_and_state", [USERS, EVENTS, STATIC], catalogs)
+    suite = _read_suite(tmp_path, "records", [USERS, EVENTS, STATIC], catalogs)
     suite.test_basic_read(
         _scenario("basic_read", empty_streams=[{"name": "static", "bypass_reason": "no data"}])
     )
@@ -620,36 +600,6 @@ def test_basic_read_fails_without_a_declared_status(
     suite = _read_suite(tmp_path, behavior, [USERS])
     with pytest.raises(expected_exception, match=match):
         suite.test_basic_read(_scenario("basic_read"))
-
-
-def test_incremental_read_reads_incremental_streams_and_requires_state(tmp_path: Path) -> None:
-    catalogs: list[ConfiguredAirbyteCatalog] = []
-    suite = _read_suite(tmp_path, "records_and_state", [USERS, EVENTS, STATIC], catalogs)
-
-    suite.test_incremental_read(_scenario("incremental"))
-
-    # Only streams with a cursor the catalog can name are read, and in incremental mode.
-    assert _configured(catalogs[-1]) == [("users", SyncMode.incremental, ["updated_at"])]
-
-
-def test_incremental_read_fails_without_incremental_streams(tmp_path: Path) -> None:
-    suite = _read_suite(tmp_path, "records_and_state", [STATIC])
-    with pytest.raises(AssertionError, match="no discovered stream supports incremental sync"):
-        suite.test_incremental_read(_scenario("incremental"))
-
-
-def test_incremental_read_fails_without_state(tmp_path: Path) -> None:
-    suite = _read_suite(tmp_path, "records_only", [USERS])
-    with pytest.raises(AssertionError, match="emitted no STATE message"):
-        suite.test_incremental_read(_scenario("incremental"))
-
-
-def test_incremental_read_skips_when_every_incremental_stream_is_empty(tmp_path: Path) -> None:
-    suite = _read_suite(tmp_path, "records_and_state", [USERS, STATIC])
-    with pytest.raises(pytest.skip.Exception, match="listed in `empty_streams`"):
-        suite.test_incremental_read(
-            _scenario("incremental", empty_streams=[{"name": "users", "bypass_reason": "none"}])
-        )
 
 
 # --- Docker path -------------------------------------------------------------------------------
