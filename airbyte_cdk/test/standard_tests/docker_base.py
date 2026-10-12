@@ -102,9 +102,12 @@ def get_read_streams(
                 "it to read every discovered stream."
             )
         declared_catalog = orjson.loads(catalog_path.read_bytes())
-        declared_names = [
-            configured["stream"]["name"] for configured in declared_catalog["streams"]
-        ]
+        # A stream listed twice in the catalog is read once.
+        declared_names = list(
+            dict.fromkeys(
+                configured["stream"]["name"] for configured in declared_catalog["streams"]
+            )
+        )
         discovered_by_name = {stream.name: stream for stream in discovered_streams}
         undiscovered = [name for name in declared_names if name not in discovered_by_name]
         if undiscovered:

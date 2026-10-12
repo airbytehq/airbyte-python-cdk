@@ -666,7 +666,7 @@ def test_basic_read_reads_the_declared_catalog_full_refresh(tmp_path: Path, sect
     """A declared `configured_catalog_path` picks the streams; `discover` supplies their schemas."""
     catalogs: list[ConfiguredAirbyteCatalog] = []
     suite = _read_suite(tmp_path, "records", [USERS, EVENTS, STATIC], catalogs)
-    catalog_path = _write_declared_catalog(tmp_path, "static", "users", "events")
+    catalog_path = _write_declared_catalog(tmp_path, "static", "users", "static", "events")
 
     suite.test_basic_read(
         _scenario(
@@ -679,7 +679,7 @@ def test_basic_read_reads_the_declared_catalog_full_refresh(tmp_path: Path, sect
     assert _configured(catalogs[-1]) == [
         ("static", SyncMode.full_refresh, None),
         ("users", SyncMode.full_refresh, None),
-    ], "the catalog's streams, in its order, full refresh, minus `empty_streams`"
+    ], "the catalog's streams, once each, in its order, full refresh, minus `empty_streams`"
     assert [s.stream for s in catalogs[-1].streams] == [STATIC, USERS], (
         "each stream keeps the definition `discover` reported, not the catalog's stale one"
     )
