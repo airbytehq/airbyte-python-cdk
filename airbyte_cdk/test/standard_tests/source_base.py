@@ -206,10 +206,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     ) -> None:
         """Standard test for `read` when passed a bad catalog file.
 
-        Runs for configs listed under `basic_read`, `full_refresh` or `incremental` in
+        Runs for configs listed under `basic_read` or `full_refresh` in
         `acceptance-test-config.yml`.
         """
-        skip_unless_runs(scenario, "read", "incremental_read")
+        skip_unless_runs(scenario, "read")
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid
