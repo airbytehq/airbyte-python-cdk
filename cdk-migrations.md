@@ -1,8 +1,68 @@
 # CDK Migration Guide
 
-## Upgrading to the next minor release (unreleased)
+## Upgrading to 7.36.0
 
-The next minor release of the CDK adds checks to the standard tests. Every Python and manifest-only connector that runs the standard tests, for example through `airbyte-cdk connector test` or `airbyte-cdk image test`, picks them up when it moves to this release. There is no change to how connectors run.
+This release of the CDK adds checks to the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) and changes which commands they run for the configs listed in `acceptance-test-config.yml`. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
+
+### Each config runs the command of the section that lists it
+
+Previously only the `spec`, `connection` and `basic_read` sections of `acceptance-test-config.yml` were read, every config listed there ran every test (`check`, `discover` and `read`), and configs listed only under `discovery` or `full_refresh` were never tested. Now every section with a `tests` list contributes its configs, except `incremental`, and each config runs the command the Connector Acceptance Tests (CAT) ran it with:
+
+| Section | What the config must do | Tests |
+|---|---|---|
+| `spec` | Validate against the connector's `connectionSpecification` (the CAT `test_config_match_spec` check). | `test_config_matches_spec`, `test_docker_image_build_and_config_matches_spec` |
+| `connection` | Make `check` report the declared `status` (see below). | `test_check`, `test_docker_image_build_and_check` |
+| `discovery` | Make `discover` succeed and return at least one stream. | `test_discover`, `test_docker_image_build_and_discover` |
+| `basic_read`, `full_refresh` | Make a full-refresh `read` succeed and return records. The read covers the streams of the config's `configured_catalog_path`, or every discovered stream when none is declared, minus `empty_streams`. | `test_basic_read`, `test_fail_read_with_bad_catalog`, `test_docker_image_build_and_read` |
+
+The `incremental` section is still not collected: without input state, an incremental `read` checks the same thing as a full-refresh one, so a config listed only there stays untested. A config listed under several sections runs the union of their commands, and no others: a config listed only under `spec` is no longer run through `check`, and a config listed only under `connection` is no longer read. `ConnectorTestScenario.sections` records where a config is listed and `ConnectorTestScenario.commands` the commands that run for it; a test that does not apply to a config skips with a reason naming its sections. The Docker read test keeps the `--read-scenarios` default (the `config`, `valid_config` and `default` configs), so other configs listed under the read sections are read by `airbyte-cdk connector test` (what the monorepo runs for manifest-only connectors) but not by `airbyte-cdk image test` (what it runs for Python connectors). The Docker read test also no longer fails with an `AttributeError` when the scenario declares `empty_streams`.
+
+A config's `configured_catalog_path` is now honoured, as it was in CAT: the read covers the streams named in that catalog, each with the definition and JSON schema that `discover` reports, with every stream read in full-refresh mode whatever sync mode the catalog declares. Previously the read covered every discovered stream and ignored the catalog. A config read through several sections is read once: it keeps its catalog only when every read entry declares the same one, and otherwise (one entry declares none, or the entries declare different catalogs) every discovered stream is read. A stream named in the catalog that `discover` does not report fails the read test, as it did in CAT. The Docker read test now configures every stream in full-refresh mode too, instead of the first mode the stream supports.
+
+### `check` must report the declared status
+
+Previously only an exception or a non-zero exit failed the `check` tests, so a `check` that reported `status: FAILED` passed. Both test paths now assert the reported `CONNECTION_STATUS` against the `status` declared for the config under `connection`, with the same semantics as CAT:
+
+| `status` in `acceptance-test-config.yml` | What `check` must do |
+|---|---|
+| `succeed` | Report a `CONNECTION_STATUS` message with status `SUCCEEDED`. |
+| `failed` | Report a `CONNECTION_STATUS` message with status `FAILED` (gracefully, without raising). |
+| `exception` | Raise: a `TRACE` error must be emitted and no `SUCCEEDED` status may be reported. A `CONNECTION_STATUS` message is not required. |
+| not declared | Treated as `succeed`, matching the CAT default. |
+
+The `succeed` default applies to every command a config runs, not only `check`: for a config without a `status`, `discover` and `read` errors, and a `read` without records, now fail the test (previously they were tolerated unless `status: succeed` was declared explicitly).
+
+Migration steps:
+
+- A config listed under `spec` must validate against the connector's spec: remove the keys the spec no longer declares, or declare them in the spec.
+- A config listed under `connection` without a `status` must now pass `check`. If the config is meant to fail `check`, declare `status: failed`; if its secret has expired, refresh it; if it is no longer used, remove it.
+- A `check` that raises (uncaught exception, non-zero exit) now fails the test for every config that is not declared `status: failed` or `status: exception`, on the in-process path as well as the Docker path.
+- A `status: failed` config whose `check` raises instead of reporting `FAILED` must either be fixed to report its failure gracefully, or be declared as `status: exception` if raising is the intended behaviour.
+- A `status: exception` config whose `check` reports a `CONNECTION_STATUS` without raising must be declared as `status: failed` (or `succeed`).
+- A config listed under `discovery`, `basic_read` or `full_refresh` must make that command succeed: `discover` must return streams, and a full-refresh `read` must return records. List the streams that legitimately return nothing, or that the config's credentials cannot read, under `empty_streams` (with a `bypass_reason`); move a config whose read is expected to fail out of the read sections, as the read tests carry no failure expectation.
+- A config's `configured_catalog_path` now decides which streams are read. Remove the streams that the connector no longer discovers from the catalog. To read every discovered stream instead, drop `configured_catalog_path` from the config's read entries; to skip a stream, list it under `empty_streams`.
+- Configs listed only under `discovery` or `full_refresh` were never tested before, so expect new failures from expired secrets and stale configs there. Remove the configs that are no longer needed.
+- Python code that inspects `ExpectedOutcome` directly: `ExpectedOutcome.from_status_str("exception")` now returns the new member `EXPECT_UNCAUGHT_ERROR` instead of `EXPECT_EXCEPTION`. `expect_exception()` still returns `True` for both members; use `expect_uncaught_error()` to distinguish them.
+
+Rationale: A `check` that fails is reported as `status: FAILED` in a `CONNECTION_STATUS` message with exit code 0, so an exit-code or exception check cannot detect it. The Standard Tests replaced CAT as the only `check` coverage for most connectors, and without asserting the reported status a connector whose credentials expired, or whose custom components are rejected by the CDK baked into the base image, kept passing. The sections of `acceptance-test-config.yml` name the CAT test each config was written for; running every command for every config would add syncs nobody asked for, running `check` alone would test the wrong thing for most of them, and running nothing left expired secrets and stale configs undetected. Running each config with its own command, with the `succeed` default CAT applied, restores the CAT guarantees in both paths.
+
+### Every stream returns records that match its schema (`basic_read`)
+
+This release also adds record assertions to the in-process `read` Standard Test (`SourceTestSuiteBase.test_basic_read`, run by `airbyte-cdk connector test`). Previously the test only failed when the whole read returned no records, so one stream with records passed the test for every stream. For every config listed under `basic_read` in `acceptance-test-config.yml`, it now restores two checks of the Connector Acceptance Tests (CAT) basic read test, unless the config's `status` is `failed` or `exception`. A config read only because it is listed under `full_refresh` keeps the old "some records" check, as CAT's full refresh test did not run these checks and the config has no `basic_read` entry to declare the exceptions below.
+
+- **Every stream returns records.** Every stream the read covers (the streams of the config's `configured_catalog_path`, or every discovered stream when it declares none) that is not declared in the config's `empty_streams` must return at least one record.
+- **Records match their schema.** Every record is validated against its stream's JSON schema with the validator CAT used: Draft 7, integers must be integers (`1.0` and `true` are not), `date-time` values must look like a date and a time and parse as a datetime (a space separator and a missing offset are accepted), other `format`s use the `jsonschema` defaults, and extra columns are allowed. A record that shares no field with a schema that declares `properties` also fails.
+
+The failure message names each stream, the number of failing records, and for each distinct schema error the record number, the path of the offending value inside the record, the failing schema keyword and the schema rule (for example ``record #3 at `$.items[0].price`: expected type 'number', got string``). Record values are never printed, for any kind of schema error: the message names the value's JSON type, and for an `anyOf`/`oneOf` the closest option's failure. A stream schema that cannot be applied (an unknown `type`, an unresolvable `$ref`, an invalid `pattern`) fails the check for that stream with the schema problem.
+
+Only the test harness changes, but the connector test suites of connectors whose test accounts have empty streams that are not declared, or whose records do not match their declared schemas, start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the new assertions up with this release, without a per-connector CDK bump.
+
+Migration steps:
+
+- A stream with no records for a `basic_read` config: add data to the test account, or list the stream under `empty_streams` for that config, with a `bypass_reason`. Declared empty streams are not read.
+- A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry. As in CAT, this is rejected for a connector at `test_strictness_level: high`, which has to fix the schema (or lower its strictness level).
+
+Rationale: The Standard Tests replaced CAT as the only `read` coverage for most connectors, and CAT's per-stream and schema checks were not carried over. A stream that silently stopped returning records, or a schema that drifted from the API, kept passing as long as some other stream returned a record.
 
 ### New mandatory checks in `test_discover`
 

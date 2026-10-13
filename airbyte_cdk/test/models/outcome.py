@@ -15,11 +15,23 @@ from enum import Enum, auto
 class ExpectedOutcome(Enum):
     """Enum to represent the expected outcome of a test scenario.
 
-    Class supports comparisons to a boolean or None.
+    The members mirror the `status` values of `acceptance-test-config.yml`:
+
+    - `EXPECT_SUCCESS` (`status: succeed`): the connector must report success. For `check`,
+      this means a `CONNECTION_STATUS` message with status `SUCCEEDED`.
+    - `EXPECT_EXCEPTION` (`status: failed`): the connector must report a graceful failure. For
+      `check`, this means a `CONNECTION_STATUS` message with status `FAILED`.
+    - `EXPECT_UNCAUGHT_ERROR` (`status: exception`): the connector must raise (a `TRACE` error
+      is emitted) instead of reporting a `CONNECTION_STATUS` message.
+    - `ALLOW_ANY` (no `status` declared): the CAT default of `succeed` applies to every command
+      the scenario runs (`ConnectorTestScenario.with_default_success`). As an outcome it is the
+      internal "no expectation yet" state of intermediate steps, such as the `discover` step of
+      a read test, which accept any outcome.
     """
 
     EXPECT_EXCEPTION = auto()
     EXPECT_SUCCESS = auto()
+    EXPECT_UNCAUGHT_ERROR = auto()
     ALLOW_ANY = auto()
 
     @classmethod
@@ -32,7 +44,7 @@ class ExpectedOutcome(Enum):
             return {
                 "succeed": ExpectedOutcome.EXPECT_SUCCESS,
                 "failed": ExpectedOutcome.EXPECT_EXCEPTION,
-                "exception": ExpectedOutcome.EXPECT_EXCEPTION,  # same as 'failed'
+                "exception": ExpectedOutcome.EXPECT_UNCAUGHT_ERROR,
             }[status]
         except KeyError as ex:
             raise ValueError(
@@ -53,8 +65,20 @@ class ExpectedOutcome(Enum):
         )
 
     def expect_exception(self) -> bool:
-        """Return whether the expectation is that an exception should be raised."""
-        return self == ExpectedOutcome.EXPECT_EXCEPTION
+        """Return whether the expectation is that the connector run should not succeed.
+
+        This is true for both `status: failed` (a graceful, reported failure) and
+        `status: exception` (an uncaught error). Use `expect_uncaught_error()` to distinguish
+        the two.
+        """
+        return self in (
+            ExpectedOutcome.EXPECT_EXCEPTION,
+            ExpectedOutcome.EXPECT_UNCAUGHT_ERROR,
+        )
+
+    def expect_uncaught_error(self) -> bool:
+        """Return whether the expectation is that the connector raises (`status: exception`)."""
+        return self == ExpectedOutcome.EXPECT_UNCAUGHT_ERROR
 
     def expect_success(self) -> bool:
         """Return whether the expectation is that the test should succeed without exceptions."""
