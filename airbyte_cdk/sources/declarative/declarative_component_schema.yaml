@@ -2778,6 +2778,27 @@ definitions:
         description: Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).
         type: boolean
         default: false
+      connect_timeout_in_seconds:
+        title: Connect Timeout (seconds)
+        description: Maximum time to establish the connection (TCP + TLS handshake). When unset, no connect timeout is applied.
+        type: number
+        exclusiveMinimum: 0
+        examples:
+          - 30
+      read_timeout_in_seconds:
+        title: Read Timeout (seconds)
+        description: The maximum time to wait for the server to send any data (the first byte of the response, or the next chunk while the body is read). It is NOT a limit on the total request duration. When unset, no read timeout is applied. Only set it when every endpoint served by this requester responds well within the value; synchronous report or export endpoints can stay silent for minutes. Each timed-out attempt counts against the error handler's retry window (600 s for manifest connectors), so a value near 300 allows only a few retries.
+        type: number
+        exclusiveMinimum: 0
+        examples:
+          - 300
+      use_tcp_keepalive:
+        title: Use TCP Keepalive
+        description: Enables TCP keepalive (60 s idle, 10 s probe interval, 6 probes) on this requester's connections, so dead or NAT-dropped connections are detected and fail instead of hanging forever. Does not fail slow but alive servers; use read_timeout_in_seconds to bound those.
+        type: boolean
+        default: false
+        examples:
+          - true
       $parameters:
         type: object
         additionalProperties: true

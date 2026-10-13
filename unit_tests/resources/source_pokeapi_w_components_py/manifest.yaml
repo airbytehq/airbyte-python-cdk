@@ -976,5 +976,11 @@ schemas:
   pokemon:
     type: object
     $schema: http://json-schema.org/draft-07/schema#
-    properties: {}
+    properties:
+      id:
+        type: integer
+      name:
+        type:
+          - "null"
+          - string
     additionalProperties: true
