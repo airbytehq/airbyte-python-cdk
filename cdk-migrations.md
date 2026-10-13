@@ -1,5 +1,36 @@
 # CDK Migration Guide
 
+## Upgrading to the next minor release (unreleased)
+
+The next minor release of the CDK adds catalog checks to the `test_discover` standard test (`SourceTestSuiteBase.test_discover`). Every source connector that runs the standard tests, for example through `airbyte-cdk connector test`, picks them up when it moves to this release. There is no change to how connectors run.
+
+### New mandatory checks in `test_discover`
+
+`discover` must emit exactly one `CATALOG` message, and the catalog must pass these checks, or the test fails:
+
+- The catalog contains at least one stream.
+- No two streams share the same namespace and name.
+- Every stream declares at least one supported sync mode.
+- Stream schemas contain no unresolved `$ref`.
+- Stream schemas do not use the `allOf` or `not` keywords.
+- No stream schema sets `additionalProperties` to `false`.
+
+The test reports every problem it finds in one run, grouped by check.
+
+These checks are reported as a `DiscoveredCatalogWarning` and do not fail the test yet; a later release will enforce them:
+
+- Stream schemas are valid JSON Schema, for the draft they declare in `$schema` (Draft 7 if none).
+- The default cursor field exists in the stream schema.
+- Every primary key field exists in the stream schema.
+- No primary key field is typed as an object or an array.
+- Stream schemas stay within the Airbyte type system (top-level object, known `airbyte_type` values on compatible types, temporal formats on strings).
+
+To make the warnings fail the test now, run `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning`, or pass `-W error::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning` to `pytest`.
+
+Migration steps: fix the stream schema, primary key or cursor field that the failure or warning names.
+
+Rationale: these checks restore the `TestDiscovery` assertions of the retired Connector Acceptance Tests, so that catalog problems are caught in the connector's own tests instead of in a destination or in a customer's sync.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.
