@@ -21,6 +21,7 @@ from airbyte_cdk.models import (
     AirbyteCatalog,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
+    ConnectorSpecification,
     DestinationSyncMode,
     Status,
     SyncMode,
@@ -28,6 +29,11 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
+from airbyte_cdk.test.standard_tests._spec_lint import (
+    assert_no_secrets_in_output,
+    assert_spec_is_valid,
+    get_single_spec,
+)
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -74,6 +80,46 @@ def _assert_check_outcome(
         assert connection_statuses[-1].status == Status.SUCCEEDED, (
             f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
         )
+
+
+_docker_spec_cache: dict[str, ConnectorSpecification | Exception] = {}
+"""The spec, or the error from running `spec`, of each connector image in this test session."""
+
+
+def _run_docker_spec(connector_image: str, *, connector_name: str) -> ConnectorSpecification:
+    """Run `spec` in the connector image and return the single spec it emits.
+
+    The outcome is cached per image for the test session, so the spec test and every check
+    scenario share one `docker run`. A failure is cached too and raised again, so an image
+    whose `spec` fails is not run again for each scenario. The image under a tag does not
+    change within a session.
+    """
+    outcome = _docker_spec_cache.get(connector_image)
+    if outcome is None:
+        try:
+            spec_result = run_docker_airbyte_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    connector_image,
+                    "spec",
+                ],
+                raise_if_errors=True,
+            )
+            outcome = get_single_spec(spec_result, connector_name=connector_name)
+        except Exception as error:  # `get_single_spec` raises `AssertionError`.
+            outcome = error
+        _docker_spec_cache[connector_image] = outcome
+    if isinstance(outcome, Exception):
+        raise outcome
+    return outcome
+
+
+_SPEC_FAILED_SKIP_REASON = (
+    "`spec` failed, so the secret leak check cannot tell which config values are secret, and "
+    "the check outcome is not asserted without it. The spec tests report the `spec` failure."
+)
 
 
 class DockerConnectorTestSuite:
@@ -227,7 +273,12 @@ class DockerConnectorTestSuite:
         connector_image_override: str | None,
         connector_base_image_override: str | None,
     ) -> None:
-        """Run `docker_image` acceptance tests."""
+        """Run `spec` in the connector image and lint the spec it emits.
+
+        The image must emit exactly one SPEC message. `airbyte-cdk image test` builds the
+        image with `no_verify=True`, which skips the build-time spec check, so this test is
+        what catches an image that emits no spec on that path.
+        """
         connector_root = self.get_connector_root_dir().absolute()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
 
@@ -243,16 +294,8 @@ class DockerConnectorTestSuite:
                 base_image_override=connector_base_image_override,
             )
 
-        _ = run_docker_airbyte_command(
-            [
-                "docker",
-                "run",
-                "--rm",
-                connector_image,
-                "spec",
-            ],
-            raise_if_errors=True,
-        )
+        spec = _run_docker_spec(connector_image, connector_name=connector_root.name)
+        assert_spec_is_valid(spec, connector_name=connector_root.name)
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -305,10 +348,27 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                # For expected-failure scenarios, a non-zero exit or trace error is an
-                # acceptable way for `check` to fail; don't raise before we assert on it.
-                raise_if_errors=not scenario.expected_outcome.expect_exception(),
+                raise_if_errors=False,
             )
+
+        # The leak check runs first, whatever the outcome: the assertions below print the raw
+        # CONNECTION_STATUS and error messages, which are the likeliest to carry a secret.
+        connector_name = connector_root.absolute().name
+        try:
+            spec = _run_docker_spec(connector_image, connector_name=connector_name)
+        except Exception:
+            pytest.skip(_SPEC_FAILED_SKIP_REASON)
+        assert_no_secrets_in_output(
+            check_result,
+            spec=spec,
+            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
+            verb="check",
+            connector_name=connector_name,
+        )
+        # For expected-failure scenarios, a non-zero exit or trace error is an acceptable way
+        # for `check` to fail, so only the other scenarios raise on errors.
+        if not scenario.expected_outcome.expect_exception():
+            check_result.raise_if_errors()
 
         # This makes the image test exercise the connector's actual `check` outcome inside the
         # container, in both directions (e.g. it fails if bundled custom components are rejected
@@ -317,7 +377,7 @@ class DockerConnectorTestSuite:
         _assert_check_outcome(
             check_result=check_result,
             expected_outcome=scenario.expected_outcome,
-            connector_name=connector_root.absolute().name,
+            connector_name=connector_name,
         )
 
     @pytest.mark.skipif(
