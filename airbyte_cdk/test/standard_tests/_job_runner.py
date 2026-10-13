@@ -41,8 +41,14 @@ def run_test_job(
     connector_root: Path,
     test_scenario: ConnectorTestScenario | None = None,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
+    inspect_output: Callable[[entrypoint_wrapper.EntrypointOutput], None] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
-    """Run a test scenario from provided CLI args and return the result."""
+    """Run a test scenario from provided CLI args and return the result.
+
+    `inspect_output`, if given, is called with the output before any assertion on it, so it
+    runs whatever the outcome. The secret leak check uses it, since the assertions below
+    print raw messages.
+    """
     # Use default (empty) scenario if not provided:
     test_scenario = test_scenario or ConnectorTestScenario()
 
@@ -104,6 +110,9 @@ def run_test_job(
         args=args,
         expected_outcome=test_scenario.expected_outcome,
     )
+    if inspect_output:
+        inspect_output(result)
+
     if result.errors and test_scenario.expected_outcome.expect_success():
         raise result.as_exception()
 

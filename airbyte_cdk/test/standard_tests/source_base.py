@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 """Base class for source test suites."""
 
+import warnings
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
@@ -18,7 +19,13 @@ from airbyte_cdk.models import (
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
+from airbyte_cdk.test.standard_tests._catalog_checks import (
+    DiscoveredCatalogWarning,
+    find_catalog_problems,
+    format_catalog_problems,
+)
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
+from airbyte_cdk.test.standard_tests._spec_lint import assert_spec_is_valid, get_single_spec
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
@@ -49,6 +56,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="check"
+            ),
         )
         num_status_messages = len(result.connection_status_messages)
         assert num_status_messages == 1, (
@@ -60,7 +70,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         self,
         scenario: ConnectorTestScenario,
     ) -> None:
-        """Standard test for `discover`."""
+        """Standard test for `discover`.
+
+        Assert that the connector emits exactly one catalog and that the catalog passes the
+        checks in `CATALOG_CHECKS`. Problems found by checks that are not enforced yet are
+        reported as a `DiscoveredCatalogWarning` instead of failing the test.
+        """
         if scenario.expected_outcome.expect_exception():
             # If the scenario expects an exception, we can't ensure it specifically would fail
             # in discover, because some discover implementations do not need to make a connection.
@@ -68,11 +83,35 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             pytest.skip("Skipping discover test for scenario that expects an exception.")
             return
 
-        run_test_job(
+        result = run_test_job(
             self.create_connector(scenario),
             "discover",
             connector_root=self.get_connector_root_dir(),
             test_scenario=scenario,
+        )
+        if result.errors and not scenario.expected_outcome.expect_success():
+            # The scenario allows `discover` to fail, so there is no catalog to check.
+            return
+
+        catalog_messages = result.get_message_by_types([Type.CATALOG])
+        assert len(catalog_messages) == 1, (
+            f"Expected exactly one CATALOG message. Got {len(catalog_messages)}."
+        )
+        catalog = catalog_messages[0].catalog
+        assert catalog is not None, "The CATALOG message does not contain a catalog."
+
+        problems = find_catalog_problems(catalog)
+        advisory = {check: found for check, found in problems.items() if not check.enforced}
+        if advisory:
+            warnings.warn(
+                "The discovered catalog has problems that will fail this test in a future "
+                f"CDK release:\n{format_catalog_problems(advisory)}",
+                category=DiscoveredCatalogWarning,
+                stacklevel=1,
+            )
+        enforced = {check: found for check, found in problems.items() if check.enforced}
+        assert not enforced, (
+            f"The discovered catalog has problems:\n{format_catalog_problems(enforced)}"
         )
 
     def test_spec(self) -> None:
@@ -82,7 +121,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         does not require any inputs.
 
         We assume `spec` should always succeed and it should always generate
-        a valid `SPEC` message.
+        a single valid `SPEC` message, which must pass the credential-free spec lint.
 
         Note: the parsing of messages by type also implicitly validates that
         the generated `SPEC` message is valid JSON.
@@ -95,10 +134,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         )
         # If an error occurs, it will be raised above.
 
-        assert len(result.spec_messages) == 1, (
-            f"Expected exactly 1 spec message but got {len(result.spec_messages)}. "
-            f"Errors: {result.errors!s}"
-        )
+        spec = get_single_spec(result, connector_name=self.connector_name)
+        assert_spec_is_valid(spec, connector_name=self.connector_name)
 
     def test_basic_read(
         self,

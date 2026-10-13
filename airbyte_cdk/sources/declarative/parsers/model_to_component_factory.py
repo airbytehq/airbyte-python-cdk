@@ -2803,6 +2803,9 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             message_repository=self._message_repository,
             use_cache=should_use_cache,
+            connect_timeout_in_seconds=model.connect_timeout_in_seconds,
+            read_timeout_in_seconds=model.read_timeout_in_seconds,
+            use_tcp_keepalive=model.use_tcp_keepalive or False,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
         )
