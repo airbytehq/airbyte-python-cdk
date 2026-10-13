@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from boltons.typeutils import classproperty
 
 from airbyte_cdk.test import entrypoint_wrapper
@@ -16,7 +17,12 @@ from airbyte_cdk.test.models import (
 )
 from airbyte_cdk.test.standard_tests._assertions import assert_config_matches_spec
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
+from airbyte_cdk.test.standard_tests._spec_lint import (
+    assert_no_secrets_in_output,
+    get_single_spec,
+)
 from airbyte_cdk.test.standard_tests.docker_base import (
+    _SPEC_FAILED_SKIP_REASON,
     DockerConnectorTestSuite,
     skip_unless_runs,
 )
@@ -104,6 +110,40 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "override `cls.create_connector()` to define a custom initialization process."
         )
 
+    def _assert_no_secrets_in_output(
+        self,
+        scenario: ConnectorTestScenario,
+        output: entrypoint_wrapper.EntrypointOutput,
+        *,
+        verb: str,
+    ) -> None:
+        """Assert that no `airbyte_secret` value from the scenario's config is in `output`.
+
+        Pass this to `run_test_job` as `inspect_output`, so it runs before the job's own
+        assertions print raw messages. It runs `spec` in-process once per call, to learn which
+        config paths are secret. If `spec` fails, the test is skipped: the spec tests report
+        that failure, and the outcome assertions must not print raw messages unchecked.
+        """
+        try:
+            spec_result = run_test_job(
+                self.create_connector(scenario),
+                "spec",
+                connector_root=self.get_connector_root_dir(),
+            )
+            spec = get_single_spec(spec_result, connector_name=self.connector_name)
+        except Exception:
+            pytest.skip(_SPEC_FAILED_SKIP_REASON)
+        assert_no_secrets_in_output(
+            output,
+            spec=spec,
+            config=scenario.get_config_dict(
+                connector_root=self.get_connector_root_dir(),
+                empty_if_missing=True,
+            ),
+            verb=verb,
+            connector_name=self.connector_name,
+        )
+
     # Test Definitions
 
     def test_check(
@@ -122,6 +162,9 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="check"
+            ),
         )
         if scenario.expected_outcome.expect_uncaught_error():
             # An uncaught error is the expected outcome; no CONNECTION_STATUS is required.

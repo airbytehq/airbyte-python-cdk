@@ -618,7 +618,7 @@ def test_discover_fails_on_errors_without_a_declared_status(tmp_path: Path) -> N
 
 def test_discover_fails_on_an_empty_catalog(tmp_path: Path) -> None:
     suite = _read_suite(tmp_path, "records", [])
-    with pytest.raises(ValueError, match="Discovered catalog for connector 'source-test' is empty"):
+    with pytest.raises(AssertionError, match="The catalog does not contain any streams"):
         suite.test_discover(_scenario("discovery"))
 
 

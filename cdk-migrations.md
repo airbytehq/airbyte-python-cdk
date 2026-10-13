@@ -2,7 +2,7 @@
 
 ## Upgrading to 7.36.0
 
-This release of the CDK changes which commands the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) run for the configs listed in `acceptance-test-config.yml`, and what they assert about the outcome of `check`. The release is a minor one, since only the test harness changes, but the connector test suites of connectors whose configs do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
+This release of the CDK adds checks to the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) and changes which commands they run for the configs listed in `acceptance-test-config.yml`. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
 
 ### Each config runs the command of the section that lists it
 
@@ -63,6 +63,73 @@ Migration steps:
 - A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry. As in CAT, this is rejected for a connector at `test_strictness_level: high`, which has to fix the schema (or lower its strictness level).
 
 Rationale: The Standard Tests replaced CAT as the only `read` coverage for most connectors, and CAT's per-stream and schema checks were not carried over. A stream that silently stopped returning records, or a schema that drifted from the API, kept passing as long as some other stream returned a record.
+
+### New mandatory checks in `test_discover`
+
+`discover` must emit exactly one `CATALOG` message, and the catalog must pass these checks, or the test fails:
+
+- The catalog contains at least one stream.
+- No two streams share the same namespace and name.
+- Every stream declares at least one supported sync mode.
+- Stream schemas contain no unresolved `$ref`.
+- Stream schemas do not use the `allOf` or `not` keywords.
+- No stream schema sets `additionalProperties` to `false`.
+
+The test reports every problem it finds in one run, grouped by check.
+
+These checks are reported as a `DiscoveredCatalogWarning` and do not fail the test yet; a later release will enforce them:
+
+- Stream schemas are valid JSON Schema, for the draft they declare in `$schema` (Draft 7 if none).
+- The default cursor field exists in the stream schema.
+- Every primary key field exists in the stream schema.
+- No primary key field is typed as an object or an array.
+- Stream schemas stay within the Airbyte type system (top-level object, known `airbyte_type` values on compatible types, temporal formats on strings).
+
+To make the warnings fail the test now, run `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning`, or pass `-W error::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning` to `pytest`.
+
+Migration steps: fix the stream schema, primary key or cursor field that the failure or warning names.
+
+Rationale: these checks restore the `TestDiscovery` assertions of the retired Connector Acceptance Tests, so that catalog problems are caught in the connector's own tests instead of in a destination or in a customer's sync.
+
+### `airbyte_secret` marking in the spec tests
+
+`SourceTestSuiteBase.test_spec` and `test_docker_image_build_and_spec` now require exactly one `SPEC` message and lint its `connectionSpecification`. The test fails when:
+
+- a property whose name denotes a credential (such as `api_key`, `client_secret`, `password` or `*_token`) can hold a string or number but is not marked `airbyte_secret: true`;
+- a property is marked `airbyte_secret: true` but its type (boolean, object, array, or a `const`) cannot hold a secret;
+- `airbyte_secret` is not a boolean, such as the string `"true"`;
+- `airbyte_secret: true` sits under `anyOf` or `allOf`, or under a combinator at the top level of the spec, where the CDK's secret filter does not look.
+
+Migration steps: mark the property `airbyte_secret: true`, or move the flag to the property that declares the `anyOf`. If a flagged property holds no secret, set `airbyte_secret: false` on it explicitly; the lint accepts that as a reviewed decision.
+
+### Secret leak check in the `check` tests
+
+`test_check` and `test_docker_image_build_and_check` now fail when an `airbyte_secret` value from the scenario's config, of at least 8 characters and containing a digit, appears in the connector's output: any non-`CONTROL` message, and stderr on the Docker path. The failure names the config path of each leaked secret and where it was found, never the secret itself.
+
+Migration steps: stop printing the value; a `CONNECTION_STATUS` message that the connector builds itself is the usual cause. A leak in a `CONNECTION_STATUS` labeled as built by the CDK's config validation comes from an older CDK in the connector image, which did not mask secrets there; upgrade `airbyte-cdk`.
+
+Rationale: these checks restore the `test_secret_is_properly_marked` assertion of the retired Connector Acceptance Tests, and add the leak check that `test_secret_never_in_the_output` never implemented.
+
+### New mandatory test: `test_docker_image_spec_backward_compatibility`
+
+`DockerConnectorTestSuite.test_docker_image_spec_backward_compatibility` fails when the connector's spec rejects configs that the published version accepted. It replaces the spec half of the `test_backward_compatibility` test of the retired Connector Acceptance Tests (CAT).
+
+The test downloads the `latest` spec of each registry the connector is published to (OSS and Cloud) from `connectors.airbyte.com`, runs `spec` in the image with that registry's deployment mode, and compares the two. Removed properties, newly required properties, added or tightened constraints, narrowed types or enums, removed destination sync modes, moved OAuth output paths, unmarked secrets and `oneOf` branches that overlap existing configs are breaking. Annotations, defaults, relaxed constraints, new optional properties and newly secret fields are compatible.
+
+The test is skipped, rather than failing, when:
+
+- the connector has no published version, or its `dockerImageTag` is older than the published one;
+- the registry cannot be reached after retries. The skip reason and a warning say that the spec was not compared.
+
+The compatible changes, and any waived breaking ones, are reported as a warning in the test run's warnings summary.
+
+Migration steps: when the test fails, do one of the following.
+
+- Make the change backward compatible, for example by keeping the old field or value, or by making a new field optional.
+- Release the change as a breaking change: bump the major version, declare it under `releases.breakingChanges` in `metadata.yaml`, and write a migration guide. The test is waived for every version after the published one, up to the declared one, so a patch on top of a major that is still rolling out is waived too.
+- If a config migration rewrites existing configs into the new shape, or a finding is a false positive, add `backward_compatibility_tests_config: {disable_for_version: "<published version>"}` to an entry of the `spec` section of `acceptance-test-config.yml`. This is the key CAT honored, in the current (`spec.tests`) and the legacy list layout. The waiver applies only while the published version equals the given one, so it expires with the next release. A connector without `acceptance-test-config.yml`, such as one rebuilt on a new base image without a version bump, can add a file that holds only this entry.
+
+Rationale: the platform validates saved configs against the new spec when a version rolls out, so a spec change that rejects them breaks existing connections at upgrade time. CAT caught this before merge; the Standard Tests did not.
 
 ## Upgrading to 7.0.0
 

@@ -21,6 +21,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
+from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
@@ -125,6 +126,9 @@ class Destination(Connector, ABC):
             yield AirbyteMessage(type=Type.SPEC, spec=spec)
             return
         config = self.read_config(config_path=parsed_args.config)
+        # Register the config's secrets with the log filter before anything can print them,
+        # as the source entrypoint does. A config validation error quotes config values.
+        update_secrets(get_secrets(spec.connectionSpecification, config))
         if self.check_config_against_spec or cmd == "check":
             try:
                 check_config_against_spec_or_exit(config, spec)
