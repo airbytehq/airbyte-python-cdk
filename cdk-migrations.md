@@ -1,6 +1,6 @@
 # CDK Migration Guide
 
-## Upgrading to the next minor release (unreleased)
+## Upgrading to 7.36.0
 
 This release of the CDK changes which commands the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) run for the configs listed in `acceptance-test-config.yml`, and what they assert about the outcome of `check`. The release is a minor one, since only the test harness changes, but the connector test suites of connectors whose configs do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
 
