@@ -18,6 +18,7 @@ from requests import Response
 from requests.exceptions import RequestException
 
 from airbyte_cdk.models import FailureType, OrchestratorType, Type
+from airbyte_cdk.sources.streams.http.exceptions import DefaultBackoffException
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     BasicHttpAuthenticator,
     MultipleTokenAuthenticator,
@@ -1158,6 +1159,100 @@ class TestOauth2Authenticator:
             "Re-authenticate this source's credentials in its connection settings."
         )
         assert "the grant was revoked" in exc_info.value.internal_message
+
+
+class TestRefreshAccessTokenRetryExhaustion:
+    """Token refresh endpoints that keep returning 429/5xx past the backoff
+    window must surface a `transient_error` AirbyteTracedException.
+
+    Not in the freezegun-frozen test classes above: `mock_sleep` advances the
+    backoff clock by ticking a frozen datetime, and a class-level freezer
+    shadows that tick so the 300s window would never elapse.
+    """
+
+    @pytest.mark.usefixtures("mock_sleep")
+    @pytest.mark.parametrize(
+        "error_code, expected_message",
+        [
+            (
+                503,
+                "OAuth token refresh failed because the provider's token endpoint was temporarily unavailable (HTTP 503).",
+            ),
+            (
+                500,
+                "OAuth token refresh failed because the provider's token endpoint was temporarily unavailable (HTTP 500).",
+            ),
+            (
+                429,
+                "OAuth token refresh failed because the provider's token endpoint rate limited the request (HTTP 429).",
+            ),
+        ],
+    )
+    def test_refresh_access_token_retries_exhausted_raises_transient_error(
+        self, error_code, expected_message, requests_mock
+    ):
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=error_code,
+            text="<!DOCTYPE html><html>Server Unavailable</html>",
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        exc = exc_info.value
+        assert exc.failure_type == FailureType.transient_error
+        assert exc.message == expected_message
+        assert "DefaultBackoffException" not in exc.message
+        assert "https://" not in exc.message
+        assert "DOCTYPE" not in exc.message
+        assert f"HTTP {error_code}" in exc.internal_message
+        assert "DOCTYPE" in exc.internal_message
+        assert isinstance(exc.__cause__, DefaultBackoffException)
+        assert requests_mock.call_count > 1
+
+    @pytest.mark.usefixtures("mock_sleep")
+    def test_single_use_refresh_token_retries_exhausted_raises_transient_error(self, requests_mock):
+        connector_config = {
+            "credentials": {
+                "access_token": "my_access_token",
+                "refresh_token": "my_refresh_token",
+                "client_id": "my_client_id",
+                "client_secret": "my_client_secret",
+                "token_expiry_date": "2022-12-31T00:00:00+00:00",
+            }
+        }
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+        )
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            status_code=503,
+            text="<!DOCTYPE html><html>Server Unavailable</html>",
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            authenticator.refresh_access_token()
+
+        exc = exc_info.value
+        assert exc.failure_type == FailureType.transient_error
+        assert (
+            exc.message
+            == "OAuth token refresh failed because the provider's token endpoint was temporarily unavailable (HTTP 503)."
+        )
+        assert "DefaultBackoffException" not in exc.message
+        assert "https://" not in exc.message
+        assert isinstance(exc.__cause__, DefaultBackoffException)
+        assert requests_mock.call_count > 1
 
 
 @freezegun.freeze_time("2022-12-31")

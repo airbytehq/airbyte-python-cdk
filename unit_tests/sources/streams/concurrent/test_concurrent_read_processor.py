@@ -7,6 +7,7 @@ from unittest.mock import Mock, call
 
 import freezegun
 import pytest
+import requests
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -48,6 +49,7 @@ from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionE
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
+from airbyte_cdk.sources.streams.http.exceptions import DefaultBackoffException
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -824,6 +826,45 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         assert "StreamThreadException" not in trace_error.stack_trace
         # failure_type defaults to system_error for unhandled exceptions
         assert trace_error.failure_type == FailureType.system_error
+
+    def test_on_exception_non_ate_backoff_exception_preserves_failure_type(self):
+        """Backoff exceptions keep their failure_type when wrapped in on_exception's non-ATE branch."""
+        handler = ConcurrentReadProcessor(
+            [self._stream],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        for backoff_failure_type, expected_failure_type in [
+            (FailureType.transient_error, FailureType.transient_error),
+            (FailureType.config_error, FailureType.config_error),
+            (None, FailureType.system_error),
+        ]:
+            with self.subTest(backoff_failure_type=backoff_failure_type):
+                prepared_request = requests.Request("POST", "https://token.example.com").prepare()
+                response = requests.Response()
+                response.status_code = 503
+                response.request = prepared_request
+                inner_exception = DefaultBackoffException(
+                    request=prepared_request,
+                    response=response,
+                    failure_type=backoff_failure_type,
+                )
+                exception = StreamThreadException(inner_exception, _STREAM_NAME)
+
+                exception_messages = list(handler.on_exception(exception))
+                assert len(exception_messages) == 1
+
+                trace_error = exception_messages[0].trace.error
+                assert (
+                    trace_error.message
+                    == f"An unexpected error occurred in stream {_STREAM_NAME}: DefaultBackoffException"
+                )
+                assert trace_error.failure_type == expected_failure_type
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_start_next_partition_generator(self):

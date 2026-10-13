@@ -409,24 +409,8 @@ class AbstractOauth2Authenticator(AuthBase):
         ),
         max_time=300,
     )
-    def _make_handled_request(self) -> Any:
-        """
-        Makes a handled HTTP request to refresh an OAuth token.
-
-        This method sends a POST request to the token refresh endpoint with the necessary
-        headers and body to obtain a new access token. It handles various exceptions that
-        may occur during the request and logs the response for troubleshooting purposes.
-
-        Returns:
-            Mapping[str, Any]: The JSON response from the token refresh endpoint.
-
-        Raises:
-            DefaultBackoffException: If the response status code is 429 (Too Many Requests)
-                                     or any 5xx server error.
-            AirbyteTracedException: If the refresh token is invalid or expired, prompting
-                                    re-authentication.
-            Exception: For any other exceptions that occur during the request.
-        """
+    def _make_handled_request_with_backoff(self) -> Any:
+        """Sends the token refresh request, retrying 429/5xx and network errors with backoff."""
         try:
             response = requests.request(
                 method="POST",
@@ -490,6 +474,40 @@ class AbstractOauth2Authenticator(AuthBase):
                 message="OAuth access token refresh request failed.",
                 internal_message=f"Unexpected error during OAuth token refresh: {e}",
                 failure_type=FailureType.system_error,
+            ) from e
+
+    def _make_handled_request(self) -> Any:
+        """
+        Makes a handled HTTP request to refresh an OAuth token.
+
+        This method sends a POST request to the token refresh endpoint with the necessary
+        headers and body to obtain a new access token. It handles various exceptions that
+        may occur during the request and logs the response for troubleshooting purposes.
+
+        Returns:
+            Mapping[str, Any]: The JSON response from the token refresh endpoint.
+
+        Raises:
+            AirbyteTracedException: With `transient_error` when 429/5xx retries are
+                                    exhausted, or with `config_error` if the refresh
+                                    token is invalid or expired, prompting
+                                    re-authentication.
+            Exception: For any other exceptions that occur during the request.
+        """
+        try:
+            return self._make_handled_request_with_backoff()
+        except DefaultBackoffException as e:
+            status_code = e.response.status_code if e.response is not None else None
+            if status_code == 429:
+                message = "OAuth token refresh failed because the provider's token endpoint rate limited the request (HTTP 429)."
+            elif status_code is not None:
+                message = f"OAuth token refresh failed because the provider's token endpoint was temporarily unavailable (HTTP {status_code})."
+            else:
+                message = "OAuth token refresh failed because the provider's token endpoint was temporarily unavailable."
+            raise AirbyteTracedException(
+                message=message,
+                internal_message=f"OAuth token refresh retries were exhausted. {self._build_provider_response_info(e)}",
+                failure_type=e.failure_type or FailureType.transient_error,
             ) from e
 
     def _ensure_access_token_in_response(self, response_data: Mapping[str, Any]) -> None:
