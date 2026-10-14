@@ -2,36 +2,39 @@
 
 ## Upgrading to the next minor release (unreleased)
 
-### Unknown `acceptance-test-config.yml` keys fail collection
+### `acceptance-test-config.yml` keys the Standard Tests do not read fail collection
 
-`ConnectorTestScenario` declared `expect_records` (with `exact_order`), `timeout_seconds` and `file_types`, and no test read them. These fields are removed from the model. Any key that the model did not declare was dropped without a word, so a misspelled key (`empty_stream` for `empty_streams`) was ignored too.
+`ConnectorTestScenario` declared `expect_records` (with `exact_order`), `timeout_seconds` and `file_types`, and no test read them: they parsed, and the check they configured in the retired Connector Acceptance Tests (CAT) never ran. They are removed. Any other key that the model did not declare was dropped without a word, so a misspelled key (`empty_stream` for `empty_streams`) was ignored as well.
 
-An entry of a collected section (`spec`, `connection`, `discovery`, `basic_read`, `full_refresh`) that sets an unknown key now fails test collection, with one line per key naming the key, the section and the config, and listing the keys the section accepts:
+An entry of a collected section (`spec`, `connection`, `discovery`, `basic_read`, `full_refresh`) that sets a key the Standard Tests do not read now fails test collection, with one line per key naming the key, the section and the config:
 
 ```
 `.../source-example/acceptance-test-config.yml` is not valid for the standard tests:
-- `empty_stream` in the `basic_read` entry for config `secrets/config.json` is not a key the standard tests read. Remove it, or fix its spelling (accepted: ...).
+- `expect_records` in the `basic_read` entry for config `secrets/config.json` is no longer read: it configured the Connector Acceptance Tests' comparison of the records read against recorded ones, which the standard tests do not run. Remove the key.
+- `timeout_seconds` in the `full_refresh` entry for config `secrets/config.json` is no longer read: the standard tests have no per-config timeout. Remove the key.
 ```
-
-Keys of the retired Connector Acceptance Tests (CAT) that connectors still set keep working in the section CAT read them from. The Standard Tests accept them and do not read them, except for `backward_compatibility_tests_config` in `spec`.
 
 | Key | Status |
 |---|---|
+| `expect_records`, `exact_order` | Removed: no comparison against recorded records. |
+| `ignored_fields` | Removed: it listed fields CAT skipped when comparing records, against `expect_records` or between two consecutive full-refresh reads, and the Standard Tests run neither comparison. It was never declared on the model. |
+| `fail_on_extra_columns` | Removed: CAT accepted it but never enforced it, and the Standard Tests have no such check. It was never declared on the model. |
+| `timeout_seconds` | Removed: no per-config timeout. |
+| `file_types` | Removed: no file-type coverage check. |
 | `config_path`, `config_dict`, `configured_catalog_path`, `empty_streams` (`name`, `bypass_reason`), `status`, `validate_schema`, `bypass_reason` | Read. `bypass_reason` is reserved for the upcoming rule that a connector without test configs must say why. |
-| `backward_compatibility_tests_config` in `spec` | Accepted. Its `disable_for_version` is read by the spec backward-compatibility test. |
-| `expect_records` (with `exact_order` nested) in `basic_read`; `ignored_fields` in `full_refresh` | Accepted, not read. They configured CAT's record comparisons (against the recorded file, and between two consecutive full-refresh reads), which the Standard Tests do not run yet. Keep the recorded-records files. |
-| `timeout_seconds` in every collected section | Accepted, not read. The Standard Tests have no per-test timeout. |
-| `fail_on_extra_columns`, `file_types` in `basic_read` | Accepted, not read. CAT never enforced `fail_on_extra_columns`; the Standard Tests have no file-type coverage check. |
-| `spec_path`, `deployment_mode` in `spec`; `deployment_mode` in `connection`; `backward_compatibility_tests_config` in `discovery`; `client_container_config`, `expect_trace_message_on_failure`, `validate_state_messages` in `basic_read`; `client_container_config` in `full_refresh` | Accepted, not read: CAT keys without a Standard Test counterpart yet. |
+| `spec_path`, `deployment_mode` and `backward_compatibility_tests_config` in `spec`; `deployment_mode` in `connection`; `backward_compatibility_tests_config` in `discovery`; `client_container_config`, `expect_trace_message_on_failure` and `validate_state_messages` in `basic_read`; `client_container_config` in `full_refresh` | Accepted in that section only. `backward_compatibility_tests_config.disable_for_version` of a `spec` entry is read by the spec backward-compatibility test; the others are CAT keys without a Standard Test counterpart yet. |
 | `sections`, `test_strictness_level` | Rejected on an entry: the Standard Tests fill them in. `sections` comes from the section that lists the entry; `test_strictness_level` is read only at the top level of the file. |
-| Any of the CAT keys above in another section, or anything else | Rejected as unknown. |
+| Anything else | Rejected as unknown. |
 
 Entries are checked even when they are not run (no `config_path`, or an `iam_role` config). The `incremental` section is not collected and is not checked. A config value that fails validation (an unknown `status`, for example) is reported the same way, without printing the value.
 
-No Airbyte-maintained connector sets a rejected key, so none needs a change. Migration steps:
+Migration steps:
 
+- Remove the keys the error names from `acceptance-test-config.yml`, and delete the recorded-records files that `expect_records.path` pointed at if nothing else uses them. These are test-only changes and need no version bump.
 - Fix the spelling of a misspelled key; the error lists the keys the section accepts.
 - Python code that builds `ConnectorTestScenario` with `expect_records`, `timeout_seconds` or `file_types`, or uses `ConnectorTestScenario.AcceptanceTestExpectRecords` or `AcceptanceTestFileTypes`, must drop them.
+
+Rationale: a key that parses and is ignored reads like a check that runs. A connector with `expect_records` looks like its records are compared against a recorded file, and they are not. Removal is loud rather than silent, and a hard error rather than a deprecation window: the cleanup that removes these keys from every Airbyte-maintained connector (the monorepo and the enterprise connectors) merges before this release, so none of them fails on it.
 
 ## Upgrading to 7.36.0
 
