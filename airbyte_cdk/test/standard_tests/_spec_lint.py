@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator, Mapping
+import warnings
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -19,9 +20,11 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteMessageSerializer,
     ConnectorSpecification,
+    ConnectorSpecificationSerializer,
     Type,
 )
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
+from airbyte_cdk.test.standard_tests._catalog_checks import _iter_subschemas, _meta_validator
 
 SECRET_PROPERTY_NAMES = frozenset(
     {
@@ -352,6 +355,605 @@ def _has_unmasked_variant_marking(schema: Mapping[str, Any], under_unmasked: boo
     return False
 
 
+# Structural, presentational and OAuth lints, ported from CAT's `TestSpec`.
+
+
+class SpecLintWarning(UserWarning):
+    """A spec problem that the standard tests report but do not enforce yet.
+
+    To make these problems fail the test, turn the warning into an error, either with
+    `pytest -W error::airbyte_cdk.test.standard_tests.SpecLintWarning` or with
+    `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.SpecLintWarning`.
+    """
+
+
+SPEC_REFERENCE_URL = (
+    "https://docs.airbyte.com/platform/connector-development/connector-specification-reference"
+)
+
+FORBIDDEN_SPEC_KEYWORDS = (
+    "not",
+    "anyOf",
+    "patternProperties",
+    "prefixItems",
+    "allOf",
+    "if",
+    "then",
+    "else",
+    "dependentSchemas",
+    "dependentRequired",
+)
+"""JSON Schema keywords that the connector setup form cannot render."""
+
+ARRAY_ITEM_TYPES = frozenset({"object", "string", "number", "integer"})
+"""Item types the connector setup form can render as an array field, besides an `enum`."""
+
+DISPLAY_TYPES = frozenset({"dropdown", "radio"})
+"""Values `display_type` may take on a field with `oneOf` variants."""
+
+
+def _schema_nodes(schema: Any) -> Iterator[tuple[tuple[str, ...], Mapping[str, Any]]]:
+    """Yield `(path, subschema)` for `schema` and every subschema in it.
+
+    Only keywords that hold subschemas are followed, so a property named `type`, `enum` or
+    `not` is never mistaken for a keyword, and values such as `default` or `examples` are
+    never read as schemas.
+    """
+    yield from _iter_subschemas(schema)
+
+
+def _spec_pointer(path: Iterable[str]) -> str:
+    """Render a schema path as the JSON pointer used in failure messages, `` `/` `` at the root."""
+    return "`/" + "/".join(_pointer_token(segment) for segment in path) + "`"
+
+
+def _is_property(path: tuple[str, ...]) -> bool:
+    return len(path) >= 2 and path[-2] == "properties"
+
+
+def _is_single_valued(schema: Any) -> bool:
+    """Return whether a property can hold one value only: a `const`, or an `enum` of one item."""
+    if not isinstance(schema, Mapping):
+        return False
+    enum = schema.get("enum")
+    return "const" in schema or (isinstance(enum, list) and len(enum) == 1)
+
+
+def find_oneof_usage_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per `oneOf` that the setup form cannot render as a choice of variants.
+
+    Ported from CAT's `test_oneof_usage`. The schema that declares `oneOf` must be an object,
+    and every variant must be an object with `properties`. The variants must share exactly one
+    discriminator: a property that sets `const` in every variant or, failing that, one that
+    sets a single-item `enum` in every variant. The setup form picks the variant by that
+    value, so a `const` discriminator may set `default` and `enum` only to the same value, an
+    `enum` discriminator must set its one item as `default` (the form reads it as the
+    `const`), and no two variants may share a value.
+
+    Unlike CAT, a property whose `enum` has several items is not a discriminator candidate,
+    since it cannot identify a variant (such as a `compression_codec` next to `format_type`).
+    """
+    errors: list[str] = []
+    for path, schema in _schema_nodes(connection_specification):
+        variants = schema.get("oneOf")
+        if not isinstance(variants, list):
+            continue
+        where = _spec_pointer((*path, "oneOf"))
+        if schema.get("type") != "object":
+            errors.append(
+                f"{where} is declared on a schema that is not `type: object`; the setup form "
+                "renders `oneOf` only as a choice between object variants."
+            )
+        variant_properties: list[Mapping[str, Any]] = []
+        for index, variant in enumerate(variants):
+            properties = variant.get("properties") if isinstance(variant, Mapping) else None
+            if not isinstance(properties, Mapping):
+                errors.append(
+                    f"{_spec_pointer((*path, 'oneOf', str(index)))} has no `properties`; every "
+                    "`oneOf` variant must be an object with properties."
+                )
+                continue
+            variant_properties.append(properties)
+        if not variants or len(variant_properties) != len(variants):
+            continue
+
+        common = set.intersection(*(set(properties) for properties in variant_properties))
+        candidates = sorted(
+            name
+            for name in common
+            if all(_is_single_valued(properties[name]) for properties in variant_properties)
+        )
+        const_candidates = [
+            name
+            for name in candidates
+            if all("const" in properties[name] for properties in variant_properties)
+        ]
+        if len(const_candidates) == 1:
+            discriminator = const_candidates[0]
+        elif not const_candidates and len(candidates) == 1:
+            discriminator = candidates[0]
+        else:
+            found = const_candidates or candidates
+            detail = ", ".join(f"`{name}`" for name in found) if found else "none"
+            errors.append(
+                f"{where} variants must share exactly one property that sets `const` in every "
+                f"variant, so the setup form can tell them apart (found: {detail})."
+            )
+            continue
+
+        values: list[Any] = []
+        for index, properties in enumerate(variant_properties):
+            discriminator_schema = properties[discriminator]
+            discriminator_where = _spec_pointer(
+                (*path, "oneOf", str(index), "properties", discriminator)
+            )
+            if "const" in discriminator_schema:
+                value = discriminator_schema["const"]
+                if "default" in discriminator_schema and not _same_json(
+                    discriminator_schema["default"], value
+                ):
+                    errors.append(
+                        f"{discriminator_where} sets a `default` that differs from its `const`."
+                    )
+                if "enum" in discriminator_schema and not _same_json(
+                    discriminator_schema["enum"], [value]
+                ):
+                    errors.append(
+                        f"{discriminator_where} sets an `enum` other than a single item equal "
+                        "to its `const`."
+                    )
+            elif "default" in discriminator_schema and _same_json(
+                discriminator_schema["enum"], [discriminator_schema["default"]]
+            ):
+                value = discriminator_schema["default"]
+            else:
+                errors.append(
+                    f"{discriminator_where} must set `const`, or set its single `enum` item as "
+                    "its `default`."
+                )
+                continue
+            values.append(value)
+        if any(_count_json(values, value) > 1 for value in values):
+            errors.append(
+                f"{where} variants share a value of the discriminator `{discriminator}`, so "
+                "the setup form cannot tell them apart."
+            )
+    return errors
+
+
+def _same_json(left: Any, right: Any) -> bool:
+    return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+
+
+def _count_json(values: list[Any], value: Any) -> int:
+    return sum(_same_json(item, value) for item in values)
+
+
+def find_enum_usage_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per `enum` that lists the same value more than once.
+
+    Ported from CAT's `test_enum_usage`.
+    """
+    errors: list[str] = []
+    for path, schema in _schema_nodes(connection_specification):
+        enum = schema.get("enum")
+        if not isinstance(enum, list):
+            continue
+        seen: dict[str, int] = {}
+        for index, value in enumerate(enum):
+            key = json.dumps(value, sort_keys=True)
+            if key in seen:
+                errors.append(
+                    f"{_spec_pointer((*path, 'enum'))} lists the same value at positions "
+                    f"{seen[key]} and {index}."
+                )
+            else:
+                seen[key] = index
+    return errors
+
+
+def find_forbidden_keyword_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per JSON Schema keyword that the setup form cannot render.
+
+    Ported from CAT's `test_forbidden_complex_types`: see `FORBIDDEN_SPEC_KEYWORDS`.
+    """
+    return [
+        f"{_spec_pointer((*path, keyword))} uses `{keyword}`, which the connector setup form "
+        "does not support."
+        for path, schema in _schema_nodes(connection_specification)
+        for keyword in FORBIDDEN_SPEC_KEYWORDS
+        if keyword in schema
+    ]
+
+
+def find_array_type_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per array whose items the setup form cannot render.
+
+    Ported from CAT's `test_array_type`: `items` must be a single schema, of type `object`,
+    `string`, `number` or `integer`, or with an `enum`.
+    """
+    errors: list[str] = []
+    for path, schema in _schema_nodes(connection_specification):
+        if schema.get("type") != "array" or "items" not in schema:
+            continue
+        items = schema["items"]
+        where = _spec_pointer((*path, "items"))
+        if not isinstance(items, Mapping):
+            errors.append(f"{where} must be a single schema, not a list of item schemas.")
+        elif "enum" in items:
+            continue
+        elif not isinstance(items.get("type"), str) or items["type"] not in ARRAY_ITEM_TYPES:
+            errors.append(
+                f"{where} must be of type `object`, `string`, `number` or `integer`, or set "
+                "an `enum`."
+            )
+    return errors
+
+
+def find_empty_object_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per object that declares no properties and no `oneOf` variants.
+
+    Ported from CAT's `test_object_not_empty`: the setup form shows nothing for such an object.
+    The root schema may be an empty object, for a connector that takes no configuration.
+    """
+    return [
+        f"{_spec_pointer(path)} is an object with no `properties` and no `oneOf`, so the setup "
+        "form cannot show it. Add its properties or remove it."
+        for path, schema in _schema_nodes(connection_specification)
+        if path
+        and schema.get("type") == "object"
+        and "oneOf" not in schema
+        and not schema.get("properties")
+    ]
+
+
+def find_property_type_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per property whose `type` lists types the setup form cannot render.
+
+    Ported from CAT's `test_property_type_is_not_array`: a list of types must hold one type,
+    or one type followed by `null`, such as `[string, null]`.
+    """
+    errors: list[str] = []
+    for path, schema in _schema_nodes(connection_specification):
+        types = schema.get("type")
+        if not _is_property(path) or not isinstance(types, list):
+            continue
+        if len(types) not in (1, 2) or (len(types) == 2 and types[1] != "null"):
+            errors.append(
+                f"{_spec_pointer((*path, 'type'))} must be a single type, or a type followed by "
+                "`null`, such as `[string, null]`."
+            )
+    return errors
+
+
+def _iter_keys(value: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], str]]:
+    """Yield `(path, key)` for every mapping key anywhere in a JSON-like value."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            yield path, str(key)
+            yield from _iter_keys(item, (*path, str(key)))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _iter_keys(item, (*path, str(index)))
+
+
+def find_unresolved_ref_errors(spec: Mapping[str, Any]) -> list[str]:
+    """Return one error per `$ref` left in the emitted spec.
+
+    Ported from CAT's `test_defined_refs_exist_in_json_spec_file`. The platform does not
+    resolve references in a spec, so the connector must emit it with every `$ref` resolved.
+    `spec` is the whole SPEC message payload, so `advanced_auth` is checked too.
+    """
+    return [
+        f"{_spec_pointer((*path, key))} is an unresolved reference; emit the spec with every "
+        "`$ref` resolved."
+        for path, key in _iter_keys(spec)
+        if key == "$ref"
+    ]
+
+
+def find_additional_properties_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per `additionalProperties` that is set to anything but `true`.
+
+    Ported from CAT's `test_additional_properties_is_true`. With `false` or a schema, removing
+    a property in a later version makes every existing config that sets it invalid.
+    """
+    return [
+        f"{_spec_pointer((*path, 'additionalProperties'))} must be `true` when set; any other "
+        "value makes existing configs invalid as soon as a property is removed."
+        for path, schema in _schema_nodes(connection_specification)
+        if "additionalProperties" in schema and schema["additionalProperties"] is not True
+    ]
+
+
+def find_display_type_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per misused `display_type`.
+
+    Ported from CAT's `test_display_type`: `display_type` belongs on a field with `oneOf`
+    variants, and must be `dropdown` or `radio`.
+    """
+    errors: list[str] = []
+    for path, schema in _schema_nodes(connection_specification):
+        if "display_type" not in schema:
+            continue
+        where = _spec_pointer((*path, "display_type"))
+        if "oneOf" not in schema:
+            errors.append(f"{where} is set on a field without `oneOf` variants.")
+        display_type = schema["display_type"]
+        if not isinstance(display_type, str) or display_type not in DISPLAY_TYPES:
+            errors.append(f"{where} must be `dropdown` or `radio`.")
+    return errors
+
+
+def find_duplicate_order_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per `order` value used twice among the properties of one object.
+
+    Ported from CAT's `test_duplicate_order`. Properties in different `group`s may share an
+    `order`.
+    """
+    errors: list[str] = []
+    for path, schema in _schema_nodes(connection_specification):
+        properties = schema.get("properties")
+        if schema.get("type") != "object" or not isinstance(properties, Mapping):
+            continue
+        used: dict[tuple[str, str], str] = {}
+        for name, prop in properties.items():
+            if not isinstance(prop, Mapping) or "order" not in prop:
+                continue
+            key = (str(prop.get("group", "")), json.dumps(prop["order"]))
+            if key in used:
+                errors.append(
+                    f"{_spec_pointer((*path, 'properties', name, 'order'))} repeats the "
+                    f"`order` of `{used[key]}`" + (f" in group `{key[0]}`." if key[0] else ".")
+                )
+            else:
+                used[key] = name
+    return errors
+
+
+def find_nested_group_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per `group` set below the top-level properties.
+
+    Ported from CAT's `test_nested_group`: the setup form groups top-level fields only.
+    """
+    return [
+        f"{_spec_pointer((*path, 'group'))} is set below the top level; only top-level "
+        "properties can be grouped."
+        for path, schema in _schema_nodes(connection_specification)
+        if "group" in schema and path and not (len(path) == 2 and path[0] == "properties")
+    ]
+
+
+def _config_paths(schema: Any, prefix: tuple[str, ...] = ()) -> Iterator[tuple[str, ...]]:
+    """Yield the path of every property a config can set, through `oneOf`/`anyOf` variants.
+
+    An array's items add a `[]` segment, as in CAT's `get_expected_schema_structure`.
+    """
+    if not isinstance(schema, Mapping):
+        return
+    for keyword in _COMBINATORS:
+        for variant in _variants(schema, (keyword,)):
+            yield from _config_paths(variant, prefix)
+    properties = schema.get("properties")
+    if isinstance(properties, Mapping):
+        for name, prop in properties.items():
+            yield (*prefix, str(name))
+            yield from _config_paths(prop, (*prefix, str(name)))
+    items = schema.get("items")
+    if isinstance(items, Mapping):
+        yield from _config_paths(items, (*prefix, "[]"))
+
+
+def find_oauth_parameter_errors(spec: Mapping[str, Any]) -> list[str]:
+    """Return one error per `advanced_auth` config path that the connection spec lacks.
+
+    Ported from CAT's `test_oauth_flow_parameters`. `predicate_key` and every
+    `path_in_connector_config` in the OAuth input and output specifications must name a
+    property of `connectionSpecification`, or the platform reads or writes a config field
+    that does not exist.
+    """
+    advanced_auth = spec.get("advanced_auth")
+    if not isinstance(advanced_auth, Mapping):
+        return []
+    known = set(_config_paths(spec.get("connectionSpecification") or {}))
+    referenced: list[tuple[str, list[Any]]] = []
+    if isinstance(advanced_auth.get("predicate_key"), list):
+        referenced.append(("`/advanced_auth/predicate_key`", advanced_auth["predicate_key"]))
+    oauth = advanced_auth.get("oauth_config_specification")
+    if isinstance(oauth, Mapping):
+        for section in (
+            "oauth_user_input_from_connector_config_specification",
+            "complete_oauth_output_specification",
+            "complete_oauth_server_output_specification",
+        ):
+            properties = (oauth.get(section) or {}).get("properties")
+            if not isinstance(properties, Mapping):
+                continue
+            for name, prop in properties.items():
+                if isinstance(prop, Mapping) and isinstance(
+                    prop.get("path_in_connector_config"), list
+                ):
+                    referenced.append(
+                        (
+                            _spec_pointer(
+                                (
+                                    "advanced_auth",
+                                    "oauth_config_specification",
+                                    section,
+                                    "properties",
+                                    name,
+                                    "path_in_connector_config",
+                                )
+                            ),
+                            prop["path_in_connector_config"],
+                        )
+                    )
+    return [
+        f"{where} names the config path `/{'/'.join(str(part) for part in config_path)}`, "
+        "which is not a property of `connectionSpecification`."
+        for where, config_path in referenced
+        if tuple(str(part) for part in config_path) not in known
+    ]
+
+
+def find_invalid_schema_errors(connection_specification: Mapping[str, Any]) -> list[str]:
+    """Return one error per place where the spec is not a valid JSON Schema.
+
+    The spec is checked against the meta-schema of the draft it declares in `$schema`, draft 7
+    by default, and draft 7 when `$schema` is not a string (its meta-schema then reports
+    `$schema`). CAT only found this through `test_config_match_spec`, when a scenario config
+    was validated against an invalid spec.
+    """
+    return [
+        f"{_spec_pointer(map(str, error.path))} is not valid JSON Schema: it fails the "
+        f"`{error.validator}` rule of the meta-schema."
+        for error in _meta_validator(connection_specification).iter_errors(connection_specification)
+    ]
+
+
+@dataclass(frozen=True)
+class SpecLint:
+    """A named credential-free assertion on a connector spec."""
+
+    name: str
+    rule: str
+    """What the lint requires and why, printed above its problems."""
+    run: Callable[[Mapping[str, Any]], list[str]]
+    """Takes the whole SPEC payload (`connectionSpecification`, `advanced_auth`, ...)."""
+    enforced: bool = True
+
+
+def _on_connection_specification(
+    check: Callable[[Mapping[str, Any]], list[str]],
+) -> Callable[[Mapping[str, Any]], list[str]]:
+    def run(spec: Mapping[str, Any]) -> list[str]:
+        connection_specification = spec.get("connectionSpecification")
+        if not isinstance(connection_specification, Mapping):
+            return []
+        return check(connection_specification)
+
+    return run
+
+
+SPEC_LINTS: tuple[SpecLint, ...] = (
+    SpecLint(
+        "secret marking",
+        "A property that holds a credential must set `airbyte_secret: true` so the platform "
+        "masks it in the UI and logs and stores it in the secrets manager.",
+        _on_connection_specification(find_secret_marking_errors),
+    ),
+    SpecLint(
+        "valid JSON Schema",
+        "The spec must be a valid JSON Schema, or the platform cannot validate configs with it.",
+        _on_connection_specification(find_invalid_schema_errors),
+    ),
+    SpecLint(
+        "refs resolved",
+        "The platform does not resolve `$ref`, so the emitted spec must contain none.",
+        find_unresolved_ref_errors,
+    ),
+    SpecLint(
+        "additionalProperties is true",
+        "`additionalProperties` must be `true` when set, so that removing a property later "
+        "does not invalidate saved configs.",
+        _on_connection_specification(find_additional_properties_errors),
+    ),
+    SpecLint(
+        "oneOf usage",
+        "The setup form renders `oneOf` as a choice of object variants told apart by one "
+        "shared `const` property.",
+        _on_connection_specification(find_oneof_usage_errors),
+    ),
+    SpecLint(
+        "enum usage",
+        "An `enum` must not list the same value twice.",
+        _on_connection_specification(find_enum_usage_errors),
+    ),
+    SpecLint(
+        "array items",
+        "The setup form renders arrays of objects, strings, numbers, integers or enum values only.",
+        _on_connection_specification(find_array_type_errors),
+    ),
+    SpecLint(
+        "property types",
+        "The setup form renders a property's first type, so a list of types must be one type, "
+        "optionally followed by `null`.",
+        _on_connection_specification(find_property_type_errors),
+    ),
+    SpecLint(
+        "display_type",
+        "`display_type` belongs on a field with `oneOf` variants and must be `dropdown` or "
+        "`radio`.",
+        _on_connection_specification(find_display_type_errors),
+    ),
+    SpecLint(
+        "duplicate order",
+        "The setup form orders fields by `order`, which must be unique within one object and "
+        "group.",
+        _on_connection_specification(find_duplicate_order_errors),
+    ),
+    SpecLint(
+        "nested group",
+        "The setup form groups top-level fields only.",
+        _on_connection_specification(find_nested_group_errors),
+    ),
+    SpecLint(
+        "OAuth config paths",
+        "Every config path in `advanced_auth` must name a property of the connection "
+        "specification.",
+        find_oauth_parameter_errors,
+    ),
+    # Not enforced yet. `source-facebook-marketing` (a single-item `allOf` that pydantic emits
+    # for an enum field) and `destination-ragie` (pydantic-v2 `Optional` fields as `anyOf`)
+    # build their specs in code. Inlining those schemas accepts exactly the same configs, but the
+    # spec backward-compatibility check reports it as breaking.
+    SpecLint(
+        "forbidden keywords",
+        "The connector setup form cannot render these JSON Schema keywords.",
+        _on_connection_specification(find_forbidden_keyword_errors),
+        enforced=False,
+    ),
+    # Not enforced yet: `source-smoke-test` builds its spec in PyAirbyte, outside the monorepo,
+    # and its free-form `json_schema` and `records` objects cannot gain properties compatibly.
+    SpecLint(
+        "object not empty",
+        "The setup form cannot show an object with no `properties` and no `oneOf`.",
+        _on_connection_specification(find_empty_object_errors),
+        enforced=False,
+    ),
+)
+"""The lints `assert_spec_is_valid` runs, in the order their problems are reported."""
+
+
+def find_spec_problems(
+    spec: Mapping[str, Any],
+    lints: Iterable[SpecLint] = SPEC_LINTS,
+) -> dict[SpecLint, list[str]]:
+    """Run each lint on a SPEC payload and return the problems of every failing lint.
+
+    `spec` is the SPEC message's `spec` object as plain JSON. A lint that raises is reported
+    as a problem of that lint, so that a lint which is not enforced cannot fail the test by
+    crashing on a spec it did not anticipate.
+    """
+    results: dict[SpecLint, list[str]] = {}
+    for lint in lints:
+        try:
+            problems = lint.run(spec)
+        except Exception as error:  # Reported, not raised; see the docstring.
+            problems = [f"The lint could not run: {type(error).__name__}."]
+        if problems:
+            results[lint] = problems
+    return results
+
+
+def format_spec_problems(problems: Mapping[SpecLint, list[str]]) -> str:
+    """Render problems grouped by lint, for an assertion or warning message."""
+    return "\n".join(
+        f"[{lint.name}] {lint.rule}\n" + "\n".join(f"  - {problem}" for problem in found)
+        for lint, found in problems.items()
+    )
+
+
 def get_single_spec(result: EntrypointOutput, *, connector_name: str) -> ConnectorSpecification:
     """Assert that `spec` emitted exactly one SPEC message, and return its specification."""
     spec_messages = result.spec_messages
@@ -367,12 +969,24 @@ def get_single_spec(result: EntrypointOutput, *, connector_name: str) -> Connect
 
 
 def assert_spec_is_valid(spec: ConnectorSpecification, *, connector_name: str) -> None:
-    """Assert that a connector spec passes every credential-free lint."""
-    errors = find_secret_marking_errors(spec.connectionSpecification)
-    assert not errors, (
-        f"The spec of connector '{connector_name}' marks secrets incorrectly. A property that "
-        "holds a credential must set `airbyte_secret: true` so the platform masks it in the UI "
-        "and logs and stores it in the secrets manager:\n" + "\n".join(errors)
+    """Assert that a connector spec passes every enforced credential-free lint.
+
+    Problems found by lints that are not enforced yet (see `SPEC_LINTS`) are reported as a
+    `SpecLintWarning` instead. No lint prints a config value: a spec holds none.
+    """
+    problems = find_spec_problems(ConnectorSpecificationSerializer.dump(spec))
+    advisory = {lint: found for lint, found in problems.items() if not lint.enforced}
+    if advisory:
+        warnings.warn(
+            f"The spec of connector '{connector_name}' has problems that will fail this test in "
+            f"a future CDK release:\n{format_spec_problems(advisory)}",
+            category=SpecLintWarning,
+            stacklevel=2,
+        )
+    enforced = {lint: found for lint, found in problems.items() if lint.enforced}
+    assert not enforced, (
+        f"The spec of connector '{connector_name}' fails the spec lint. See "
+        f"{SPEC_REFERENCE_URL} for the rules.\n{format_spec_problems(enforced)}"
     )
 
 
