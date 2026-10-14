@@ -917,7 +917,7 @@ class DockerConnectorTestSuite:
         The test runs by default. `--read-scenarios` picks which configs are read (by default
         `config`, `valid_config` and `default`, or the first read config when a connector has
         none of those), and `--read-from-streams` which of their streams (by default the
-        connector's suggested streams); `--read-from-streams=none` skips the test. See the
+        connector's suggested streams); `--read-from-streams=false` (or `none`) skips the test. See the
         `read_from_streams` and `read_scenarios` fixtures.
 
         Note:

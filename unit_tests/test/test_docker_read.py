@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 """The Docker read test runs by default and checks its records as `test_basic_read` does.
 
-- `--read-from-streams` and `--read-scenarios` default to reading; `none` is the explicit opt-out.
+- `--read-from-streams` and `--read-scenarios` default to reading; `false` or `none` is the explicit opt-out.
 - `--read-scenarios=default` reads the `config`, `valid_config` and `default` configs, or the first
   read config of a connector that has none of those, so it never skips every read.
 - `--read-from-streams=default` reads the suggested streams, or every stream when none applies.

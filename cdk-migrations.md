@@ -20,14 +20,14 @@ Two options pick what is read. The defaults read one config of every connector t
 | Option | Default | Other values |
 |---|---|---|
 | `--read-scenarios` (which configs) | `default`: the configs named `config`, `valid_config` or `default`. A connector with none of those reads its first read config instead. | `all`; a comma-separated list of config names (with or without `.json`); `none` skips the test. |
-| `--read-from-streams` (which streams of each config) | `default` (also `true`, `suggested`): the connector's `suggestedStreams` from `metadata.yaml`, or every stream of the config when it declares none, or when none of them is read for the config. | `all`; a comma-separated list of stream names (a config that reads none of them is skipped); `none` or `false` skips the test. |
+| `--read-from-streams` (which streams of each config) | `default` (also `true`, `suggested`): the connector's `suggestedStreams` from `metadata.yaml`, or every stream of the config when it declares none, or when none of them is read for the config. | `all`; a comma-separated list of stream names (a config that reads none of them is skipped); `false` or `none` skips the test (`false` on every CDK version; CDK 7.36.0 and earlier read `none` as a stream name and run the read). |
 
 The streams of a config are the ones the in-process read covers: those of its `configured_catalog_path`, or every discovered stream, minus `empty_streams`. The two options only narrow that set, and either one set to `none` skips the test, so they cannot cancel each other silently: the `--read-scenarios` default used to skip every Docker read of a connector whose read configs had other names, and now reads its first one. `--read-scenarios=none` used to raise a `ValueError` for every config, and a `--read-scenarios` list raised one for each config it left out; both now skip. The in-process `test_basic_read` ignores both options and reads every read config.
 
 Migration steps:
 
 - A connector whose Docker read fails gets the same fixes as a failing `test_basic_read`: refresh an expired secret, declare a stream without data in `empty_streams` with a `bypass_reason`, fix the schema or the records, or set `validate_schema: false` (with a reason) where that is allowed.
-- To skip the Docker read for one run, pass `--read-from-streams=none` (to `airbyte-cdk connector test` as `--pytest-arg=--read-from-streams=none`), or set `PYTEST_ADDOPTS=--read-from-streams=none`, which `airbyte-cdk image test` also honours.
+- To skip the Docker read for one run, pass `--read-from-streams=false` (to `airbyte-cdk connector test` as `--pytest-arg=--read-from-streams=false`), or set `PYTEST_ADDOPTS=--read-from-streams=false`, which `airbyte-cdk image test` also honours. Prefer `false` over `none` in CI files and poe tasks: `false` skips the read on every CDK version, while CDK 7.36.0 and earlier read `none` as a stream name, so they run the Docker `discover` and a `read` of an empty catalog.
 
 ## Upgrading to 7.36.0
 

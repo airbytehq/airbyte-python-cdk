@@ -62,7 +62,8 @@ def read_from_streams(
     - `--read-from-streams=all`: Read all of the config's streams.
     - `--read-from-streams=stream1,stream2`: Read only these of the config's streams. A config
       that reads none of them is skipped.
-    - `--read-from-streams=none` or `=false`: Skip the Docker read test (the explicit opt-out).
+    - `--read-from-streams=false` or `=none`: Skip the Docker read test (the explicit opt-out).
+      Prefer `false` in CI files: CDK 7.36.0 and earlier read `none` as a stream name.
 
     Which configs are read is set by `--read-scenarios`. The two options combine: the test reads
     the streams selected here for each config selected there, so the default of both reads at
@@ -107,7 +108,7 @@ def read_scenarios(
     - `--read-scenarios=all`: Read every read config.
     - `--read-scenarios=scenario1,scenario2`: Read only these configs (by file name, with or
       without `.json`); the others are skipped.
-    - `--read-scenarios=none`: Skip the Docker read test, like `--read-from-streams=none`.
+    - `--read-scenarios=none`: Skip the Docker read test, like `--read-from-streams=false`.
 
     `--read-from-streams` then picks the streams read for each selected config. The in-process
     read test (`test_basic_read`) ignores both options and reads every read config.

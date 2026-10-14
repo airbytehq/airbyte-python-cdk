@@ -193,7 +193,7 @@ jobs:
         # does not run twice.
         run: |
           poetry run airbyte-cdk connector test \
-            --pytest-arg=--read-from-streams=none
+            --pytest-arg=--read-from-streams=false
 
       # Manifest-only connector images are built `FROM` the published `source-declarative-manifest`
       # base image declared in metadata.yaml, so by default the container tests exercise the
@@ -226,7 +226,7 @@ jobs:
           poetry run airbyte-cdk connector test ${{ matrix.connector }} \
             --pytest-arg=--connector-base-image \
             --pytest-arg=airbyte/source-declarative-manifest:dev \
-            --pytest-arg=--read-from-streams=none
+            --pytest-arg=--read-from-streams=false
 
       - name: Container Build and Test [All Connectors]
         if: steps.no_changes.outputs.status != 'cancelled'
