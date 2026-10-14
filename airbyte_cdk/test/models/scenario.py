@@ -103,6 +103,9 @@ class ConnectorTestScenario(BaseModel):
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
+    # Why this scenario is not run: set on the placeholder scenarios that report a declared
+    # `bypass_reason` of `acceptance-test-config.yml` as skipped tests.
+    bypass_reason: str | None = None
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
     # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
