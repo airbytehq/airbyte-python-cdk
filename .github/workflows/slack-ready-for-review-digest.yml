@@ -1,0 +1,178 @@
+name: Slack Ready-for-Review Digest
+
+# Sends one quiet digest at 7:00 AM Pacific on weekdays.
+# The window starts at the most recent successful scheduled run of this
+# workflow, so a failed run is self-healing and is covered by the next run.
+# If no successful scheduled run exists, Monday looks back 72 hours and every
+# other weekday looks back 24 hours. Manual runs can set lookback_hours to
+# override either behavior; set dry_run to build and log the payload without
+# posting it to Slack.
+#
+# MANUAL TESTING:
+# Use workflow_dispatch with lookback_hours (for example, 720 for 30 days) and
+# dry_run=true. The generated PR JSON and Slack payload are printed in logs.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1-5" # 7:00 AM Pacific, Mon–Fri
+      timezone: "America/Los_Angeles"
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: "Override the lookback window in hours"
+        required: false
+        type: string
+      dry_run:
+        description: "Build and log the payload without posting to Slack"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  SLACK_CHANNEL_ID: C0BHDAPNPCY
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: slack-ready-for-review-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    name: Post ready-for-review digest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Resolve Variables
+        id: resolve-vars
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOOKBACK_HOURS_INPUT: ${{ inputs.lookback_hours }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          [[ -z "$LOOKBACK_HOURS_INPUT" || "$LOOKBACK_HOURS_INPUT" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "::error::lookback_hours must be a positive integer."; exit 1; }
+          previous_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/slack-ready-for-review-digest.yml/runs?event=schedule&status=success&per_page=1" --jq '.workflow_runs[0].created_at // empty')"
+          lookback_hours="$LOOKBACK_HOURS_INPUT"
+          [[ -n "$lookback_hours" ]] \
+            || lookback_hours="$([[ "$(TZ=America/Los_Angeles date +%u)" == "1" ]] && echo 72 || echo 24)"
+          [[ -n "$LOOKBACK_HOURS_INPUT" || -z "$previous_run" ]] \
+            && window_start="$(date -u -d "-${lookback_hours} hours" --iso-8601=seconds)" \
+            || window_start="$previous_run"
+          window_start="${window_start/Z/+00:00}"
+          window_start_epoch="$(date -u -d "$window_start" +%s)"
+          window_date="$(TZ=America/Los_Angeles date -d "$window_start" +%Y-%m-%d)"
+          dry_run="${DRY_RUN_INPUT:-false}"
+          {
+            echo "window_start=$window_start"
+            echo "window_start_epoch=$window_start_epoch"
+            echo "window_date=$window_date"
+            echo "dry_run=$dry_run"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Collect qualifying pull requests
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WINDOW_START: ${{ steps.resolve-vars.outputs.window_start }}
+          WINDOW_START_EPOCH: ${{ steps.resolve-vars.outputs.window_start_epoch }}
+          WINDOW_DATE: ${{ steps.resolve-vars.outputs.window_date }}
+          PR_JSON_FILE: ${{ runner.temp }}/ready-for-review-prs.json
+        run: |
+          set -euo pipefail
+          candidates_file="$RUNNER_TEMP/pr-candidates.json"
+          : > "$PR_JSON_FILE"
+          gh pr list \
+            --state all \
+            --limit 200 \
+            --search "updated:>=$WINDOW_DATE" \
+            --json number,title,url,author,additions,deletions,changedFiles,reviewRequests,reviews,isDraft,createdAt,state,mergedAt \
+            > "$candidates_file"
+          while IFS= read -r candidate; do
+            number="$(jq -r '.number' <<< "$candidate")"
+            readied_at="$(gh api \
+              --header "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/issues/${number}/timeline" \
+              --paginate \
+              --jq '.[] | select(.event == "ready_for_review") | .created_at' \
+              | tail -n 1)"
+            created_at="$(jq -r '.createdAt' <<< "$candidate")"
+            is_draft="$(jq -r '.isDraft' <<< "$candidate")"
+            [[ -n "$readied_at" ]] \
+              || [[ "$is_draft" == "false" && -n "$created_at" ]] \
+              || continue
+            readied_at="${readied_at:-$created_at}"
+            readied_epoch="$(date -u -d "$readied_at" +%s)"
+            (( readied_epoch >= WINDOW_START_EPOCH )) || continue
+            jq --arg readied_at "$readied_at" \
+              '. + {readiedAt: $readied_at}' <<< "$candidate"
+          done < <(jq -c '.[]' "$candidates_file") \
+            | jq -s 'sort_by(.readiedAt)' > "$PR_JSON_FILE"
+          count="$(jq 'length' "$PR_JSON_FILE")"
+          echo "count=$count" | tee -a "$GITHUB_OUTPUT"
+          cat "$PR_JSON_FILE"
+
+      - name: Build Slack payload
+        id: payload
+        env:
+          PR_JSON_FILE: ${{ runner.temp }}/ready-for-review-prs.json
+          PAYLOAD_FILE: ${{ runner.temp }}/slack-ready-for-review-digest.json
+          WINDOW_DATE: ${{ steps.resolve-vars.outputs.window_date }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg channel "$SLACK_CHANNEL_ID" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg window_date "$WINDOW_DATE" \
+            --slurpfile prs "$PR_JSON_FILE" \
+            '
+            def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+            def is_bot($bots):
+              ascii_downcase as $login
+              | ($login | endswith("[bot]")) or ($bots | index($login) != null);
+            def reviewers($bots):
+              [
+                (.reviewRequests[]? | (.login // .name // .slug)),
+                (.reviews[]? | .author.login)
+              ]
+              | map(select(. != null and . != "" and (is_bot($bots) | not)))
+              | unique
+              | if length == 0 then "unassigned" else join(", ") end;
+            def line($bots):
+              (if .mergedAt != null then ":white_check_mark: merged "
+               elif .state == "CLOSED" then ":x: closed "
+               else "" end)
+              + "<\(.url)|#\(.number) — \(.title | esc)>\n"
+              + "by <https://github.com/\(.author.login)|\(.author.login | esc)> · "
+              + "`+\(.additions) -\(.deletions)` across \(.changedFiles) file(s) · "
+              + "reviewers: \(reviewers($bots) | esc)";
+            [
+              "coderabbitai",
+              "copilot-pull-request-reviewer",
+              "devin-ai-integration",
+              "github-code-quality"
+            ] as $bots
+            | ($prs[0] | map(line($bots)) | join("\n\n")) as $body
+            | {
+                channel: $channel,
+                text: ("PRs marked ready for review since " + $window_date
+                  + " Pacific in " + $repo + "\n\n" + $body),
+                unfurl_links: false,
+                unfurl_media: false
+              }
+            ' | tee "$PAYLOAD_FILE"
+          echo "file=$PAYLOAD_FILE" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Post to Slack channel
+        if: steps.collect.outputs.count != '0' && steps.resolve-vars.outputs.dry_run != 'true'
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        continue-on-error: true
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
+          payload-file-path: ${{ steps.payload.outputs.file }}
+          errors: true
