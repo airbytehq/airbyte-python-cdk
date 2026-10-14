@@ -22,6 +22,8 @@ reads that instead of the loaded schema.
 import pkgutil
 import re
 
+from jsonschema.validators import Draft7Validator, validator_for
+
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     _get_declarative_component_schema,
 )
@@ -49,6 +51,14 @@ def test_the_shipped_component_schema_parses():
 
     assert schema["title"] == "DeclarativeSource"
     assert "HttpRequester" in schema["definitions"]
+
+
+def test_the_shipped_component_schema_is_a_valid_draft_7_schema():
+    """`_validate_source` skips `check_schema` at runtime, so this is where a malformed schema is caught."""
+    schema = _get_declarative_component_schema()
+    validator_class = validator_for(schema)
+    assert validator_class is Draft7Validator
+    validator_class.check_schema(schema)
 
 
 def test_no_plain_scalar_carries_yaml_punctuation():
