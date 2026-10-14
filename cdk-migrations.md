@@ -2,10 +2,11 @@
 
 ## Upgrading to the next minor release (unreleased)
 
-This release adds structural lints to the spec tests (`test_spec` and `test_docker_image_build_and_spec`), ported from the spec checks of the Connector Acceptance Tests (CAT). They run on the spec that `spec` emits, need no credentials, and report every problem with the JSON pointer of the place in the spec, never a value. The release is a minor one, since only the test harness changes. The monorepo connectors that failed an enforced lint were fixed before this release, with two known exceptions, both failing `additionalProperties is true`:
+This release adds structural lints to the spec tests (`test_spec` and `test_docker_image_build_and_spec`), ported from the spec checks of the Connector Acceptance Tests (CAT). They run on the spec that `spec` emits, need no credentials, and report every problem with the JSON pointer of the place in the spec, never a value. The release is a minor one, since only the test harness changes. The monorepo connectors whose CI runs the CDK spec tests and that failed an enforced lint were fixed before this release, with these known exceptions:
 
-- `destination-timeplus` is archived and disabled in both registries, so nobody ships it. Its tests fail only when a pull request edits it.
-- `source-mssql` (Java) emits a map property whose `additionalProperties` is a schema. It fails the `airbyte-cdk image test` step of airbyte's Dockerfile Tests workflow, which runs only when a pull request changes the Java connector Dockerfiles.
+- `destination-timeplus` fails `additionalProperties is true`. It is archived and disabled in both registries, so nobody ships it. Its tests fail only when a pull request edits it.
+- `source-mssql` (Java) fails `additionalProperties is true`: it emits a map property whose `additionalProperties` is a schema. It fails the `airbyte-cdk image test` step of airbyte's Dockerfile Tests workflow, which runs only when a pull request changes the Java connector Dockerfiles.
+- `source-tplcentral` fails `additionalProperties is true` until its spec fix merges. Its legacy top-level `tests:` layout in `acceptance-test-config.yml` fails test collection, so the lints do not run on it until that config is converted.
 
 ### Enforced spec lints
 
