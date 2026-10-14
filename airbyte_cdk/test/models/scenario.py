@@ -110,16 +110,41 @@ is rejected (see `entry_key_problems`).
 """
 
 
-def entry_key_problems(entry: Mapping[str, Any], sections: Iterable[str]) -> list[str]:
+POPULATED_FIELDS: Mapping[str, str] = MappingProxyType(
+    {
+        "sections": "the standard tests set it from the section that lists the entry",
+        "test_strictness_level": (
+            "it is read only at the top level of `acceptance-test-config.yml`"
+        ),
+    }
+)
+"""Fields of `ConnectorTestScenario` that `get_scenarios()` fills in, so an entry cannot set them.
+
+An entry that set one would be overwritten without a word, so it is rejected, with the reason.
+"""
+
+
+def entry_key_problems(
+    entry: Mapping[str, Any],
+    sections: Iterable[str],
+    *,
+    from_file: bool = True,
+) -> list[str]:
     """Return one message per key of an `acceptance-test-config.yml` entry that is not accepted.
 
-    An entry may set the fields of `ConnectorTestScenario`, and the `LEGACY_ENTRY_KEYS` of the
-    section that lists it. A key of `REMOVED_ENTRY_KEYS` is reported as no longer read, with the
-    reason; any other key as unknown. Each message names the key, the section and the entry's
-    `config_path`, never a value.
+    An entry may set the fields of `ConnectorTestScenario`, except the `POPULATED_FIELDS`, and the
+    `LEGACY_ENTRY_KEYS` of the section that lists it. A key of `REMOVED_ENTRY_KEYS` is reported as
+    no longer read, and a key of `POPULATED_FIELDS` as not an entry key, with the reason; any
+    other key as unknown. Each message names the key, the section and the entry's `config_path`,
+    never a value.
+
+    `from_file=False` checks the data a scenario is built from (by `get_scenarios()` or by hand),
+    where the `POPULATED_FIELDS` are accepted.
     """
     sections = tuple(sections)
     accepted = set(ConnectorTestScenario.model_fields)
+    if from_file:
+        accepted -= set(POPULATED_FIELDS)
     for section in sections:
         accepted |= LEGACY_ENTRY_KEYS.get(section, frozenset())
     where = (f"the `{'`/`'.join(sections)}` entry" if sections else "the scenario") + (
@@ -127,8 +152,7 @@ def entry_key_problems(entry: Mapping[str, Any], sections: Iterable[str]) -> lis
         if entry.get("config_path")
         else " without a `config_path`"
     )
-    # `sections` and `test_strictness_level` are filled in by `get_scenarios()`, not by entries.
-    listed = sorted(accepted - {"sections", "test_strictness_level"})
+    listed = sorted(accepted - set(POPULATED_FIELDS))
 
     problems: list[str] = []
     for key in entry:
@@ -137,6 +161,11 @@ def entry_key_problems(entry: Mapping[str, Any], sections: Iterable[str]) -> lis
         if key in REMOVED_ENTRY_KEYS:
             problems.append(
                 f"`{key}` in {where} is no longer read: {REMOVED_ENTRY_KEYS[key]}. Remove the key."
+            )
+        elif key in POPULATED_FIELDS:
+            problems.append(
+                f"`{key}` in {where} is not an entry key: {POPULATED_FIELDS[key]}. "
+                "Remove it from the entry."
             )
         else:
             problems.append(
@@ -156,6 +185,8 @@ class ConnectorTestScenario(BaseModel):
     Every field is read by the standard tests (a unit test enforces it). An entry that sets a key
     that is not a field is rejected, except for the `LEGACY_ENTRY_KEYS` of its section; a key the
     standard tests used to accept and ignore is reported as no longer read (`REMOVED_ENTRY_KEYS`).
+    `get_scenarios()` also rejects an entry that sets one of the `POPULATED_FIELDS`, which it fills
+    in itself.
     """
 
     # Allows the class to be hashable, which PyTest will require
@@ -202,7 +233,7 @@ class ConnectorTestScenario(BaseModel):
         sections = data.get("sections") or ()
         if isinstance(sections, str):
             sections = (sections,)
-        problems = entry_key_problems(data, sections)
+        problems = entry_key_problems(data, sections, from_file=False)
         if problems:
             raise ValueError("\n".join(problems))
         legacy = {key for section in sections for key in LEGACY_ENTRY_KEYS.get(section, ())}

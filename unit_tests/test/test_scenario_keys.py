@@ -20,6 +20,7 @@ import airbyte_cdk.test
 from airbyte_cdk.test.models import scenario as scenario_module
 from airbyte_cdk.test.models.scenario import (
     LEGACY_ENTRY_KEYS,
+    POPULATED_FIELDS,
     REMOVED_ENTRY_KEYS,
     SCENARIO_SECTIONS,
     ConnectorTestScenario,
@@ -244,6 +245,30 @@ def test_entry_key_problems_without_config_path() -> None:
     ]
 
 
+@pytest.mark.parametrize("key", sorted(POPULATED_FIELDS))
+@pytest.mark.parametrize("section", ["spec", "basic_read"])
+def test_populated_field_is_not_an_entry_key(key: str, section: str) -> None:
+    value = ["full_refresh"] if key == "sections" else "high"
+
+    assert entry_key_problems({"config_path": "secrets/config.json", key: value}, [section]) == [
+        f"`{key}` in the `{section}` entry for config `secrets/config.json` is not an entry key: "
+        f"{POPULATED_FIELDS[key]}. Remove it from the entry."
+    ]
+
+
+def test_populated_fields_are_accepted_when_building_a_scenario() -> None:
+    data = {
+        "config_path": "secrets/config.json",
+        "sections": ("basic_read",),
+        "test_strictness_level": "high",
+    }
+
+    assert entry_key_problems(data, ["basic_read"], from_file=False) == []
+    scenario = ConnectorTestScenario.model_validate(data)
+    assert scenario.sections == ("basic_read",)
+    assert scenario.test_strictness_level == "high"
+
+
 # --- get_scenarios() fails collection with every problem of the file --------------------------
 
 
@@ -322,6 +347,35 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
     assert "no longer read" in lines[1]
     assert "is not a key the standard tests read" in lines[-1]
     assert SECRET not in message
+
+
+def test_get_scenarios_rejects_entries_setting_populated_fields(tmp_path: Path) -> None:
+    suite = _suite(
+        tmp_path,
+        {
+            "connection": {
+                "tests": [
+                    {
+                        "config_path": "secrets/config.json",
+                        "status": "succeed",
+                        "sections": ["basic_read"],
+                    }
+                ]
+            },
+            "basic_read": {
+                "tests": [{"config_path": "secrets/config.json", "test_strictness_level": "low"}]
+            },
+        },
+    )
+
+    with pytest.raises(ValueError) as error:
+        suite.get_scenarios()
+
+    assert [line.split(" is ")[0] for line in str(error.value).splitlines()[1:]] == [
+        "- `sections` in the `connection` entry for config `secrets/config.json`",
+        "- `test_strictness_level` in the `basic_read` entry for config `secrets/config.json`",
+    ]
+    assert "is not an entry key: it is read only at the top level" in str(error.value)
 
 
 def test_get_scenarios_reports_invalid_values_without_printing_them(tmp_path: Path) -> None:

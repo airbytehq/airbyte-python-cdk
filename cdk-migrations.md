@@ -21,6 +21,7 @@ An entry of a collected section (`spec`, `connection`, `discovery`, `basic_read`
 | `file_types` | Removed: no file-type coverage check. |
 | `config_path`, `config_dict`, `configured_catalog_path`, `empty_streams` (`name`, `bypass_reason`), `status`, `validate_schema`, `bypass_reason` | Read. `bypass_reason` is reserved for the upcoming rule that a connector without test configs must say why. |
 | `spec_path`, `deployment_mode` and `backward_compatibility_tests_config` in `spec`; `deployment_mode` in `connection`; `backward_compatibility_tests_config` in `discovery`; `client_container_config`, `expect_trace_message_on_failure` and `validate_state_messages` in `basic_read`; `client_container_config` in `full_refresh` | Accepted in that section only. `backward_compatibility_tests_config.disable_for_version` of a `spec` entry is read by the spec backward-compatibility test; the others are CAT keys without a Standard Test counterpart yet. |
+| `sections`, `test_strictness_level` | Rejected on an entry: the Standard Tests fill them in. `sections` comes from the section that lists the entry; `test_strictness_level` is read only at the top level of the file. |
 | Anything else | Rejected as unknown. |
 
 Entries are checked even when they are not run (no `config_path`, or an `iam_role` config). The `incremental` section is not collected and is not checked. A config value that fails validation (an unknown `status`, for example) is reported the same way, without printing the value.
@@ -31,7 +32,7 @@ Migration steps:
 - Fix the spelling of a misspelled key; the error lists the keys the section accepts.
 - Python code that builds `ConnectorTestScenario` with `expect_records`, `timeout_seconds` or `file_types`, or uses `ConnectorTestScenario.AcceptanceTestExpectRecords` or `AcceptanceTestFileTypes`, must drop them.
 
-Rationale: a key that parses and is ignored reads like a check that runs. A connector with `expect_records` looks like its records are compared against a recorded file, and they are not. Removal is loud rather than silent, and a hard error rather than a deprecation window: the monorepo cleanup that removes these keys from every connector merges before this release, so no connector in the monorepo fails on it.
+Rationale: a key that parses and is ignored reads like a check that runs. A connector with `expect_records` looks like its records are compared against a recorded file, and they are not. Removal is loud rather than silent, and a hard error rather than a deprecation window: the cleanup that removes these keys from every Airbyte-maintained connector (the monorepo and the enterprise connectors) merges before this release, so none of them fails on it.
 
 ## Upgrading to 7.36.0
 

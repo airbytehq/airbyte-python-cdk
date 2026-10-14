@@ -419,10 +419,10 @@ class DockerConnectorTestSuite:
         streams of the config's `configured_catalog_path`, or of every discovered stream when it
         declares none (`SECTION_COMMANDS`). The `incremental` section is not collected.
 
-        An entry of a collected section that sets a key the standard tests do not read fails
-        collection, with one line per key naming the key, the section and the config, including
-        entries that are skipped (no `config_path`, or an `iam_role` config). See
-        `entry_key_problems`.
+        An entry of a collected section that sets a key the standard tests do not read, or one
+        they fill in themselves (`sections`, `test_strictness_level`), fails collection, with one
+        line per key naming the key, the section and the config, including entries that are
+        skipped (no `config_path`, or an `iam_role` config). See `entry_key_problems`.
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
