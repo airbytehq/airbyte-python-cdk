@@ -16,7 +16,9 @@ An entry of a collected section (`spec`, `connection`, `discovery`, `basic_read`
 
 | Key | Status |
 |---|---|
-| `expect_records`, `exact_order`, `ignored_fields`, `fail_on_extra_columns` | Removed: no record comparison. `ignored_fields` and `fail_on_extra_columns` were never declared on the model; they only configured CAT's comparison. |
+| `expect_records`, `exact_order` | Removed: no comparison against recorded records. |
+| `ignored_fields` | Removed: it listed fields CAT skipped when comparing records, against `expect_records` or between two consecutive full-refresh reads, and the Standard Tests run neither comparison. It was never declared on the model. |
+| `fail_on_extra_columns` | Removed: CAT accepted it but never enforced it, and the Standard Tests have no such check. It was never declared on the model. |
 | `timeout_seconds` | Removed: no per-config timeout. |
 | `file_types` | Removed: no file-type coverage check. |
 | `config_path`, `config_dict`, `configured_catalog_path`, `empty_streams` (`name`, `bypass_reason`), `status`, `validate_schema`, `bypass_reason` | Read. `bypass_reason` is reserved for the upcoming rule that a connector without test configs must say why. |

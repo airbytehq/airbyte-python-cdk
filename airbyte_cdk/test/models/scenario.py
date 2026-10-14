@@ -72,8 +72,15 @@ REMOVED_ENTRY_KEYS: Mapping[str, str] = MappingProxyType(
     {
         "expect_records": _NO_RECORD_COMPARISON,
         "exact_order": _NO_RECORD_COMPARISON,
-        "ignored_fields": _NO_RECORD_COMPARISON,
-        "fail_on_extra_columns": _NO_RECORD_COMPARISON,
+        "ignored_fields": (
+            "it listed the fields the Connector Acceptance Tests skipped when they compared "
+            "records, against `expect_records` or between two consecutive full-refresh reads; "
+            "the standard tests run neither comparison"
+        ),
+        "fail_on_extra_columns": (
+            "the Connector Acceptance Tests accepted it but never enforced it, and the standard "
+            "tests have no such check"
+        ),
         "timeout_seconds": "the standard tests have no per-config timeout",
         "file_types": "the standard tests have no check that every supported file type is read",
     }
