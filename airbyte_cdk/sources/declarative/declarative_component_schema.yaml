@@ -5758,7 +5758,7 @@ interpolation:
           x-ratelimit-remaining: "598"
           x-ratelimit-reset: "39"
     - title: request_url
-      description: The URL of the request that produced the response, with its query string, fragment and userinfo (user:password@) removed. The path is kept as-is, so do not surface it for APIs that put a credential in the path. Available in HttpResponseFilter's error_message and predicate.
+      description: The URL of the response (the final URL after any redirects), with its query string, fragment and userinfo (user:password@) removed. The path is kept as-is, so do not surface it for APIs that put a credential in the path. Available in HttpResponseFilter's error_message and predicate.
       type: string
       examples:
         - "https://api.github.com/repos/airbytehq/airbyte/stargazers"
