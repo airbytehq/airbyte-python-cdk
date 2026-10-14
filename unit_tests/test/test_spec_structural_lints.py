@@ -355,6 +355,49 @@ def test_find_oneof_usage_errors(schema: dict[str, Any], expected: list[str]) ->
             ["/properties/a/type", "/required"],
             id="invalid_schema",
         ),
+        # Keyword values that are not strings are reported at their pointer, never crash.
+        pytest.param(
+            find_array_type_errors,
+            _object(
+                {
+                    "a": {"type": "array", "items": {"type": ["string", "null"]}},
+                    "b": {"type": "array", "items": {"type": {"x": 1}}},
+                }
+            ),
+            ["/properties/a/items", "/properties/b/items"],
+            id="array_items_type_not_a_string",
+        ),
+        pytest.param(
+            find_display_type_errors,
+            _object(
+                {
+                    "a": {
+                        "type": "object",
+                        "oneOf": [_variant(OAUTH_TYPE)],
+                        "display_type": ["radio"],
+                    },
+                    "b": {
+                        "type": "object",
+                        "oneOf": [_variant(OAUTH_TYPE)],
+                        "display_type": {"x": 1},
+                    },
+                }
+            ),
+            ["/properties/a/display_type", "/properties/b/display_type"],
+            id="display_type_not_a_string",
+        ),
+        pytest.param(
+            find_invalid_schema_errors,
+            {**_object({"a": {"type": "string"}}), "$schema": ["draft-07"]},
+            ["/$schema"],
+            id="schema_keyword_not_a_string",
+        ),
+        pytest.param(
+            find_invalid_schema_errors,
+            {**_object({"a": {"type": "string"}}), "$schema": {"x": 1}},
+            ["/$schema"],
+            id="schema_keyword_an_object",
+        ),
     ],
 )
 def test_structural_lints(lint: Lint, schema: dict[str, Any], expected: list[str]) -> None:
@@ -500,6 +543,30 @@ def test_find_spec_problems_reports_a_crashing_lint_without_raising() -> None:
     lint = SpecLint("crash", "Never crashes.", crash, enforced=False)
     problems = find_spec_problems({"connectionSpecification": _object({})}, lints=[lint])
     assert problems == {lint: ["The lint could not run: KeyError."]}
+
+
+@pytest.mark.parametrize(
+    "connection_specification",
+    [
+        pytest.param(
+            _object({"a": {"type": "array", "items": {"type": ["string", "null"]}}}),
+            id="array_items_type_list",
+        ),
+        pytest.param(
+            _object({"a": {"type": "object", "oneOf": [], "display_type": ["radio"]}}),
+            id="display_type_list",
+        ),
+        pytest.param({"type": "object", "$schema": ["draft-07"]}, id="schema_keyword_list"),
+    ],
+)
+def test_find_spec_problems_names_the_pointer_of_a_non_string_keyword_value(
+    connection_specification: dict[str, Any],
+) -> None:
+    problems = find_spec_problems({"connectionSpecification": connection_specification})
+    messages = [message for found in problems.values() for message in found]
+    assert messages
+    assert not any("could not run" in message for message in messages), messages
+    assert all(message.startswith("`/") for message in messages), messages
 
 
 def test_find_spec_problems_on_a_clean_spec() -> None:

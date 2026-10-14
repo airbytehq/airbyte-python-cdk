@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-import jsonschema
-
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteMessageSerializer,
@@ -26,7 +24,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
-from airbyte_cdk.test.standard_tests._catalog_checks import _iter_subschemas
+from airbyte_cdk.test.standard_tests._catalog_checks import _iter_subschemas, _meta_validator
 
 SECRET_PROPERTY_NAMES = frozenset(
     {
@@ -582,7 +580,9 @@ def find_array_type_errors(connection_specification: Mapping[str, Any]) -> list[
         where = _spec_pointer((*path, "items"))
         if not isinstance(items, Mapping):
             errors.append(f"{where} must be a single schema, not a list of item schemas.")
-        elif items.get("type") not in ARRAY_ITEM_TYPES and "enum" not in items:
+        elif "enum" in items:
+            continue
+        elif not isinstance(items.get("type"), str) or items["type"] not in ARRAY_ITEM_TYPES:
             errors.append(
                 f"{where} must be of type `object`, `string`, `number` or `integer`, or set "
                 "an `enum`."
@@ -679,7 +679,8 @@ def find_display_type_errors(connection_specification: Mapping[str, Any]) -> lis
         where = _spec_pointer((*path, "display_type"))
         if "oneOf" not in schema:
             errors.append(f"{where} is set on a field without `oneOf` variants.")
-        if schema["display_type"] not in DISPLAY_TYPES:
+        display_type = schema["display_type"]
+        if not isinstance(display_type, str) or display_type not in DISPLAY_TYPES:
             errors.append(f"{where} must be `dropdown` or `radio`.")
     return errors
 
@@ -799,18 +800,14 @@ def find_invalid_schema_errors(connection_specification: Mapping[str, Any]) -> l
     """Return one error per place where the spec is not a valid JSON Schema.
 
     The spec is checked against the meta-schema of the draft it declares in `$schema`, draft 7
-    by default. CAT only found this through `test_config_match_spec`, when a scenario config
+    by default, and draft 7 when `$schema` is not a string (its meta-schema then reports
+    `$schema`). CAT only found this through `test_config_match_spec`, when a scenario config
     was validated against an invalid spec.
     """
-    validator_class = jsonschema.validators.validator_for(
-        connection_specification, default=jsonschema.Draft7Validator
-    )
     return [
         f"{_spec_pointer(map(str, error.path))} is not valid JSON Schema: it fails the "
         f"`{error.validator}` rule of the meta-schema."
-        for error in validator_class(validator_class.META_SCHEMA).iter_errors(
-            connection_specification
-        )
+        for error in _meta_validator(connection_specification).iter_errors(connection_specification)
     ]
 
 

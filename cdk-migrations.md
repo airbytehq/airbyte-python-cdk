@@ -2,7 +2,10 @@
 
 ## Upgrading to the next minor release (unreleased)
 
-This release adds structural lints to the spec tests (`test_spec` and `test_docker_image_build_and_spec`), ported from the spec checks of the Connector Acceptance Tests (CAT). They run on the spec that `spec` emits, need no credentials, and report every problem with the JSON pointer of the place in the spec, never a value. The release is a minor one, since only the test harness changes. Every connector in the monorepo that failed an enforced lint was fixed before this release.
+This release adds structural lints to the spec tests (`test_spec` and `test_docker_image_build_and_spec`), ported from the spec checks of the Connector Acceptance Tests (CAT). They run on the spec that `spec` emits, need no credentials, and report every problem with the JSON pointer of the place in the spec, never a value. The release is a minor one, since only the test harness changes. The monorepo connectors that failed an enforced lint were fixed before this release, with two known exceptions, both failing `additionalProperties is true`:
+
+- `destination-timeplus` is archived and disabled in both registries, so nobody ships it. Its tests fail only when a pull request edits it.
+- `source-mssql` (Java) emits a map property whose `additionalProperties` is a schema. It fails the `airbyte-cdk image test` step of airbyte's Dockerfile Tests workflow, which runs only when a pull request changes the Java connector Dockerfiles.
 
 ### Enforced spec lints
 
@@ -15,7 +18,7 @@ The spec tests now fail when the emitted spec breaks one of these rules. Each fa
 | additionalProperties is true | `additionalProperties` is `true` wherever it is set. With `false` or a schema, removing a property later invalidates every saved config that sets it. | Set it to `true`, or remove it. Relaxing `false` to `true` is backward compatible. |
 | oneOf usage | A schema with `oneOf` is `type: object`, every variant has `properties`, and the variants share exactly one discriminator: a property that sets `const` in every variant or, failing that, a single-item `enum` with that item as `default`. A `const` discriminator may set `default` and `enum` only to its `const`, and no two variants share a discriminator value. | Add a shared `const` property, such as `auth_type`, to each variant. |
 | enum usage | An `enum` does not list the same value twice. | Remove the duplicate. |
-| array items | An array's `items` is one schema, of type `object`, `string`, `number` or `integer`, or with an `enum`. | Change the item type. |
+| array items | An array's `items` is one schema, of type `object`, `string`, `number` or `integer` (a single type, not a list such as `[string, null]`), or with an `enum`. | Change the item type. |
 | property types | A property whose `type` is a list holds one type, or one type followed by `null`. The setup form renders the first type only. | Reorder `[null, string]` to `[string, null]`. |
 | display_type | `display_type` is set only on a field with `oneOf` variants, to `dropdown` or `radio`. | Remove it or fix its value. |
 | duplicate order | No two properties of one object (and one `group`) share an `order`. | Give each property a unique `order`. `order` is an annotation, so changing it is backward compatible. |
