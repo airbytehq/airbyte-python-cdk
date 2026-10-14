@@ -3,7 +3,10 @@
 #
 
 import json
+import sys
 import time
+from io import StringIO
+from threading import Barrier, Thread
 
 import pytest
 
@@ -11,9 +14,11 @@ from airbyte_cdk.config_observation import (
     ConfigObserver,
     ObservedDict,
     create_connector_config_control_message,
+    emit_configuration_as_airbyte_control_message,
     observe_connector_config,
 )
 from airbyte_cdk.models import AirbyteControlConnectorConfigMessage, OrchestratorType, Type
+from airbyte_cdk.utils.print_buffer import PrintBuffer
 
 
 class TestObservedDict:
@@ -97,3 +102,70 @@ def test_create_connector_config_control_message():
     assert message.control.type == OrchestratorType.CONNECTOR_CONFIG
     assert message.control.connectorConfig == AirbyteControlConnectorConfigMessage(config=A_CONFIG)
     assert message.control.emitted_at is not None
+
+
+def test_emit_configuration_as_airbyte_control_message_is_line_atomic(monkeypatch):
+    writes = []
+
+    class RecordingStream:
+        def write(self, message):
+            writes.append(message)
+
+    monkeypatch.setattr(sys, "stdout", RecordingStream())
+
+    emit_configuration_as_airbyte_control_message({"foo": "bar"})
+
+    assert len(writes) == 1
+    assert writes[0].endswith("\n")
+    assert writes[0].count("\n") == 1
+    assert json.loads(writes[0])["type"] == "CONTROL"
+
+
+def test_emit_configuration_as_airbyte_control_message_concurrent_output_is_well_framed(
+    monkeypatch,
+):
+    captured_output = []
+    print_buffer = PrintBuffer(flush_interval=float("inf"))
+
+    def capture_flush():
+        captured_output.append(print_buffer.buffer.getvalue())
+        print_buffer.buffer = StringIO()
+
+    monkeypatch.setattr(print_buffer, "flush", capture_flush)
+    monkeypatch.setattr(sys, "stdout", print_buffer)
+
+    worker_count = 4
+    iterations = 100
+    start_barrier = Barrier(worker_count + 1)
+
+    def print_records():
+        start_barrier.wait()
+        for index in range(worker_count * iterations):
+            record = {"type": "RECORD", "record": {"data": {"index": index}}}
+            print(f"{json.dumps(record)}\n", end="")
+
+    def emit_control_messages(worker_id):
+        start_barrier.wait()
+        for index in range(iterations):
+            emit_configuration_as_airbyte_control_message({"worker_id": worker_id, "index": index})
+
+    threads = [
+        Thread(target=print_records),
+        *[
+            Thread(target=emit_control_messages, args=(worker_id,))
+            for worker_id in range(worker_count)
+        ],
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    print_buffer.flush()
+
+    output = "".join(captured_output)
+    lines = output.split("\n")
+    assert lines[-1] == ""
+    lines = lines[:-1]
+    assert lines
+    assert all(line for line in lines)
+    assert all(json.loads(line) for line in lines)

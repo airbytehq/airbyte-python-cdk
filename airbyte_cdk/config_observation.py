@@ -6,6 +6,7 @@ from __future__ import (  # Used to evaluate type hints at runtime, a NameError:
     annotations,
 )
 
+import sys
 import time
 from copy import copy
 from typing import Any, List, MutableMapping
@@ -92,7 +93,14 @@ def emit_configuration_as_airbyte_control_message(config: MutableMapping[str, An
     See the airbyte_cdk.sources.message package
     """
     airbyte_message = create_connector_config_control_message(config)
-    print(orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode())
+    serialized_message = orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
+    # Emit the payload and its trailing newline in a single write. A bare `print(x)` issues two
+    # separate writes (the payload, then "\n"), so a CONTROL message emitted from a worker thread
+    # (e.g. a single-use refresh-token rotation during a concurrent sync) can interleave with a
+    # RECORD line printed from the main thread and corrupt stdout line framing, causing the
+    # platform to drop a record. Writing the newline as part of the payload keeps the emission
+    # line-atomic, mirroring the main read loop in `entrypoint.launch`.
+    sys.stdout.write(f"{serialized_message}\n")
 
 
 def create_connector_config_control_message(config: MutableMapping[str, Any]) -> AirbyteMessage:
