@@ -29,6 +29,8 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
 
+CSV_FIELD_MAX_BYTES = 2**31
+
 
 class _PrefixedStream(io.RawIOBase):
     """Restore consumed header bytes ahead of the remaining stream."""
@@ -215,6 +217,7 @@ class CsvParser(Parser):
         Parse CSV data from decompressed bytes.
         """
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
+        csv.field_size_limit(CSV_FIELD_MAX_BYTES)
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
         for row in reader:
             if self.set_values_to_none:
