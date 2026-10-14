@@ -237,3 +237,55 @@ def test_matches(
         assert actual_response_status.error_message == expected_error_resolution.error_message
     else:
         assert actual_response_status is None
+
+
+@pytest.mark.parametrize(
+    "url, expected_request_url",
+    [
+        pytest.param(
+            "https://api.github.com/repos/airbytehq/airbyte/stargazers?per_page=100&page=2",
+            "https://api.github.com/repos/airbytehq/airbyte/stargazers",
+            id="query_string_dropped",
+        ),
+        pytest.param(
+            "https://user:secret@api.example.com/v1/items?api_key=secret",
+            "https://api.example.com/v1/items",
+            id="credentials_dropped",
+        ),
+    ],
+)
+def test_error_message_interpolates_request_url(requests_mock, url, expected_request_url):
+    requests_mock.get(url, status_code=404, json={"message": "Not Found"})
+    response_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        http_codes={404},
+        error_message="Skipping {{ request_url }}.",
+    )
+
+    resolution = response_filter.matches(requests.get(url))
+
+    assert resolution.response_action == ResponseAction.IGNORE
+    assert resolution.error_message == f"Skipping {expected_request_url}."
+
+
+def test_predicate_interpolates_request_url(requests_mock):
+    requests_mock.get("https://api.github.com/repos/airbytehq/airbyte/stargazers", status_code=404)
+    requests_mock.get("https://api.github.com/repos/airbytehq/airbyte/events", status_code=404)
+    response_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        predicate="{{ request_url.endswith('/stargazers') }}",
+    )
+
+    stargazers = response_filter.matches(
+        requests.get("https://api.github.com/repos/airbytehq/airbyte/stargazers")
+    )
+    events = response_filter.matches(
+        requests.get("https://api.github.com/repos/airbytehq/airbyte/events")
+    )
+
+    assert stargazers.response_action == ResponseAction.IGNORE
+    assert events is None
