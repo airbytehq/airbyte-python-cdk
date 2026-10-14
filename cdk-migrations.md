@@ -1,5 +1,38 @@
 # CDK Migration Guide
 
+## Upgrading to the next minor release (unreleased)
+
+### `acceptance-test-config.yml` keys the Standard Tests do not read fail collection
+
+`ConnectorTestScenario` declared `expect_records` (with `exact_order`), `timeout_seconds` and `file_types`, and no test read them: they parsed, and the check they configured in the retired Connector Acceptance Tests (CAT) never ran. They are removed. Any other key that the model did not declare was dropped without a word, so a misspelled key (`empty_stream` for `empty_streams`) was ignored as well.
+
+An entry of a collected section (`spec`, `connection`, `discovery`, `basic_read`, `full_refresh`) that sets a key the Standard Tests do not read now fails test collection, with one line per key naming the key, the section and the config:
+
+```
+`.../source-example/acceptance-test-config.yml` is not valid for the standard tests:
+- `expect_records` in the `basic_read` entry for config `secrets/config.json` is no longer read: it configured the Connector Acceptance Tests' comparison of the records read against recorded ones, which the standard tests do not run. Remove the key.
+- `timeout_seconds` in the `full_refresh` entry for config `secrets/config.json` is no longer read: the standard tests have no per-config timeout. Remove the key.
+```
+
+| Key | Status |
+|---|---|
+| `expect_records`, `exact_order`, `ignored_fields`, `fail_on_extra_columns` | Removed: no record comparison. `ignored_fields` and `fail_on_extra_columns` were never declared on the model; they only configured CAT's comparison. |
+| `timeout_seconds` | Removed: no per-config timeout. |
+| `file_types` | Removed: no file-type coverage check. |
+| `config_path`, `config_dict`, `configured_catalog_path`, `empty_streams` (`name`, `bypass_reason`), `status`, `validate_schema`, `bypass_reason` | Read. `bypass_reason` is reserved for the upcoming rule that a connector without test configs must say why. |
+| `spec_path`, `deployment_mode` and `backward_compatibility_tests_config` in `spec`; `deployment_mode` in `connection`; `backward_compatibility_tests_config` in `discovery`; `client_container_config`, `expect_trace_message_on_failure` and `validate_state_messages` in `basic_read`; `client_container_config` in `full_refresh` | Accepted in that section only. `backward_compatibility_tests_config.disable_for_version` of a `spec` entry is read by the spec backward-compatibility test; the others are CAT keys without a Standard Test counterpart yet. |
+| Anything else | Rejected as unknown. |
+
+Entries are checked even when they are not run (no `config_path`, or an `iam_role` config). The `incremental` section is not collected and is not checked. A config value that fails validation (an unknown `status`, for example) is reported the same way, without printing the value.
+
+Migration steps:
+
+- Remove the keys the error names from `acceptance-test-config.yml`, and delete the recorded-records files that `expect_records.path` pointed at if nothing else uses them. These are test-only changes and need no version bump.
+- Fix the spelling of a misspelled key; the error lists the keys the section accepts.
+- Python code that builds `ConnectorTestScenario` with `expect_records`, `timeout_seconds` or `file_types`, or uses `ConnectorTestScenario.AcceptanceTestExpectRecords` or `AcceptanceTestFileTypes`, must drop them.
+
+Rationale: a key that parses and is ignored reads like a check that runs. A connector with `expect_records` looks like its records are compared against a recorded file, and they are not. Removal is loud rather than silent, and a hard error rather than a deprecation window: the monorepo cleanup that removes these keys from every connector merges before this release, so no connector in the monorepo fails on it.
+
 ## Upgrading to 7.36.0
 
 This release of the CDK adds checks to the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) and changes which commands they run for the configs listed in `acceptance-test-config.yml`. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
