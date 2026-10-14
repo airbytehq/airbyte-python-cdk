@@ -1423,6 +1423,10 @@ class BlockSimultaneousSyncsAction(BaseModel):
     type: Literal["BlockSimultaneousSyncsAction"]
 
 
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
+
+
 class ValueType(Enum):
     string = "string"
     number = "number"
