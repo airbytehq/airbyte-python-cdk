@@ -2855,6 +2855,9 @@ definitions:
           - config
           - response
           - headers
+          - request_url
+        examples:
+          - "Skipping {{ request_url }} (HTTP 404)."
       error_message_contains:
         title: Error Message Substring
         description: Match the response if its error message contains the substring.
@@ -2878,8 +2881,10 @@ definitions:
         interpolation_context:
           - response
           - headers
+          - request_url
         examples:
           - "{{ 'Too much requests' in response }}"
+          - "{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}"
           - "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}"
       $parameters:
         type: object
@@ -5752,6 +5757,11 @@ interpolation:
           x-ratelimit-limit: "600"
           x-ratelimit-remaining: "598"
           x-ratelimit-reset: "39"
+    - title: request_url
+      description: The URL of the response (the final URL after any redirects), with its query string, fragment and userinfo (user:password@) removed. The path is kept as-is, so do not surface it for APIs that put a credential in the path. Available in HttpResponseFilter's error_message and predicate.
+      type: string
+      examples:
+        - "https://api.github.com/repos/airbytehq/airbyte/stargazers"
     - title: last_record
       description: Last record extracted from the response received from the API.
       type: object

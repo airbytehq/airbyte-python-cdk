@@ -653,6 +653,7 @@ class HttpResponseFilter(BaseModel):
     error_message: Optional[str] = Field(
         None,
         description="Error Message to display if the response matches the filter.",
+        examples=["Skipping {{ request_url }} (HTTP 404)."],
         title="Error Message",
     )
     error_message_contains: Optional[str] = Field(
@@ -673,6 +674,7 @@ class HttpResponseFilter(BaseModel):
         description="Match the response if the predicate evaluates to true.",
         examples=[
             "{{ 'Too much requests' in response }}",
+            "{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}",
             "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}",
         ],
         title="Predicate",
