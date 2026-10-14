@@ -105,6 +105,12 @@ class ConnectorTestScenario(BaseModel):
     status: Literal["succeed", "failed", "exception"] | None = None
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
+    # CAT's `basic_read` opt-out from checking the primary key of every record.
+    validate_primary_keys_data_type: bool = True
+    # CAT's `basic_read` opt-out from checking that every stream emits per-stream state.
+    validate_state_messages: bool = True
+    # CAT's `basic_read` opt-out from requiring a well-formed error trace from a failing read.
+    expect_trace_message_on_failure: bool = True
     # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
     # by `get_scenarios()`; at `high`, `validate_schema: false` is rejected, as in CAT.
     test_strictness_level: Literal["low", "high"] | None = None
@@ -189,8 +195,10 @@ class ConnectorTestScenario(BaseModel):
         """Whether this config is listed under `basic_read` (or the scenario was built by hand).
 
         Only the records of these configs are checked as in CAT's basic read test: every stream
-        not declared in `empty_streams` returns records, and every record matches its stream's
-        schema unless `validate_schema: false` is set. A config read only because it is listed
+        not declared in `empty_streams` returns records, every record matches its stream's
+        schema unless `validate_schema: false` is set, every record has a usable primary key
+        unless `validate_primary_keys_data_type: false` is set, and every stream emits state
+        unless `validate_state_messages: false` is set. A config read only because it is listed
         under `full_refresh` never had CAT's basic read checks, and has no `basic_read` entry to
         declare those exceptions in, so its `read` only has to return some records.
         """

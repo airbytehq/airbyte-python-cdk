@@ -23,11 +23,15 @@ from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteRecordMessage,
+    AirbyteStateBlob,
     AirbyteStateMessage,
+    AirbyteStateType,
     AirbyteStream,
+    AirbyteStreamState,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
     Status,
+    StreamDescriptor,
     SyncMode,
     Type,
 )
@@ -587,6 +591,17 @@ class _ReadSource(Source):
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
                     stream=name, data={"id": 1, "updated_at": "2026-01-01"}, emitted_at=0
+                ),
+            )
+            # The final state the CDK emits once a full-refresh stream completes.
+            yield AirbyteMessage(
+                type=Type.STATE,
+                state=AirbyteStateMessage(
+                    type=AirbyteStateType.STREAM,
+                    stream=AirbyteStreamState(
+                        stream_descriptor=StreamDescriptor(name=name),
+                        stream_state=AirbyteStateBlob(__ab_no_cursor_state_message=True),
+                    ),
                 ),
             )
 
