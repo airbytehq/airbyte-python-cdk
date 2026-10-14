@@ -252,6 +252,16 @@ def test_matches(
             "https://api.example.com/v1/items",
             id="credentials_dropped",
         ),
+        pytest.param(
+            "https://user:pw@api.example.com:8443/v1/items?k=v#frag",
+            "https://api.example.com:8443/v1/items",
+            id="port_kept_fragment_dropped",
+        ),
+        pytest.param(
+            "https://[::1]:8443/v1/items?k=v",
+            "https://[::1]:8443/v1/items",
+            id="ipv6_host_and_port_kept",
+        ),
     ],
 )
 def test_error_message_interpolates_request_url(requests_mock, url, expected_request_url):
@@ -289,3 +299,24 @@ def test_predicate_interpolates_request_url(requests_mock):
 
     assert stargazers.response_action == ResponseAction.IGNORE
     assert events is None
+
+
+def test_request_url_is_empty_when_response_has_no_url():
+    response = requests.Response()
+    response.status_code = 404
+    message_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        http_codes={404},
+        error_message="Skipping [{{ request_url }}].",
+    )
+    predicate_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        predicate="{{ request_url.endswith('/stargazers') }}",
+    )
+
+    assert message_filter.matches(response).error_message == "Skipping []."
+    assert predicate_filter.matches(response) is None

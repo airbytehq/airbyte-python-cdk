@@ -39,8 +39,9 @@ class HttpResponseFilter:
         error_message (Union[InterpolatedString, str): error message to display if the response matches the filter
 
     `error_message` and `predicate` can interpolate `response` (the parsed JSON body), `headers`
-    and `request_url`, the URL the response came from without its query string or credentials.
-    `error_message` can also interpolate `config`.
+    and `request_url`, the URL the response came from with its query string, fragment and userinfo
+    (user:password@) removed. The path is kept as-is, so a credential an API puts in the path is not
+    removed. `error_message` can also interpolate `config`.
     """
 
     config: Config
