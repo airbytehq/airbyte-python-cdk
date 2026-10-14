@@ -281,13 +281,26 @@ def test_error_message_interpolates_request_url(requests_mock, url, expected_req
 
 
 def test_predicate_interpolates_request_url(requests_mock):
-    requests_mock.get("https://api.github.com/repos/airbytehq/airbyte/stargazers", status_code=404)
-    requests_mock.get("https://api.github.com/repos/airbytehq/airbyte/events", status_code=404)
+    requests_mock.get(
+        "https://api.github.com/repos/airbytehq/airbyte/stargazers",
+        status_code=404,
+        json={"message": "Not Found"},
+    )
+    requests_mock.get(
+        "https://api.github.com/repos/airbytehq/airbyte/events",
+        status_code=404,
+        json={"message": "Not Found"},
+    )
+    requests_mock.get(
+        "https://api.github.com/repos/airbytehq/airbyte-cdk/stargazers",
+        status_code=200,
+        json=[{"login": "octocat"}],
+    )
     response_filter = HttpResponseFilter(
         action=ResponseAction.IGNORE,
         config={},
         parameters={},
-        predicate="{{ request_url.endswith('/stargazers') }}",
+        predicate="{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}",
     )
 
     stargazers = response_filter.matches(
@@ -296,9 +309,14 @@ def test_predicate_interpolates_request_url(requests_mock):
     events = response_filter.matches(
         requests.get("https://api.github.com/repos/airbytehq/airbyte/events")
     )
+    # The filter also runs on successful pages, so the predicate must not match on the URL alone.
+    successful_page = response_filter.matches(
+        requests.get("https://api.github.com/repos/airbytehq/airbyte-cdk/stargazers")
+    )
 
     assert stargazers.response_action == ResponseAction.IGNORE
     assert events is None
+    assert successful_page is None
 
 
 def test_request_url_is_empty_when_response_has_no_url():

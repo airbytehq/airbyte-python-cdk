@@ -2884,7 +2884,7 @@ definitions:
           - request_url
         examples:
           - "{{ 'Too much requests' in response }}"
-          - "{{ request_url.endswith('/stargazers') }}"
+          - "{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}"
           - "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}"
       $parameters:
         type: object

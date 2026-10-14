@@ -674,7 +674,7 @@ class HttpResponseFilter(BaseModel):
         description="Match the response if the predicate evaluates to true.",
         examples=[
             "{{ 'Too much requests' in response }}",
-            "{{ request_url.endswith('/stargazers') }}",
+            "{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}",
             "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}",
         ],
         title="Predicate",
