@@ -4,7 +4,7 @@
 
 ### The Docker read test runs by default
 
-`test_docker_image_build_and_read`, the `read` inside the connector image, was skipped for every connector: `--read-from-streams` was registered without a default, and the test treated the missing value as `none`. Neither the CDK's connector CI nor the connector monorepo passed the option, so the test never ran. It now runs by default, in `airbyte-cdk image test` (what the connector monorepo runs for every Python and manifest-only connector) and wherever else the Docker suite is collected. For Python connectors, whose in-process tests do not run in the monorepo, it is the first `read` that connector CI runs.
+`test_docker_image_build_and_read`, the `read` inside the connector image, was skipped for every connector: `--read-from-streams` was registered without a default, and the test treated the missing value as `none`. Neither the CDK's connector CI nor the connector monorepo passed the option, so the test never ran. It now runs by default, in `airbyte-cdk image test` (what the connector monorepo runs for every Python and manifest-only connector) and wherever else the Docker suite is collected. For most Python connectors, whose in-process tests do not run in the monorepo, it is the first `read` that connector CI runs (only `source-s3` and `source-hardcoded-records` already read, through their own integration tests).
 
 The read records now get the checks of the in-process `test_basic_read`, through the same `assert_read_records`:
 
