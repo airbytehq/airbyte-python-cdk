@@ -30,7 +30,7 @@ Entries are checked even when they are not run (no `config_path`, or an `iam_rol
 
 Migration steps:
 
-- Remove the keys the error names from `acceptance-test-config.yml`, and delete the recorded-records files that `expect_records.path` pointed at if nothing else uses them. These are test-only changes and need no version bump.
+- Remove the keys the error names from `acceptance-test-config.yml`. Keep the recorded-records files that `expect_records.path` pointed at: they stay useful as a reference for the records a connector produces. These are test-only changes and need no version bump.
 - Fix the spelling of a misspelled key; the error lists the keys the section accepts.
 - Python code that builds `ConnectorTestScenario` with `expect_records`, `timeout_seconds` or `file_types`, or uses `ConnectorTestScenario.AcceptanceTestExpectRecords` or `AcceptanceTestFileTypes`, must drop them.
 
