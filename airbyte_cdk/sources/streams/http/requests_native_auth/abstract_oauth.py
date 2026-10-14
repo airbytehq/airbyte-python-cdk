@@ -34,34 +34,9 @@ _REFRESH_TOKEN_REJECTED_GUIDANCE = (
     "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
     "Re-authenticate this source's credentials in its connection settings."
 )
-# Guidance for Microsoft Entra refresh errors, keyed on the AADSTS code leading `error_description`.
-# Replaces the generic guidance above. Fixed strings only: the full message is the failure-summary
-# grouping key, so it must be identical on every attempt at the same failure.
-_ENTRA_REFRESH_ERROR_GUIDANCE: Mapping[str, str] = {
-    "AADSTS50078": (
-        "Microsoft Entra refused the refresh because the tenant's MFA policy now requires a new "
-        "MFA sign-in. Re-authenticate this source to restore syncs. This can recur on a fixed "
-        "schedule set by the tenant's MFA session settings, such as \"remember multi-factor "
-        'authentication on trusted devices".'
-    ),
-    "AADSTS70043": (
-        "A Microsoft Entra Conditional Access sign-in frequency policy expired the refresh token. "
-        "Re-authenticate this source to restore syncs. The tenant's Entra administrator sets how "
-        "often this is required."
-    ),
-    "AADSTS700082": (
-        "The Microsoft Entra refresh token expired after a period of inactivity. Re-authenticate "
-        "this source to restore syncs, and keep its connection syncing regularly to avoid a "
-        "recurrence."
-    ),
-    "AADSTS50173": (
-        "Microsoft Entra revoked the grant, typically because the authorizing user's password was "
-        "changed or reset. Re-authenticate this source to restore syncs."
-    ),
-}
 # Upper bound on the provider-controlled text appended to the user-facing message. Both the
 # RFC 6749 `error` token and the extracted code come from the provider, so both are still capped.
-# The longest standard token (`unsupported_grant_type`, 22) plus a 7-digit Entra code is 37
+# The longest standard token (`unsupported_grant_type`, 22) plus a 7-digit provider code is 37
 # characters, so this leaves roughly 2x headroom while still bounding a misbehaving provider.
 _PROVIDER_ERROR_DETAIL_MAX_LENGTH = 64
 # How much of the raw provider response is kept in the internal message, which is logged and is not
@@ -97,14 +72,19 @@ class AbstractOauth2Authenticator(AuthBase):
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_messages: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         If all of refresh_token_error_status_codes, refresh_token_error_key, and refresh_token_error_values are set,
         then http errors with such params will be wrapped in AirbyteTracedException.
+        refresh_token_error_messages maps fixed provider error strings to fixed user-facing messages.
         """
         self._refresh_token_error_status_codes = refresh_token_error_status_codes
         self._refresh_token_error_key = refresh_token_error_key
         self._refresh_token_error_values = refresh_token_error_values
+        self._refresh_token_error_messages: Mapping[str, str] = dict(
+            refresh_token_error_messages or {}
+        )
 
     def __call__(self, request: requests.PreparedRequest) -> requests.PreparedRequest:
         """Attach the HTTP headers required to authenticate on the HTTP request"""
@@ -357,6 +337,21 @@ class AbstractOauth2Authenticator(AuthBase):
                 return code_match.group()
         return None
 
+    def _get_refresh_token_error_message(
+        self, response_content: Optional[Mapping[str, Any]]
+    ) -> Optional[str]:
+        if not self._refresh_token_error_messages or not response_content:
+            return None
+        candidates = [self._extract_provider_error_code(response_content)]
+        for key in ("error_description", "error"):
+            value = response_content.get(key)
+            if isinstance(value, str):
+                candidates.append(" ".join(value.split()))
+        for candidate in candidates:
+            if candidate and candidate in self._refresh_token_error_messages:
+                return self._refresh_token_error_messages[candidate]
+        return None
+
     def _build_provider_error_detail(
         self, response_content: Optional[Mapping[str, Any]]
     ) -> Optional[str]:
@@ -366,14 +361,10 @@ class AbstractOauth2Authenticator(AuthBase):
         Only the standard OAuth 2.0 `error` field (RFC 6749 section 5.2) and the provider error
         code leading `error_description` are used. Both are stable for a given failure, so the same
         failure produces a byte-identical message on every attempt and the platform groups them
-        into a single failure summary. The description prose is deliberately excluded: it is
-        free-form, and providers embed per-request values in it -- Microsoft Entra's
-        `AADSTS700082` carries the token issue timestamp in its first sentence -- which would make
-        the grouping key unbounded. The code alone is what distinguishes a revoked grant
-        (`AADSTS50173`) from a misconfigured client (`AADSTS7000218`) or a Conditional Access
-        requirement (`AADSTS50076`). The full response body is preserved in the internal message,
-        which is logged. Which provider errors reach this path at all is set by the
-        authenticator's `refresh_token_error_*` configuration.
+        into a single failure summary. The description prose is deliberately excluded because it
+        can contain per-request values, which would make the grouping key unbounded. The full
+        response body is preserved in the internal message, which is logged. Which provider errors
+        reach this path at all is set by the authenticator's `refresh_token_error_*` configuration.
         """
         if not response_content:
             return None
@@ -505,9 +496,10 @@ class AbstractOauth2Authenticator(AuthBase):
                     )
             error_content = self._parse_error_response_content(e.response)
             if self._wrap_refresh_token_exception(e, response_content=error_content):
-                provider_error_code = self._extract_provider_error_code(error_content)
-                message = _ENTRA_REFRESH_ERROR_GUIDANCE.get(
-                    provider_error_code or "", _REFRESH_TOKEN_REJECTED_GUIDANCE
+                # Configured messages are fixed connector strings for failure-summary grouping.
+                message = (
+                    self._get_refresh_token_error_message(error_content)
+                    or _REFRESH_TOKEN_REJECTED_GUIDANCE
                 )
                 provider_error_detail = self._build_provider_error_detail(error_content)
                 if provider_error_detail:
