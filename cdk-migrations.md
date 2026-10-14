@@ -13,6 +13,8 @@ The read records now get the checks of the in-process `test_basic_read`, through
 
 Previously the test only failed on a trace error or a non-zero exit.
 
+The Docker `check`, `discover` and `read` tests now run the connector with a writable working directory, `/source` (an in-memory `tmpfs`), as the platform does. They used to run in the image's `WORKDIR`, which the image's `airbyte` user cannot write, so a connector that writes a temporary file to its working directory (for example `source-shopify` and `source-salesforce`, for bulk results) failed in the test although it works in a sync.
+
 Two options pick what is read. The defaults read one config of every connector that lists a config under `basic_read` or `full_refresh`:
 
 | Option | Default | Other values |
