@@ -788,7 +788,9 @@ class TestOauth2Authenticator:
             oauth.refresh_access_token()
 
         assert exc_info.value.failure_type == FailureType.config_error
-        assert exc_info.value.message.startswith("Refresh token was rejected by the OAuth provider")
+        assert exc_info.value.message.startswith(
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used)"
+        )
         # Only the provider code is surfaced, so the echoed credentials cannot reach the
         # user-facing message at all -- they are absent by construction, not merely masked.
         assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
@@ -801,6 +803,36 @@ class TestOauth2Authenticator:
         for message in (exc_info.value.message, exc_info.value.internal_message):
             assert parameters["refresh_token"] not in message
             assert config["client_secret"] not in message
+
+    def test_refresh_access_token_rejected_uses_configured_message(self, requests_mock):
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            parameters=parameters,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant", "invalid_permissions"),
+            refresh_token_error_messages={"AADSTS50173": "Configured guidance."},
+        )
+        requests_mock.post(
+            config["refresh_endpoint"],
+            status_code=400,
+            json={
+                "error": "invalid_grant",
+                "error_description": "AADSTS50173: Grant revoked.\r\nTrace ID: x",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.message == (
+            "Configured guidance. Provider error: invalid_grant: AADSTS50173"
+        )
+        assert exc_info.value.failure_type == FailureType.config_error
 
 
 def mock_request(method, url, data, headers, **kwargs):

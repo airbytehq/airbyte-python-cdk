@@ -815,7 +815,7 @@ class TestOauth2Authenticator:
             assert exc_info.value.message.startswith(error_message)
             assert exc_info.value.failure_type == FailureType.config_error
 
-    def _entra_style_authenticator(self):
+    def _entra_style_authenticator(self, refresh_token_error_messages=None):
         return Oauth2Authenticator(
             f"https://{TestOauth2Authenticator.refresh_endpoint}",
             TestOauth2Authenticator.client_id,
@@ -824,6 +824,7 @@ class TestOauth2Authenticator:
             refresh_token_error_status_codes=(400,),
             refresh_token_error_key="error",
             refresh_token_error_values=("invalid_grant", "invalid_client"),
+            refresh_token_error_messages=refresh_token_error_messages,
         )
 
     # Sits on a later line of each provider payload below, like the trace ids and timestamps
@@ -831,7 +832,7 @@ class TestOauth2Authenticator:
     trailing_marker = "Correlation ID: 11111111-2222-3333-4444-555555555555"
 
     @pytest.mark.parametrize(
-        "error, error_description, expected_code",
+        "error, error_description, expected_code, expected_guidance",
         (
             (
                 # Grant revoked, e.g. the user changed their password: re-authentication is the fix.
@@ -840,6 +841,8 @@ class TestOauth2Authenticator:
                 "token is needed. The user might have changed or reset their password.\r\n"
                 "Trace ID: 00000000-0000-0000-0000-000000000000\r\n" + trailing_marker,
                 "AADSTS50173",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
             ),
             (
                 # Client type / credential misconfiguration: re-authentication will not help.
@@ -847,6 +850,8 @@ class TestOauth2Authenticator:
                 "AADSTS7000218: The request body must contain the following parameter: "
                 "'client_assertion' or 'client_secret'.\r\n" + trailing_marker,
                 "AADSTS7000218",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
             ),
             (
                 # Conditional Access requires an interactive sign-in.
@@ -855,11 +860,13 @@ class TestOauth2Authenticator:
                 "you moved to a new location, you must use multi-factor authentication to access "
                 "the resource.\r\n" + trailing_marker,
                 "AADSTS50076",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
             ),
         ),
     )
     def test_refresh_access_token_surfaces_provider_error_code(
-        self, requests_mock, error, error_description, expected_code
+        self, requests_mock, error, error_description, expected_code, expected_guidance
     ):
         """The provider's own diagnostic must reach the logs and the user-facing message."""
         oauth = self._entra_style_authenticator()
@@ -872,15 +879,11 @@ class TestOauth2Authenticator:
         with pytest.raises(AirbyteTracedException) as exc_info:
             oauth.refresh_access_token()
 
-        guidance = (
-            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
-            "Re-authenticate this source's credentials in its connection settings."
-        )
         # The full provider response reaches the internal message, which is logged.
         assert expected_code in exc_info.value.internal_message
         assert TestOauth2Authenticator.trailing_marker in exc_info.value.internal_message
         # The actionable guidance still leads the user-facing message ...
-        assert exc_info.value.message.startswith(guidance)
+        assert exc_info.value.message.startswith(expected_guidance)
         # ... followed by a short, single-line provider detail carrying the error code.
         assert f"Provider error: {error}: {expected_code}" in exc_info.value.message
         assert "\n" not in exc_info.value.message and "\r" not in exc_info.value.message
@@ -1005,8 +1008,10 @@ class TestOauth2Authenticator:
         with pytest.raises(RequestException):
             oauth.refresh_access_token()
 
-    def _message_for_description(self, requests_mock, error_description):
-        oauth = self._entra_style_authenticator()
+    def _message_for_description(
+        self, requests_mock, error_description, refresh_token_error_messages=None
+    ):
+        oauth = self._entra_style_authenticator(refresh_token_error_messages)
         requests_mock.post(
             f"https://{TestOauth2Authenticator.refresh_endpoint}",
             status_code=400,
@@ -1015,6 +1020,220 @@ class TestOauth2Authenticator:
         with pytest.raises(AirbyteTracedException) as exc_info:
             oauth.refresh_access_token()
         return exc_info.value.message
+
+    @pytest.mark.parametrize(
+        "error_content, expected_detail",
+        (
+            (
+                {
+                    "error": "invalid_grant",
+                    "error_description": (
+                        "AADSTS50076: Due to a configuration change, MFA is required.\r\n"
+                        "Trace ID: 56789abc-def0-1234-5678-9abcdef01234"
+                    ),
+                },
+                "invalid_grant: AADSTS50076",
+            ),
+            (
+                {
+                    "error": "invalid_grant",
+                    "error_description": "Token has been expired or revoked.",
+                },
+                "invalid_grant",
+            ),
+            ({"error": "invalid_grant"}, "invalid_grant"),
+        ),
+        ids=["unknown_entra_code", "non_entra_provider", "no_description"],
+    )
+    @pytest.mark.parametrize(
+        "refresh_token_error_messages",
+        [None, {}, {"AADSTS50078": "Mapped."}],
+        ids=["no_map", "empty_map", "non_matching_map"],
+    )
+    def test_refresh_error_message_unchanged_without_mapped_code(
+        self, requests_mock, error_content, expected_detail, refresh_token_error_messages
+    ):
+        oauth = self._entra_style_authenticator(refresh_token_error_messages)
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json=error_content,
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert exc_info.value.message == f"{generic} Provider error: {expected_detail}"
+
+    @pytest.mark.parametrize(
+        "code, first_description, second_description, expected_message",
+        (
+            (
+                "AADSTS50078",
+                "AADSTS50078: MFA session expired.\r\n"
+                "Trace ID: 6789abcd-ef01-2345-6789-abcdef012345\r\n"
+                "Correlation ID: 55555555-6666-7777-8888-999999999999\r\n"
+                "Timestamp: 2026-03-14T09:26:53Z",
+                "AADSTS50078: MFA session expired.\r\n"
+                "Trace ID: 789abcde-f012-3456-789a-bcdef0123456\r\n"
+                "Correlation ID: 66666666-7777-8888-9999-aaaaaaaaaaaa\r\n"
+                "Timestamp: 2026-08-15T10:27:54Z",
+                "Configured guidance for 50078. Provider error: invalid_grant: AADSTS50078",
+            ),
+            (
+                "AADSTS700082",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-06-11T03:14:07.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 89abcdef-0123-4567-89ab-cdef01234567\r\n"
+                "Correlation ID: 77777777-8888-9999-aaaa-bbbbbbbbbbbb\r\n"
+                "Timestamp: 2026-06-12T11:28:55Z",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-07-29T22:01:52.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 9abcdef0-1234-5678-9abc-def012345678\r\n"
+                "Correlation ID: 88888888-9999-aaaa-bbbb-cccccccccccc\r\n"
+                "Timestamp: 2026-07-30T12:29:56Z",
+                "Configured guidance for 700082. Provider error: invalid_grant: AADSTS700082",
+            ),
+        ),
+        ids=["AADSTS50078", "AADSTS700082"],
+    )
+    def test_mapped_message_is_deterministic(
+        self, requests_mock, code, first_description, second_description, expected_message
+    ):
+        messages = {
+            "AADSTS50078": "Configured guidance for 50078.",
+            "AADSTS700082": "Configured guidance for 700082.",
+        }
+        first = self._message_for_description(requests_mock, first_description, messages)
+        second = self._message_for_description(requests_mock, second_description, messages)
+
+        assert first == second
+        assert first == expected_message
+
+    @pytest.mark.parametrize(
+        "messages, expected",
+        [
+            (
+                {
+                    "AADSTS50078": "Code guidance.",
+                    "AADSTS50078: MFA required. Trace ID: x": "Description guidance.",
+                    "invalid_grant": "Error guidance.",
+                },
+                "Code guidance. Provider error: invalid_grant: AADSTS50078",
+            ),
+            (
+                {
+                    "AADSTS50078: MFA required. Trace ID: x": "Description guidance.",
+                    "invalid_grant": "Error guidance.",
+                },
+                "Description guidance. Provider error: invalid_grant: AADSTS50078",
+            ),
+            (
+                {"invalid_grant": "Error guidance."},
+                "Error guidance. Provider error: invalid_grant: AADSTS50078",
+            ),
+        ],
+        ids=["provider_code_first", "normalized_description_second", "oauth_error_last"],
+    )
+    def test_refresh_error_message_lookup_order(self, requests_mock, messages, expected):
+        message = self._message_for_description(
+            requests_mock,
+            "AADSTS50078: MFA required.\r\nTrace ID: x",
+            messages,
+        )
+
+        assert message == expected
+
+    def test_refresh_error_message_matches_whitespace_normalized_description(self, requests_mock):
+        message = self._message_for_description(
+            requests_mock,
+            "Token has been\r\n expired  or revoked.\t",
+            {"Token has been expired or revoked.": "Configured guidance."},
+        )
+
+        assert message == "Configured guidance. Provider error: invalid_grant"
+
+    def test_refresh_error_message_matches_error_value(self, requests_mock):
+        message = self._message_for_description(
+            requests_mock, "No provider code.", {"invalid_grant": "Configured guidance."}
+        )
+
+        assert message == "Configured guidance. Provider error: invalid_grant"
+
+    @pytest.mark.parametrize("status_code", [400, 401])
+    def test_refresh_error_message_not_applied_outside_gate(self, requests_mock, status_code):
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_messages={"invalid_client": "Configured guidance."},
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=status_code,
+            json={"error": "invalid_client"},
+        )
+
+        with pytest.raises(requests.HTTPError):
+            oauth.refresh_access_token()
+
+    def test_refresh_error_message_ignores_non_string_error_fields(self, requests_mock):
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error_code",
+            refresh_token_error_values=("invalid_grant",),
+            refresh_token_error_messages={"invalid_grant": "Configured guidance."},
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "error_code": "invalid_grant",
+                "error": 123,
+                "error_description": {"detail": "not a string"},
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert exc_info.value.message == generic
+        assert exc_info.value.failure_type == FailureType.config_error
+
+    def test_refresh_error_message_empty_key_or_value_falls_back(self, requests_mock):
+        message = self._message_for_description(
+            requests_mock, "", {"": "Ignored.", "invalid_grant": ""}
+        )
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert message == f"{generic} Provider error: invalid_grant"
+
+    def test_abstract_authenticator_positional_init_still_supported(self):
+        class PositionalInitAuthenticator(Oauth2Authenticator):
+            def __init__(self):
+                super(Oauth2Authenticator, self).__init__((400,), "error", ("invalid_grant",))
+
+        authenticator = PositionalInitAuthenticator()
+        assert authenticator._refresh_token_error_status_codes == (400,)
+        assert authenticator._refresh_token_error_key == "error"
+        assert authenticator._refresh_token_error_values == ("invalid_grant",)
+        assert authenticator._refresh_token_error_messages == {}
 
     # AADSTS700082 embeds the token issue timestamp in the *first sentence* of the description,
     # so no first-line rule and no character cap can separate it from the stable text.
@@ -1190,6 +1409,34 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         assert authenticator.get_token_expiry_date() == ab_datetime_parse(
             connector_config["credentials"]["token_expiry_date"]
         )
+
+    def test_refresh_error_messages_applied_on_single_use(self, connector_config, requests_mock):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+            refresh_token_error_messages={"AADSTS50078": "Configured single-use guidance."},
+        )
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            status_code=400,
+            json={
+                "error": "invalid_grant",
+                "error_description": "AADSTS50078: MFA required.\r\nTrace ID: x",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            authenticator.refresh_access_token()
+
+        assert exc_info.value.message == (
+            "Configured single-use guidance. Provider error: invalid_grant: AADSTS50078"
+        )
+        assert exc_info.value.failure_type == FailureType.config_error
 
     @pytest.mark.parametrize(
         "test_name, expires_in_value, expiry_date_format, expected_expiry_date",
