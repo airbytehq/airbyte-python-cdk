@@ -5,10 +5,17 @@
 import logging
 import sys
 from types import TracebackType
-from typing import Any, List, Mapping, Optional
+from typing import Any, Iterable, List, Mapping, Optional, Tuple
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+_FAILURE_TYPE_PRECEDENCE: Tuple[FailureType, ...] = (
+    FailureType.config_error,
+    FailureType.transient_error,
+    FailureType.system_error,
+)
 
 
 def assemble_uncaught_exception(
@@ -54,3 +61,16 @@ def generate_failed_streams_error_message(stream_failures: Mapping[str, List[Exc
         ]
     )
     return f"During the sync, the following streams did not sync successfully: {failures}"
+
+
+def aggregate_failure_type(exceptions: Iterable[Exception]) -> FailureType:
+    failure_types = {
+        exception.failure_type
+        if isinstance(exception, AirbyteTracedException)
+        else FailureType.system_error
+        for exception in exceptions
+    }
+    for failure_type in _FAILURE_TYPE_PRECEDENCE:
+        if failure_type in failure_types:
+            return failure_type
+    return FailureType.system_error

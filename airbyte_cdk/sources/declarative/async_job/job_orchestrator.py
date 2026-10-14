@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import (
     Any,
+    Dict,
     Generator,
     Generic,
     Iterable,
@@ -37,6 +38,29 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 LOGGER = logging.getLogger("airbyte")
 _NO_TIMEOUT = timedelta.max
 _API_SIDE_RUNNING_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
+
+# Precedence used to aggregate the `FailureType` of many non-breaking
+# exceptions into a single value. A `config_error` means the user must act
+# before retries can succeed, so it dominates. `transient_error` is next
+# (retryable). `system_error` is the fallback for genuine internal failures.
+_FAILURE_TYPE_PRECEDENCE: Tuple[FailureType, ...] = (
+    FailureType.config_error,
+    FailureType.transient_error,
+    FailureType.system_error,
+)
+
+# Deterministic, aggregation-friendly user-facing messages per dominant
+# `FailureType`. Counts and raw exception reprs go into `internal_message`
+# so that the `message` field stays stable as a log aggregation key.
+_ASYNC_JOB_FAILURE_MESSAGE_BY_TYPE: Mapping[FailureType, str] = {
+    FailureType.config_error: (
+        "Async jobs failed because the source API rejected the request as unauthorized or forbidden."
+    ),
+    FailureType.transient_error: (
+        "Async jobs failed after exhausting retries for source API rate limit or transient errors."
+    ),
+    FailureType.system_error: "Async jobs failed after exhausting retry attempts.",
+}
 
 
 class AsyncPartition:
@@ -304,16 +328,19 @@ class AsyncJobOrchestrator:
         # Even though we're not sure this will break the stream, we will emit here for simplicity's sake. If we wanted to be more accurate,
         # we would keep the exceptions in-memory until we know that we have reached the max attempt.
         self._message_repository.emit_message(traced_exception.as_airbyte_message())
-        job = self._create_failed_job(_slice)
+        job = self._create_failed_job(_slice, traced_exception)
         self._job_tracker.add_job(intent, job.api_job_id())
         return job
 
-    def _create_failed_job(self, stream_slice: StreamSlice) -> AsyncJob:
+    def _create_failed_job(
+        self, stream_slice: StreamSlice, exception: Optional[Exception] = None
+    ) -> AsyncJob:
         job = AsyncJob(
             f"{uuid.uuid4()} - Job that could not start",
             stream_slice,
             _NO_TIMEOUT,
             is_creation_failure=True,
+            creation_failure_exception=exception,
         )
         job.update_status(AsyncJobStatus.FAILED)
         return job
@@ -487,11 +514,32 @@ class AsyncJobOrchestrator:
             AirbyteTracedException: If at least one job could not be completed.
         """
         status_by_job_id = {job.api_job_id(): job.status() for job in partition.jobs}
+        creation_failure_exceptions = [
+            exception
+            for exception in (job.creation_failure_exception() for job in partition.jobs)
+            if exception is not None
+        ]
+        creation_failure_details = (
+            "\n".join(
+                ["Creation failure exceptions:"]
+                + [
+                    filter_secrets(exception.__repr__())
+                    for exception in creation_failure_exceptions
+                ]
+            )
+            if creation_failure_exceptions
+            else "See warning logs for more information."
+        )
+        failure_type = (
+            self._aggregate_failure_type(creation_failure_exceptions)
+            if creation_failure_exceptions
+            else FailureType.system_error
+        )
         self._non_breaking_exceptions.append(
             AirbyteTracedException(
                 message="Async job failed after exhausting all retry attempts.",
-                internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. See warning logs for more information.",
-                failure_type=FailureType.system_error,
+                internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. {creation_failure_details}",
+                failure_type=failure_type,
             )
         )
 
@@ -536,16 +584,56 @@ class AsyncJobOrchestrator:
         if self._non_breaking_exceptions:
             # We emitted traced message but we didn't break on non_breaking_exception. We still need to raise an exception so that the
             # call of `create_and_get_completed_partitions` knows that there was an issue with some partitions and the sync is incomplete.
+            failure_type = self._aggregate_failure_type(self._non_breaking_exceptions)
+            failure_counts = self._count_failure_types(self._non_breaking_exceptions)
+            summary = ", ".join(
+                f"{ft.value}={failure_counts[ft]}"
+                for ft in _FAILURE_TYPE_PRECEDENCE
+                if ft in failure_counts
+            )
             raise AirbyteTracedException(
-                message="One or more async jobs failed after exhausting all retry attempts.",
+                message=_ASYNC_JOB_FAILURE_MESSAGE_BY_TYPE[failure_type],
                 internal_message="\n".join(
-                    [
+                    [f"Underlying failure breakdown: {summary}."]
+                    + [
                         filter_secrets(exception.__repr__())
                         for exception in self._non_breaking_exceptions
                     ]
                 ),
-                failure_type=FailureType.system_error,
+                failure_type=failure_type,
             )
+
+    @staticmethod
+    def _aggregate_failure_type(exceptions: List[Exception]) -> FailureType:
+        """Return the highest-precedence `FailureType` across `exceptions`.
+
+        Non-`AirbyteTracedException` exceptions are treated as `system_error`
+        (matching `AirbyteTracedException`'s default). The precedence order
+        is `config_error` > `transient_error` > `system_error`.
+        """
+        types_present: Set[FailureType] = {
+            exc.failure_type
+            if isinstance(exc, AirbyteTracedException) and exc.failure_type is not None
+            else FailureType.system_error
+            for exc in exceptions
+        }
+        for failure_type in _FAILURE_TYPE_PRECEDENCE:
+            if failure_type in types_present:
+                return failure_type
+        return FailureType.system_error
+
+    @staticmethod
+    def _count_failure_types(exceptions: List[Exception]) -> Dict[FailureType, int]:
+        """Return a count of each `FailureType` observed in `exceptions`."""
+        counts: Dict[FailureType, int] = {}
+        for exc in exceptions:
+            failure_type = (
+                exc.failure_type
+                if isinstance(exc, AirbyteTracedException) and exc.failure_type is not None
+                else FailureType.system_error
+            )
+            counts[failure_type] = counts.get(failure_type, 0) + 1
+        return counts
 
     def _handle_non_breaking_error(self, exception: Exception) -> None:
         LOGGER.error(f"Failed to start the Job: {exception}, traceback: {traceback.format_exc()}")
