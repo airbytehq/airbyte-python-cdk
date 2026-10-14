@@ -13,11 +13,17 @@ pytest_plugins = [
 ```
 """
 
+from dataclasses import dataclass
 from typing import Literal, cast
 
 import pytest
 
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
+from airbyte_cdk.test.standard_tests._acceptance_test_config import (
+    AcceptanceTestConfigError,
+    ScenarioBypass,
+)
+from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
 
 
 @pytest.fixture
@@ -195,8 +201,36 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
                 "Please define the 'scenarios' attribute in the test class."
             )
 
-        # Get the scenarios defined or discovered in the test class
-        scenarios = test_class.get_scenarios()
+        # Get the scenarios defined or discovered in the test class, and the declared bypasses.
+        config_error: str | None = None
+        try:
+            scenarios = test_class.get_scenarios()
+            get_bypasses = getattr(test_class, "get_scenario_bypasses", None)
+            bypasses: list[ScenarioBypass] = get_bypasses() if get_bypasses else []
+        except AcceptanceTestConfigError as error:
+            config_error = str(error)
+        if config_error is not None:
+            # Failed outside the `except` block, so pytest does not print the error twice.
+            pytest.fail(config_error, pytrace=False)
+
+        if not scenarios and not bypasses:
+            # Parametrizing with an empty list would skip every scenario test and exit 0.
+            describe = getattr(test_class, "describe_empty_scenarios", None)
+            pytest.fail(
+                describe()
+                if describe
+                else f"Test class {test_class.__name__} has no test scenarios.",
+                pytrace=False,
+            )
+
+        bypass_groups = _group_bypasses(bypasses)
+        if bypass_groups:
+            connector_name = getattr(test_class, "connector_name", test_class.__name__)
+            metafunc.config.stash.setdefault(_BYPASS_REPORT_KEY, {})[str(connector_name)] = (
+                f"{connector_name}: {ACCEPTANCE_TEST_CONFIG} declares {len(bypasses)} bypass(es), "
+                "reported as skipped tests: "
+                + "; ".join(f"{group.scope}: {group.reason}" for group in bypass_groups)
+            )
 
         # Create pytest.param objects with special marks as needed
         parametrized_scenarios = [
@@ -206,13 +240,73 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             )
             for scenario in scenarios
         ]
+        # One skipped param per distinct bypass reason, so the CI summary shows the reason.
+        bypass_params = [
+            pytest.param(
+                ConnectorTestScenario(bypass_reason=group.reason, sections=group.sections),
+                marks=pytest.mark.skip(
+                    reason=f"{ACCEPTANCE_TEST_CONFIG} bypasses {group.scope}: {group.reason}"
+                ),
+            )
+            for group in bypass_groups
+        ]
 
-        # Parametrize the 'scenario' argument with the scenarios
+        # Parametrize the 'scenario' argument with the scenarios, then the bypasses
         metafunc.parametrize(
             "scenario",
-            parametrized_scenarios,
-            ids=_scenario_test_ids(scenarios),
+            parametrized_scenarios + bypass_params,
+            ids=_scenario_test_ids(scenarios) + [group.test_id for group in bypass_groups],
         )
+
+
+_BYPASS_REPORT_KEY = pytest.StashKey[dict[str, str]]()
+"""The collection report line of each connector whose config declares bypasses."""
+
+
+def pytest_report_collectionfinish(config: pytest.Config) -> list[str]:
+    """Print one line per connector that declares bypasses, after the collection summary."""
+    return [line for _, line in sorted(config.stash.get(_BYPASS_REPORT_KEY, {}).items())]
+
+
+@dataclass(frozen=True)
+class _BypassGroup:
+    """The bypasses that share one reason, reported as one skipped test per scenario test."""
+
+    reason: str
+    scope: str
+    """What is bypassed: `the connector`, or the sections and entries, e.g. `connection.tests[1]`."""
+    sections: tuple[str, ...]
+    """The bypassed sections; empty when the whole connector is bypassed."""
+    test_id: str
+
+
+def _group_bypasses(bypasses: list[ScenarioBypass]) -> list[_BypassGroup]:
+    """Group bypasses by reason: the usual config repeats one reason on every section."""
+    by_reason: dict[str, list[ScenarioBypass]] = {}
+    for bypass in bypasses:
+        by_reason.setdefault(bypass.reason.strip(), []).append(bypass)
+
+    groups: list[_BypassGroup] = []
+    for reason, group in by_reason.items():
+        connector_wide = any(not bypass.sections for bypass in group)
+        sections = (
+            ()
+            if connector_wide
+            else tuple(dict.fromkeys(section for bypass in group for section in bypass.sections))
+        )
+        scope = (
+            "the connector"
+            if connector_wide
+            else ", ".join(
+                bypass.location.removeprefix("acceptance_tests.").removesuffix(".bypass_reason")
+                for bypass in group
+            )
+        )
+        test_id = "bypassed-" + ("connector" if connector_wide else "-".join(sections))
+        if any(existing.test_id == test_id for existing in groups):
+            test_id = f"{test_id}-{len(groups) + 1}"
+        groups.append(_BypassGroup(reason=reason, scope=scope, sections=sections, test_id=test_id))
+    return groups
 
 
 def _scenario_test_ids(scenarios: list[ConnectorTestScenario]) -> list[str]:

@@ -29,7 +29,15 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
-from airbyte_cdk.test.models.scenario import SCENARIO_SECTIONS, ScenarioCommand
+from airbyte_cdk.test.models.scenario import ScenarioCommand
+from airbyte_cdk.test.standard_tests._acceptance_test_config import (
+    JAVA_BYPASS_REASON,
+    CollectedScenarios,
+    ScenarioBypass,
+    collect_scenarios,
+    is_java_connector,
+    load_acceptance_test_config,
+)
 from airbyte_cdk.test.standard_tests._assertions import (
     assert_check_outcome,
     assert_config_matches_spec,
@@ -292,22 +300,15 @@ class DockerConnectorTestSuite:
     def acceptance_test_config(cls) -> Any:
         """Get the contents of acceptance test config file.
 
-        Also perform some basic validation that the file has the expected structure.
+        Also perform some basic validation that the file has the expected structure: an
+        `acceptance_tests` mapping, or only a top-level `bypass_reason`.
+
+        Raises:
+            MissingAcceptanceTestConfigError: The file does not exist (a `FileNotFoundError`).
+            AcceptanceTestConfigError: The file has an unusable layout, such as the legacy
+                top-level `tests:` key (a `ValueError`).
         """
-        acceptance_test_config_path = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
-        if not acceptance_test_config_path.exists():
-            raise FileNotFoundError(
-                f"Acceptance test config file not found at: {str(acceptance_test_config_path)}"
-            )
-
-        tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
-
-        if "acceptance_tests" not in tests_config:
-            raise ValueError(
-                f"Acceptance tests config not found in {acceptance_test_config_path}."
-                f" Found only: {str(tests_config)}."
-            )
-        return tests_config
+        return load_acceptance_test_config(cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG)
 
     @staticmethod
     def _dedup_scenarios(scenarios: list[ConnectorTestScenario]) -> list[ConnectorTestScenario]:
@@ -392,6 +393,23 @@ class DockerConnectorTestSuite:
         return deduped_scenarios
 
     @classmethod
+    def _collect_scenarios(cls) -> CollectedScenarios:
+        """Read the runnable scenarios and the declared bypasses of `acceptance-test-config.yml`.
+
+        A Java connector without the file is reported as bypassed: Java connectors are tested by
+        their Gradle suites. Every other connector without it fails, with
+        `MissingAcceptanceTestConfigError`.
+        """
+        connector_root = cls.get_connector_root_dir()
+        config_path = (connector_root / ACCEPTANCE_TEST_CONFIG).absolute()
+        if not config_path.exists() and is_java_connector(connector_root):
+            return CollectedScenarios(
+                config_path=config_path,
+                bypasses=[ScenarioBypass(reason=JAVA_BYPASS_REASON, location="metadata.yaml")],
+            )
+        return collect_scenarios(cls.acceptance_test_config, config_path)
+
+    @classmethod
     def get_scenarios(
         cls,
     ) -> list[ConnectorTestScenario]:
@@ -402,53 +420,34 @@ class DockerConnectorTestSuite:
         against the spec, `connection` runs `check` against the declared `status`, `discovery`
         runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read` of the
         streams of the config's `configured_catalog_path`, or of every discovered stream when it
-        declares none (`SECTION_COMMANDS`). The `incremental` section is not collected.
+        declares none (`SECTION_COMMANDS`). The `incremental` section is not collected. A section
+        in the legacy list layout (`spec: [...]`) is read as its `tests` list.
+
+        The file is required (except for Java connectors), and a legacy top-level `tests:` key
+        fails; see `load_acceptance_test_config`. An empty result is not an error here:
+        `pytest_generate_tests` fails collection when there is no scenario and no declared
+        bypass (`get_scenario_bypasses`).
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        try:
-            all_tests_config = cls.acceptance_test_config
-        except FileNotFoundError as e:
-            # Destinations sometimes do not have an acceptance tests file.
-            warnings.warn(
-                f"Acceptance test config file not found: {e!s}. No scenarios will be loaded.",
-                category=UserWarning,
-                stacklevel=1,
-            )
-            return []
+        return cls._dedup_scenarios(cls._collect_scenarios().scenarios)
 
-        test_strictness_level = all_tests_config.get("test_strictness_level")
-        test_scenarios: list[ConnectorTestScenario] = []
-        for category in SCENARIO_SECTIONS:
-            if (
-                category not in all_tests_config["acceptance_tests"]
-                or "tests" not in all_tests_config["acceptance_tests"][category]
-            ):
-                continue
+    @classmethod
+    def get_scenario_bypasses(cls) -> list[ScenarioBypass]:
+        """The `bypass_reason`s that `acceptance-test-config.yml` declares for collected parts.
 
-            for test in all_tests_config["acceptance_tests"][category]["tests"]:
-                if "config_path" not in test:
-                    # Skip tests without a config_path
-                    continue
+        A top-level `bypass_reason` bypasses the connector; one on a collected section with no
+        runnable config, or on an entry without `config_path`, bypasses that section or entry.
+        `pytest_generate_tests` reports them as skipped tests, and accepts a connector with no
+        scenario only when it declares at least one.
+        """
+        return cls._collect_scenarios().bypasses
 
-                if "iam_role" in test["config_path"]:
-                    # We skip iam_role tests for now, as they are not supported in the test suite.
-                    continue
-
-                scenario = ConnectorTestScenario.model_validate(
-                    {
-                        **test,
-                        "sections": (category,),
-                        "test_strictness_level": test_strictness_level,
-                    }
-                )
-
-                test_scenarios.append(scenario)
-
-        deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
-
-        return deduped_test_scenarios
+    @classmethod
+    def describe_empty_scenarios(cls) -> str:
+        """Why `acceptance-test-config.yml` yields neither a scenario nor a bypass."""
+        return cls._collect_scenarios().describe_empty(cast(str, cls.connector_name))
 
     @classmethod
     def _connector_image(
