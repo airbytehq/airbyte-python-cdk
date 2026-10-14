@@ -437,6 +437,13 @@ _MANIFEST_WITH_VALUE_TYPE_STR["dynamic_streams"][0]["components_resolver"][
         },
         {
             "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "quoted_string"],
+            "value": '"quoted resolver value"',
+            "value_type": "string",
+            "create_or_update": True,
+        },
+        {
+            "type": "ComponentMappingDefinition",
             "field_path": ["retriever", "requester", "$parameters", "json_parsed"],
             "value": "[1, 2]",  # no value_type -> should parse to a list
             "create_or_update": True,
@@ -479,6 +486,10 @@ def test_value_type_str_avoids_yaml_parsing():
         assert "json_string" in params
         assert isinstance(params["json_string"], str)
         assert params["json_string"] == "[1, 2]"
+
+        assert "quoted_string" in params
+        assert isinstance(params["quoted_string"], str)
+        assert params["quoted_string"] == '"quoted resolver value"'
 
         # No value_type -> YAML parsed
         assert "as_yaml" in params
