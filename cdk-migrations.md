@@ -29,9 +29,9 @@ A new per-connector test, `SourceTestSuiteBase.test_fail_read_with_invalid_confi
 
 Migration steps:
 
-- A record with an invalid primary key: fix the stream's `primary_key` (or the record) so that every record has a scalar key. To skip the check for one config while the fix is pending, set `validate_primary_keys_data_type: false` (with a `bypass_reason`) in its `basic_read` entry. As in CAT, this is allowed at `test_strictness_level: high`.
-- A stream without state: a stream that ends early, or a source that emits only `LEGACY` state, has to be fixed. To skip the check for one config while the fix is pending, set `validate_state_messages: false` (with a `bypass_reason`) in its `basic_read` entry.
-- A failed read without a well-formed error trace: make the connector raise (or emit) an `AirbyteTracedException` for invalid configs. To skip the check, set `expect_trace_message_on_failure: false` (with a `bypass_reason`) in any `basic_read` entry; this skips the new test for the whole connector.
+- A record with an invalid primary key: fix the stream's `primary_key` (or the record) so that every record has a scalar key. To skip the check for one config while the fix is pending, set `validate_primary_keys_data_type: false` in its `basic_read` entry, with a YAML comment giving the reason. As in CAT, this is allowed at `test_strictness_level: high`.
+- A stream without state: a stream that ends early, or a source that emits only `LEGACY` state, has to be fixed. To skip the check for one config while the fix is pending, set `validate_state_messages: false` in its `basic_read` entry, with a YAML comment giving the reason.
+- A failed read without a well-formed error trace: make the connector raise (or emit) an `AirbyteTracedException` for invalid configs. To skip the check, set `expect_trace_message_on_failure: false` in any `basic_read` entry, with a YAML comment giving the reason; this skips the new test for the whole connector.
 - A config listed under several sections keeps an opt-out that any of its entries declares, as for `validate_schema`.
 
 Rationale: Destinations deduplicate on the primary key; a record whose key is an object, an array or entirely missing cannot be deduplicated. A stream that emits no state cannot be resumed, and the platform cannot tell whether it completed. A failed read without a well-formed error trace gives users and the platform no reason for the failure. CAT checked all three for every `basic_read` config, and the Standard Tests that replaced it did not.
