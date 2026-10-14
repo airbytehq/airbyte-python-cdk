@@ -21,7 +21,6 @@ from airbyte_cdk.test.models import scenario as scenario_module
 from airbyte_cdk.test.models.scenario import (
     LEGACY_ENTRY_KEYS,
     POPULATED_FIELDS,
-    REMOVED_ENTRY_KEYS,
     SCENARIO_SECTIONS,
     ConnectorTestScenario,
     entry_key_problems,
@@ -110,8 +109,8 @@ def test_every_scenario_field_is_read_outside_the_model() -> None:
     assert not unread, (
         f"`ConnectorTestScenario` declares fields that nothing in `airbyte_cdk.test` reads: "
         f"{sorted(unread)}. A config that sets such a field looks like it configures a check "
-        "that never runs. Read the field in a test, or remove it (and add it to "
-        "`REMOVED_ENTRY_KEYS` so configs that still set it fail loudly)."
+        "that never runs. Read the field in a test, or remove it (and add it to the "
+        "`LEGACY_ENTRY_KEYS` of the sections whose configs still set it)."
     )
 
 
@@ -130,28 +129,30 @@ def test_guard_detects_an_unread_field() -> None:
         assert removed not in used
 
 
-def test_removed_keys_are_not_fields_nor_legacy_keys() -> None:
-    assert set(REMOVED_ENTRY_KEYS) == {
-        "expect_records",
-        "exact_order",
-        "ignored_fields",
-        "fail_on_extra_columns",
-        "timeout_seconds",
-        "file_types",
-    }
-    assert not set(REMOVED_ENTRY_KEYS) & set(ConnectorTestScenario.model_fields)
+def test_legacy_keys_are_not_fields() -> None:
     for section, keys in LEGACY_ENTRY_KEYS.items():
         assert section in SCENARIO_SECTIONS
-        assert not keys & set(REMOVED_ENTRY_KEYS), section
         assert not keys & set(ConnectorTestScenario.model_fields), section
+
+
+def test_removed_fields_are_legacy_keys_of_their_cat_sections() -> None:
+    """Configs that set the removed fields keep collecting; nothing reads them."""
+    for key in ("expect_records", "fail_on_extra_columns", "file_types", "timeout_seconds"):
+        assert key in LEGACY_ENTRY_KEYS["basic_read"]
+    assert "ignored_fields" in LEGACY_ENTRY_KEYS["full_refresh"]
+    for section in SCENARIO_SECTIONS:
+        if section in LEGACY_ENTRY_KEYS:
+            assert "timeout_seconds" in LEGACY_ENTRY_KEYS[section], section
 
 
 # --- The model rejects keys it does not read -------------------------------------------------
 
 
-@pytest.mark.parametrize("key", sorted(REMOVED_ENTRY_KEYS))
-@pytest.mark.parametrize("section", ["basic_read", "full_refresh"])
-def test_removed_key_is_rejected_as_no_longer_read(key: str, section: str) -> None:
+@pytest.mark.parametrize(
+    "section, key",
+    [("full_refresh", "expect_records"), ("basic_read", "ignored_fields"), ("spec", "file_types")],
+)
+def test_legacy_key_of_another_section_is_rejected(section: str, key: str) -> None:
     with pytest.raises(ValidationError) as error:
         ConnectorTestScenario.model_validate(
             {"config_path": "secrets/config.json", key: {"path": SECRET}, "sections": (section,)}
@@ -159,8 +160,8 @@ def test_removed_key_is_rejected_as_no_longer_read(key: str, section: str) -> No
 
     message = str(error.value)
     assert (
-        f"`{key}` in the `{section}` entry for config `secrets/config.json` is no longer read: "
-        f"{REMOVED_ENTRY_KEYS[key]}. Remove the key." in message
+        f"`{key}` in the `{section}` entry for config `secrets/config.json` is not a key the "
+        "standard tests read." in message
     )
     assert SECRET not in message
 
@@ -239,10 +240,14 @@ def test_bypass_reason_is_accepted() -> None:
 
 
 def test_entry_key_problems_without_config_path() -> None:
-    assert entry_key_problems({"spec_path": "manifest.yaml", "timeout_seconds": 60}, ["spec"]) == [
-        "`timeout_seconds` in the `spec` entry without a `config_path` is no longer read: "
-        "the standard tests have no per-config timeout. Remove the key."
-    ]
+    [problem] = entry_key_problems(
+        {"spec_path": "manifest.yaml", "timeout_seconds": 60, "spec_pth": "manifest.yaml"},
+        ["spec"],
+    )
+    assert problem.startswith(
+        "`spec_pth` in the `spec` entry without a `config_path` is not a key the standard tests "
+        "read. Remove it, or fix its spelling (accepted: "
+    )
 
 
 @pytest.mark.parametrize("key", sorted(POPULATED_FIELDS))
@@ -291,7 +296,9 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
     suite = _suite(
         tmp_path,
         {
-            "spec": {"tests": [{"spec_path": "manifest.yaml", "timeout_seconds": 60}]},
+            "spec": {
+                "tests": [{"spec_path": "manifest.yaml", "timeout_seconds": 60, "spec_pth": "x"}]
+            },
             "connection": {
                 "tests": [
                     {"config_path": "secrets/config.json", "status": "succeed"},
@@ -299,6 +306,7 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
                         "config_path": "secrets/config_iam_role.json",
                         "status": "succeed",
                         "timeout_seconds": 60,
+                        "deployment_mod": "cloud",
                     },
                 ]
             },
@@ -309,6 +317,7 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
                         "config_dict": {"api_key": SECRET},
                         "expect_records": {"path": "integration_tests/expected_records.jsonl"},
                         "fail_on_extra_columns": False,
+                        "ignored_fields": {"users": [{"name": "updated_at"}]},
                     }
                 ]
             },
@@ -337,14 +346,11 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
         f"`{tmp_path / 'source-test' / ACCEPTANCE_TEST_CONFIG}` is not valid for the standard tests:"
     )
     assert [line.split(" is ")[0] for line in lines[1:]] == [
-        "- `timeout_seconds` in the `spec` entry without a `config_path`",
-        "- `timeout_seconds` in the `connection` entry for config `secrets/config_iam_role.json`",
-        "- `expect_records` in the `basic_read` entry for config `secrets/config.json`",
-        "- `fail_on_extra_columns` in the `basic_read` entry for config `secrets/config.json`",
-        "- `ignored_fields` in the `full_refresh` entry for config `secrets/config.json`",
+        "- `spec_pth` in the `spec` entry without a `config_path`",
+        "- `deployment_mod` in the `connection` entry for config `secrets/config_iam_role.json`",
+        "- `ignored_fields` in the `basic_read` entry for config `secrets/config.json`",
         "- `unknown_key` in the `full_refresh` entry for config `secrets/config.json`",
     ]
-    assert "no longer read" in lines[1]
     assert "is not a key the standard tests read" in lines[-1]
     assert SECRET not in message
 
@@ -412,6 +418,7 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
                         "spec_path": "manifest.yaml",
                         "deployment_mode": "cloud",
                         "backward_compatibility_tests_config": {"disable_for_version": "1.0.0"},
+                        "timeout_seconds": 60,
                     },
                     {"config_path": "secrets/config.json", "spec_path": "manifest.yaml"},
                 ]
@@ -422,6 +429,7 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
                         "config_path": "secrets/config.json",
                         "status": "succeed",
                         "deployment_mode": "oss",
+                        "timeout_seconds": 60,
                     }
                 ]
             },
@@ -430,6 +438,7 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
                     {
                         "config_path": "secrets/config.json",
                         "backward_compatibility_tests_config": {"disable_for_version": "1.0.0"},
+                        "timeout_seconds": 60,
                     }
                 ]
             },
@@ -443,6 +452,13 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
                         "expect_trace_message_on_failure": False,
                         "validate_state_messages": False,
                         "client_container_config": {"client_container_dockerfile_path": "x"},
+                        "expect_records": {
+                            "path": "integration_tests/expected_records.jsonl",
+                            "exact_order": True,
+                        },
+                        "fail_on_extra_columns": False,
+                        "file_types": {"skip_test": True, "bypass_reason": "no files"},
+                        "timeout_seconds": 3600,
                     }
                 ]
             },
@@ -452,6 +468,8 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
                         "config_path": "secrets/config.json",
                         "configured_catalog_path": "integration_tests/configured_catalog.json",
                         "client_container_config": {"client_container_dockerfile_path": "x"},
+                        "ignored_fields": {"users": [{"name": "updated_at"}]},
+                        "timeout_seconds": 3600,
                     }
                 ]
             },

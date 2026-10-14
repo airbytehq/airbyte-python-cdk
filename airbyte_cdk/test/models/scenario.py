@@ -63,57 +63,50 @@ ALL_COMMANDS: frozenset[ScenarioCommand] = frozenset(
 )
 """Every command; what a scenario built by hand (no `sections`) runs."""
 
-_NO_RECORD_COMPARISON = (
-    "it configured the Connector Acceptance Tests' comparison of the records read against "
-    "recorded ones, which the standard tests do not run"
-)
-
-REMOVED_ENTRY_KEYS: Mapping[str, str] = MappingProxyType(
-    {
-        "expect_records": _NO_RECORD_COMPARISON,
-        "exact_order": _NO_RECORD_COMPARISON,
-        "ignored_fields": (
-            "it listed the fields the Connector Acceptance Tests skipped when they compared "
-            "records, against `expect_records` or between two consecutive full-refresh reads; "
-            "the standard tests run neither comparison"
-        ),
-        "fail_on_extra_columns": (
-            "the Connector Acceptance Tests accepted it but never enforced it, and the standard "
-            "tests have no such check"
-        ),
-        "timeout_seconds": "the standard tests have no per-config timeout",
-        "file_types": "the standard tests have no check that every supported file type is read",
-    }
-)
-"""Keys an `acceptance-test-config.yml` entry can no longer set, with why they are not read.
-
-They configured checks of the retired Connector Acceptance Tests (CAT) that the standard tests do
-not run. `ConnectorTestScenario` declared some of them and ignored them; an entry that still sets
-one is now rejected, so a config cannot look like it asks for a check that never runs.
-"""
-
 LEGACY_ENTRY_KEYS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
-        "spec": frozenset({"spec_path", "backward_compatibility_tests_config", "deployment_mode"}),
-        "connection": frozenset({"deployment_mode"}),
-        "discovery": frozenset({"backward_compatibility_tests_config"}),
+        "spec": frozenset(
+            {
+                "spec_path",
+                "backward_compatibility_tests_config",
+                "deployment_mode",
+                "timeout_seconds",
+            }
+        ),
+        "connection": frozenset({"deployment_mode", "timeout_seconds"}),
+        "discovery": frozenset({"backward_compatibility_tests_config", "timeout_seconds"}),
         "basic_read": frozenset(
             {
                 "client_container_config",
+                "expect_records",
                 "expect_trace_message_on_failure",
+                "fail_on_extra_columns",
+                "file_types",
+                "timeout_seconds",
                 "validate_state_messages",
             }
         ),
-        "full_refresh": frozenset({"client_container_config"}),
+        "full_refresh": frozenset({"client_container_config", "ignored_fields", "timeout_seconds"}),
     }
 )
 """CAT keys that an entry of each section may still set, although the scenario does not read them.
 
-`backward_compatibility_tests_config` of a `spec` entry is read from the file itself by the spec
-backward-compatibility test (`disable_for_version`). The others configure CAT checks that have no
-standard-test counterpart yet, and connectors still set them. They are accepted, and dropped, only
-in the section CAT read them from. Every other key that is not a field of `ConnectorTestScenario`
-is rejected (see `entry_key_problems`).
+They configured checks of the retired Connector Acceptance Tests (CAT). Connectors still set them,
+so they are accepted, and dropped, only in the section CAT read them from:
+
+- `backward_compatibility_tests_config` of a `spec` entry is read from the file itself by the spec
+  backward-compatibility test (`disable_for_version`).
+- `expect_records` (with `exact_order` nested) compared the records read against a recorded file,
+  and `ignored_fields` listed the fields to skip when CAT compared records, against
+  `expect_records` or between two consecutive full-refresh reads. The standard tests run neither
+  comparison yet; the recorded files are kept for when they do.
+- `fail_on_extra_columns` was accepted by CAT and never enforced.
+- `timeout_seconds` raised CAT's per-test timeout; the standard tests have no per-test timeout.
+- `file_types` configured CAT's check that every supported file type is read.
+- The others configure CAT checks that have no standard-test counterpart yet.
+
+Every other key that is not a field of `ConnectorTestScenario` is rejected (see
+`entry_key_problems`).
 """
 
 
@@ -140,9 +133,8 @@ def entry_key_problems(
     """Return one message per key of an `acceptance-test-config.yml` entry that is not accepted.
 
     An entry may set the fields of `ConnectorTestScenario`, except the `POPULATED_FIELDS`, and the
-    `LEGACY_ENTRY_KEYS` of the section that lists it. A key of `REMOVED_ENTRY_KEYS` is reported as
-    no longer read, and a key of `POPULATED_FIELDS` as not an entry key, with the reason; any
-    other key as unknown. Each message names the key, the section and the entry's `config_path`,
+    `LEGACY_ENTRY_KEYS` of the section that lists it. A key of `POPULATED_FIELDS` is reported as
+    not an entry key, with the reason; any other key as unknown. Each message names the key, the section and the entry's `config_path`,
     never a value.
 
     `from_file=False` checks the data a scenario is built from (by `get_scenarios()` or by hand),
@@ -165,11 +157,7 @@ def entry_key_problems(
     for key in entry:
         if key in accepted:
             continue
-        if key in REMOVED_ENTRY_KEYS:
-            problems.append(
-                f"`{key}` in {where} is no longer read: {REMOVED_ENTRY_KEYS[key]}. Remove the key."
-            )
-        elif key in POPULATED_FIELDS:
+        if key in POPULATED_FIELDS:
             problems.append(
                 f"`{key}` in {where} is not an entry key: {POPULATED_FIELDS[key]}. "
                 "Remove it from the entry."
@@ -190,8 +178,7 @@ class ConnectorTestScenario(BaseModel):
     acceptance test configuration file.
 
     Every field is read by the standard tests (a unit test enforces it). An entry that sets a key
-    that is not a field is rejected, except for the `LEGACY_ENTRY_KEYS` of its section; a key the
-    standard tests used to accept and ignore is reported as no longer read (`REMOVED_ENTRY_KEYS`).
+    that is not a field is rejected, except for the `LEGACY_ENTRY_KEYS` of its section.
     `get_scenarios()` also rejects an entry that sets one of the `POPULATED_FIELDS`, which it fills
     in itself.
     """
