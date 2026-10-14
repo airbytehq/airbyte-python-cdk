@@ -16,6 +16,7 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
@@ -26,8 +27,10 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests._read_assertions import (
+    assert_error_trace_messages,
     assert_read_records,
     assert_schema_validation_opt_out_allowed,
+    make_invalid_config,
 )
 from airbyte_cdk.test.standard_tests._spec_lint import assert_spec_is_valid, get_single_spec
 from airbyte_cdk.test.standard_tests.connector_base import (
@@ -173,9 +176,16 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         `get_read_streams`).
 
         A read expected to succeed must return records. For a config listed under `basic_read`,
-        the records are also checked as in CAT's basic read test: every stream it reads must
-        return at least one record, and every record must match its stream's JSON schema (opt out
-        with `validate_schema: false`, which a connector at `test_strictness_level: high` cannot).
+        the read is also checked as in CAT's basic read test:
+
+        - every stream it reads must return at least one record;
+        - every record must match its stream's JSON schema (opt out with
+          `validate_schema: false`, which a connector at `test_strictness_level: high` cannot);
+        - every record of a stream with a `source_defined_primary_key` must have a usable
+          primary key: no key field holds an object or an array, and not every key field is
+          missing or null (opt out with `validate_primary_keys_data_type: false`);
+        - every stream it reads must emit a `STREAM` (or `GLOBAL`) state message, and every
+          state message must carry `sourceStats` (opt out with `validate_state_messages: false`).
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:
@@ -231,6 +241,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                 configured_catalog=configured_catalog,
                 require_records_per_stream=True,
                 validate_schema=scenario.validate_schema,
+                validate_primary_keys=scenario.validate_primary_keys_data_type,
+                state_messages=(
+                    result.state_messages if scenario.validate_state_messages else None
+                ),
             )
         elif next(result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")
@@ -242,7 +256,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         """Standard test for `read` when passed a bad catalog file.
 
         Runs for configs listed under `basic_read` or `full_refresh` in
-        `acceptance-test-config.yml`.
+        `acceptance-test-config.yml`. The read must fail and emit a well-formed `ERROR` trace
+        message (see `assert_error_trace_messages`).
         """
         skip_unless_runs(scenario, "read")
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
@@ -272,4 +287,83 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             catalog=asdict(invalid_configured_catalog),
         )
         assert result.errors, "Expected errors but got none."
-        assert result.trace_messages, "Expected trace messages but got none."
+        assert_error_trace_messages(result.get_message_iterator())
+
+    def test_fail_read_with_invalid_config(self) -> None:
+        """Standard test for `read` with a config that the connector's spec rejects.
+
+        Ported from CAT's `TestBasicRead.test_airbyte_trace_message_on_failure`: a read that
+        fails must report why in a well-formed `ERROR` trace message (see
+        `assert_error_trace_messages`). Where `test_fail_read_with_bad_catalog` breaks the
+        catalog, which the entrypoint rejects before any connector code runs, this test gives
+        the connector a config its own spec rejects: one that holds none of the spec's required
+        top-level properties and no value from any real config (`make_invalid_config`). No
+        credentials are needed, so it runs once per connector, and no request can be sent with
+        real credentials.
+
+        Skipped when the spec requires no top-level property (no config is invalid for sure),
+        or when any `basic_read` entry of `acceptance-test-config.yml` sets
+        `expect_trace_message_on_failure: false`, as CAT did.
+
+        A source that cannot even be created from the invalid config fails the same way
+        `source-declarative-manifest` reports it: as an uncaught error, turned into a trace
+        message.
+        """
+        opted_out = sorted(
+            scenario.id
+            for scenario in self.get_scenarios()
+            if not scenario.expect_trace_message_on_failure
+        )
+        if opted_out:
+            pytest.skip(
+                "`expect_trace_message_on_failure: false` is set for "
+                f"{', '.join(repr(scenario_id) for scenario_id in opted_out)} in "
+                "`acceptance-test-config.yml`."
+            )
+
+        connector_root = self.get_connector_root_dir()
+        spec_result = run_test_job(
+            self.create_connector(scenario=None),
+            "spec",
+            test_scenario=None,
+            connector_root=connector_root,
+        )
+        spec = get_single_spec(spec_result, connector_name=self.connector_name)
+        invalid_config = make_invalid_config(spec.connectionSpecification)
+        if invalid_config is None:
+            pytest.skip(
+                "The connector's spec requires no top-level property, so no config is "
+                "certain to be invalid."
+            )
+
+        scenario = ConnectorTestScenario(config_dict=invalid_config, status="failed")
+        catalog = ConfiguredAirbyteCatalog(
+            streams=[
+                ConfiguredAirbyteStream(
+                    stream=AirbyteStream(
+                        name="__AIRBYTE__stream_that_does_not_exist",
+                        json_schema={
+                            "type": "object",
+                            "properties": {"f1": {"type": "string"}},
+                        },
+                        supported_sync_modes=[SyncMode.full_refresh],
+                    ),
+                    sync_mode=SyncMode.full_refresh,
+                    destination_sync_mode=DestinationSyncMode.append,
+                )
+            ]
+        )
+        try:
+            connector = self.create_connector(scenario)
+        except Exception as error:  # noqa: BLE001  # Any error here is the read failing.
+            result = EntrypointOutput(messages=[], uncaught_exception=error)
+        else:
+            # Asserts that the read fails.
+            result = run_test_job(
+                connector,
+                "read",
+                connector_root=connector_root,
+                test_scenario=scenario,
+                catalog=catalog,
+            )
+        assert_error_trace_messages(result.get_message_iterator())

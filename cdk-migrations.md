@@ -1,5 +1,41 @@
 # CDK Migration Guide
 
+## Upgrading to the next minor release (unreleased)
+
+This release of the CDK adds three checks of the Connector Acceptance Tests (CAT) basic read test to the Standard Tests. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the new checks up with this release, without a per-connector CDK bump.
+
+### Every record has a usable primary key (`basic_read`)
+
+For every config listed under `basic_read` in `acceptance-test-config.yml` (and not declared `status: failed` or `status: exception`), the in-process `test_basic_read` now checks the primary key of every record of every stream that declares a `source_defined_primary_key`, as CAT's `validate_primary_keys_data_type` check did:
+
+- No key field may hold an object or an array. Strings, numbers and booleans are accepted, as in CAT.
+- At least one key field must be present and not null. In a composite key some fields may be null, as in CAT.
+
+The failure message names each stream, its primary key, the number of records with an invalid key, and for each distinct problem the record number and the path of the key field (for example ``record #3: key field `$.id` is an object``). Record values are never printed.
+
+### Every stream emits state (`basic_read`)
+
+For the same configs, `test_basic_read` now checks the state messages of the read, replacing CAT's `validate_state_messages` check:
+
+- Every stream the read covers must be named by at least one `STREAM` state message, or by the `stream_states` of a `GLOBAL` state message. CAT only compared the number of state messages with the number of streams, so the many state messages of one stream could hide another stream that emitted none.
+- No state message may use the deprecated `LEGACY` state type, or no type.
+- Every state message must carry `sourceStats.recordCount`.
+
+The CDK emits a final state message for every stream it completes, including full-refresh streams, and its entrypoint adds `sourceStats`, so a CDK connector meets the last two checks whenever it reads every stream to the end.
+
+### A failed read reports a well-formed error trace
+
+A new per-connector test, `SourceTestSuiteBase.test_fail_read_with_invalid_config`, ports CAT's `test_airbyte_trace_message_on_failure`. It runs `read` with a config that the connector's own spec rejects: a config that holds none of the spec's required top-level properties and no value from any real config, so it needs no credentials and cannot send a request with real ones. The read must fail and emit at least one `TRACE` message of type `ERROR`, and every `ERROR` trace message must be well-formed: it carries an `error` object with a non-blank `message` and a `failure_type`, and a positive `emitted_at`. The test is skipped when the spec requires no top-level property, and when any `basic_read` entry of `acceptance-test-config.yml` sets `expect_trace_message_on_failure: false`, as in CAT. `test_fail_read_with_bad_catalog` now checks its error trace messages the same way, instead of only requiring some trace message.
+
+Migration steps:
+
+- A record with an invalid primary key: fix the stream's `primary_key` (or the record) so that every record has a scalar key. To skip the check for one config while the fix is pending, set `validate_primary_keys_data_type: false` (with a `bypass_reason`) in its `basic_read` entry. As in CAT, this is allowed at `test_strictness_level: high`.
+- A stream without state: a stream that ends early, or a source that emits only `LEGACY` state, has to be fixed. To skip the check for one config while the fix is pending, set `validate_state_messages: false` (with a `bypass_reason`) in its `basic_read` entry.
+- A failed read without a well-formed error trace: make the connector raise (or emit) an `AirbyteTracedException` for invalid configs. To skip the check, set `expect_trace_message_on_failure: false` (with a `bypass_reason`) in any `basic_read` entry; this skips the new test for the whole connector.
+- A config listed under several sections keeps an opt-out that any of its entries declares, as for `validate_schema`.
+
+Rationale: Destinations deduplicate on the primary key; a record whose key is an object, an array or entirely missing cannot be deduplicated. A stream that emits no state cannot be resumed, and the platform cannot tell whether it completed. A failed read without a well-formed error trace gives users and the platform no reason for the failure. CAT checked all three for every `basic_read` config, and the Standard Tests that replaced it did not.
+
 ## Upgrading to 7.36.0
 
 This release of the CDK adds checks to the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) and changes which commands they run for the configs listed in `acceptance-test-config.yml`. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
