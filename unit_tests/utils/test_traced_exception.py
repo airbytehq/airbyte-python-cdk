@@ -17,6 +17,7 @@ from airbyte_cdk.models import (
     TraceType,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _AN_EXCEPTION = ValueError("An exception")
@@ -336,3 +337,19 @@ class TestFromExceptionPreservesFields:
         )
         assert wrapped.internal_message == "runtime failure"
         assert wrapped.message == "A runtime error occurred."
+
+
+def test_config_error_as_connection_status_message_masks_secrets():
+    update_secrets(["s3cr3t-value"])
+    try:
+        traced_exc = AirbyteTracedException(
+            message="Config validation error: 's3cr3t-value' does not match '^a$'",
+            failure_type=FailureType.config_error,
+        )
+        airbyte_message = traced_exc.as_connection_status_message()
+    finally:
+        update_secrets([])
+
+    assert airbyte_message.connectionStatus.message == (
+        "Config validation error: '****' does not match '^a$'"
+    )
