@@ -32,6 +32,7 @@ from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionE
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
+from airbyte_cdk.sources.streams.http.exceptions import BaseBackoffException
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
@@ -252,10 +253,18 @@ class ConcurrentReadProcessor:
         if isinstance(exception.exception, AirbyteTracedException):
             yield exception.exception.as_airbyte_message(stream_descriptor=stream_descriptor)
         else:
+            inner_exception = exception.exception
+            failure_type = (
+                inner_exception.failure_type
+                if isinstance(inner_exception, BaseBackoffException)
+                and inner_exception.failure_type is not None
+                else FailureType.system_error
+            )
             yield AirbyteTracedException.from_exception(
-                exception.exception,
+                inner_exception,
                 stream_descriptor=stream_descriptor,
                 message=f"An unexpected error occurred in stream {exception.stream_name}: {type(exception.exception).__name__}",
+                failure_type=failure_type,
             ).as_airbyte_message()
 
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
