@@ -197,6 +197,24 @@ def select_docker_read_streams(
     return read_streams
 
 
+CONNECTOR_WORKDIR = "/source"
+"""The connector's working directory in the Docker tests: the platform's, for a source."""
+
+CONNECTOR_WORKDIR_ARGS: tuple[str, ...] = (
+    "--tmpfs",
+    f"{CONNECTOR_WORKDIR}:rw,exec,mode=1777",
+    "--workdir",
+    CONNECTOR_WORKDIR,
+)
+"""`docker run` arguments that give the connector a writable working directory, as the platform does.
+
+The platform runs a connector with its working directory on a writable volume. An image's own
+`WORKDIR` is usually not writable by the image's non-root user, so a connector that writes a
+temporary file to its working directory (a bulk export download, for example) would fail only in
+the tests.
+"""
+
+
 _SPEC_FAILURE_OUTPUT_LINES = 50
 """How many trailing lines of the connector's output a failed `spec` run reports."""
 
@@ -740,6 +758,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -855,6 +874,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -964,6 +984,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -1010,6 +1031,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     "-v",

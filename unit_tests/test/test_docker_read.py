@@ -342,3 +342,17 @@ def test_docker_read_validates_records_against_their_schema(
             _scenario("basic_read", validate_schema=False, test_strictness_level="high"),
         )
     assert calls == []
+
+
+def test_docker_read_runs_in_a_writable_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The platform gives a connector a writable working directory; the image's own is not."""
+    calls = _stub_docker(
+        monkeypatch,
+        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+    )
+    _read(_read_suite(tmp_path), _scenario("basic_read"))
+    assert [cmd[3:7] for cmd in calls] == [
+        ["--tmpfs", "/source:rw,exec,mode=1777", "--workdir", "/source"]
+    ] * 2, "both `discover` and `read`"
