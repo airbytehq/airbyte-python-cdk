@@ -128,3 +128,20 @@ class TestValidateAdheresToSchema(TestCase):
         validator = ValidateAdheresToSchema(schema=schema)
 
         validator.validate('{"id": 1, "name": "John Doe"}')
+
+    def test_given_non_json_string_matching_schema_when_validate_then_succeeds(self):
+        validator = ValidateAdheresToSchema(
+            schema={"type": "string", "pattern": "^[a-zA-Z0-9-]+\\.atlassian\\.net$"}
+        )
+
+        validator.validate("example.atlassian.net")
+
+    def test_given_non_json_string_not_matching_schema_when_validate_then_raises_error(self):
+        validator = ValidateAdheresToSchema(
+            schema={"type": "string", "pattern": "^[a-zA-Z0-9-]+\\.atlassian\\.net$"}
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            validator.validate("https://example.atlassian.net/")
+
+        assert "does not match" in str(exc_info.value)
