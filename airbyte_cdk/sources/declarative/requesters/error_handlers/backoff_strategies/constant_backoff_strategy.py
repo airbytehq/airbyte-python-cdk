@@ -65,6 +65,7 @@ class ConstantBackoffStrategy(BackoffStrategy):
             try:
                 response = response_or_exception.json()
             except requests.exceptions.JSONDecodeError:
+                # Non-JSON body: interpolate with an empty response.
                 pass
             headers = response_or_exception.headers
 
