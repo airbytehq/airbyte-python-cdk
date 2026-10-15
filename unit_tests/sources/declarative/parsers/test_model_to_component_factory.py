@@ -189,6 +189,7 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
     WaitTimeFromHeaderBackoffStrategy,
+    WaitTimeFromResponseBackoffStrategy,
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
@@ -2786,7 +2787,7 @@ requester:
     assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
 
 
-def test_create_requester_with_constant_backoff_max_waiting_time():
+def test_create_requester_with_wait_time_from_response_strategy():
     content = """
 requester:
   type: HttpRequester
@@ -2794,8 +2795,8 @@ requester:
   url_base: "https://api.sendgrid.com"
   error_handler:
     backoff_strategies:
-      - type: ConstantBackoffStrategy
-        backoff_time_in_seconds: 5
+      - type: WaitTimeFromResponse
+        wait_time_in_seconds: "{{ response.retry_after_seconds }}"
         max_waiting_time_in_seconds: 30
     """
     parsed_manifest = YamlDeclarativeSource._parse(content)
@@ -2814,7 +2815,7 @@ requester:
 
     assert isinstance(requester.error_handler, DefaultErrorHandler)
     backoff_strategy = requester.error_handler.backoff_strategies[0]
-    assert isinstance(backoff_strategy, ConstantBackoffStrategy)
+    assert isinstance(backoff_strategy, WaitTimeFromResponseBackoffStrategy)
     assert backoff_strategy.max_waiting_time_in_seconds == 30
 
 

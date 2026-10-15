@@ -13,6 +13,9 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.exponential_backoff_strategy import (
     ExponentialBackoffStrategy,
 )
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_time_from_response_backoff_strategy import (
+    WaitTimeFromResponseBackoffStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import (
     DefaultErrorHandler,
     HttpResponseFilter,
@@ -27,6 +30,22 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
 )
 
 SOME_BACKOFF_TIME = 60
+
+
+def test_default_error_handler_falls_back_when_response_backoff_is_empty():
+    response_mock = create_response(429, json_body={"retry_in": ""})
+    error_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        backoff_strategies=[
+            WaitTimeFromResponseBackoffStrategy(
+                "{{ response.get('retry_in', '') }}", config={}, parameters={}
+            ),
+            ExponentialBackoffStrategy(factor=5, config={}, parameters={}),
+        ],
+    )
+
+    assert error_handler.backoff_time(response_mock, attempt_count=2) == 20
 
 
 @pytest.mark.parametrize(
@@ -240,20 +259,6 @@ def test_default_error_handler_with_constant_backoff_strategy():
         error_handler.backoff_time(response_or_exception=response_mock, attempt_count=0)
         == SOME_BACKOFF_TIME
     )
-
-
-def test_default_error_handler_falls_back_when_constant_backoff_is_empty():
-    response_mock = create_response(429, json_body={"retry_in": ""})
-    error_handler = DefaultErrorHandler(
-        config={},
-        parameters={},
-        backoff_strategies=[
-            ConstantBackoffStrategy("{{ response.get('retry_in', '') }}", config={}, parameters={}),
-            ExponentialBackoffStrategy(factor=5, config={}, parameters={}),
-        ],
-    )
-
-    assert error_handler.backoff_time(response_mock, attempt_count=2) == 20
 
 
 @pytest.mark.parametrize(

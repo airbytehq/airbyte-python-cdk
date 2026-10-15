@@ -136,15 +136,9 @@ class ConstantBackoffStrategy(BaseModel):
     type: Literal["ConstantBackoffStrategy"]
     backoff_time_in_seconds: Union[float, str] = Field(
         ...,
-        description="Backoff time in seconds. If the expression evaluates to an empty result, the next backoff strategy is used.",
-        examples=[30, 30.5, "{{ config['backoff_time'] }}", "{{ response.retry_in }}"],
+        description="Backoff time in seconds.",
+        examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
-    )
-    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
-        None,
-        description="Stop the stream instead of waiting, when the computed backoff is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
-        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
-        title="Max Waiting Time in Seconds",
     )
     jitter_range_in_seconds: Optional[float] = Field(
         None,
@@ -1461,6 +1455,26 @@ class WaitTimeFromHeader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class WaitTimeFromResponse(BaseModel):
+    type: Literal["WaitTimeFromResponse"]
+    wait_time_in_seconds: str = Field(
+        ...,
+        description="The expression defining how long to wait before retrying. An empty result defers to the next backoff strategy.",
+        examples=[
+            "{{ response.retry_after_seconds }}",
+            "{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response.get('error', {}).get('message', '') | regex_search('Retry after (\\S+Z)')) else '' }}",
+        ],
+        title="Wait Time in Seconds",
+    )
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
+        None,
+        description="Stop the stream instead of waiting, when the computed wait is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
+        title="Max Waiting Time in Seconds",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class WaitUntilTimeFromHeader(BaseModel):
     type: Literal["WaitUntilTimeFromHeader"]
     header: str = Field(
@@ -2302,6 +2316,7 @@ class DefaultErrorHandler(BaseModel):
                 ConstantBackoffStrategy,
                 ExponentialBackoffStrategy,
                 WaitTimeFromHeader,
+                WaitTimeFromResponse,
                 WaitUntilTimeFromHeader,
                 CustomBackoffStrategy,
             ]
