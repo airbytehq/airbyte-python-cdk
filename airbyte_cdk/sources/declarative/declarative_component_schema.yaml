@@ -5139,7 +5139,7 @@ definitions:
           - headers
         examples:
           - "{{ response.retry_after_seconds }}"
-          - "{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response.get('error', {}).get('message', '') | regex_search('Retry after (\\S+Z)')) else '' }}"
+          - "{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response is mapping and response.get('error') is mapping and ((response.error.message or '') | string | regex_search('Retry after (\\S+Z)'))) else '' }}"
       max_waiting_time_in_seconds:
         title: Max Waiting Time in Seconds
         description: 'Stop the stream instead of waiting, when the computed wait is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.'

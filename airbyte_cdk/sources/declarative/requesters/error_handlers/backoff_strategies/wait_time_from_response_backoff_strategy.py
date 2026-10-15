@@ -8,6 +8,7 @@ from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union, cast
 
 import requests
+from jinja2.exceptions import UndefinedError
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -29,7 +30,8 @@ class WaitTimeFromResponseBackoffStrategy(BackoffStrategy):
 
     Attributes:
         wait_time_in_seconds: Expression defining how long to wait before retrying. An empty,
-            negative, non-finite or non-numeric result defers to the next backoff strategy.
+            negative, non-finite or non-numeric result, or an expression that cannot be evaluated
+            on the response body, defers to the next backoff strategy.
         max_waiting_time_in_seconds: Optional inclusive cap on the computed wait.
     """
 
@@ -62,9 +64,20 @@ class WaitTimeFromResponseBackoffStrategy(BackoffStrategy):
                 pass
             headers = response_or_exception.headers
 
-        evaluated_wait_time = cast(InterpolatedString, self.wait_time_in_seconds).eval(
-            self.config, response=response, headers=headers
-        )
+        try:
+            evaluated_wait_time = cast(InterpolatedString, self.wait_time_in_seconds).eval(
+                self.config, response=response, headers=headers
+            )
+        except (UndefinedError, TypeError, ValueError) as error:
+            # The strategy runs on every retryable response, not only the one the expression was
+            # written for: a body of another shape (a list, or a string where an object was
+            # expected) must defer to the next strategy, not fail the stream. The body is not
+            # logged; the error type is enough to point at the expression.
+            LOGGER.warning(
+                "WaitTimeFromResponse: `wait_time_in_seconds` could not be evaluated on this "
+                f"response ({type(error).__name__}); deferring to the next backoff strategy."
+            )
+            return None
         if evaluated_wait_time is None or (
             isinstance(evaluated_wait_time, str) and not evaluated_wait_time.strip()
         ):

@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
 )
 from airbyte_cdk.utils import AirbyteTracedException
 
-GMAIL_WAIT_TIME_EXPRESSION = r"{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response.get('error', {}).get('message', '') | regex_search('Retry after (\\S+Z)')) else '' }}"
+GMAIL_WAIT_TIME_EXPRESSION = r"{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response is mapping and response.get('error') is mapping and ((response.error.message or '') | string | regex_search('Retry after (\\S+Z)'))) else '' }}"
 
 
 def test_wait_time_from_response_interpolates_json_body():
@@ -205,6 +205,40 @@ def test_wait_time_from_response_past_timestamp_without_a_floor_defers():
 
     assert strategy.backoff_time(_response({"retry_at": "2026-10-15T12:59:30Z"}), 1) is None
     assert strategy.backoff_time(_response({"retry_at": "2026-10-15T13:00:30Z"}), 1) == 30
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param([{"error": {"message": "Retry after 2026-10-15T13:15:00Z"}}], id="list_body"),
+        pytest.param({"error": "rate limited"}, id="error_is_a_string"),
+        pytest.param({"error": {}}, id="error_without_message"),
+        pytest.param({"error": {"message": None}}, id="message_is_null"),
+        pytest.param(True, id="scalar_body"),
+    ],
+)
+def test_wait_time_from_response_gmail_expression_defers_on_other_body_shapes(body):
+    """The documented example runs on every retryable response, not only Gmail's rate limit."""
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds=GMAIL_WAIT_TIME_EXPRESSION, parameters={}, config={}
+    )
+
+    assert strategy.backoff_time(_response(body), 1) is None
+
+
+def test_wait_time_from_response_returns_none_when_the_expression_fails_on_the_body(caplog):
+    """An expression that does not fit the body defers to the next strategy instead of failing.
+
+    `.get` on a list raises `UndefinedError` from Jinja, which `InterpolatedString.eval` re-raises
+    when it evaluates the default (the expression itself) a second time.
+    """
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ response.get('retry') }}", parameters={}, config={}
+    )
+
+    assert strategy.backoff_time(_response([{"retry": "soon"}]), 1) is None
+    assert any("could not be evaluated" in message for message in caplog.messages)
+    assert all("soon" not in message for message in caplog.messages)
 
 
 def _response(json_body, headers=None):
