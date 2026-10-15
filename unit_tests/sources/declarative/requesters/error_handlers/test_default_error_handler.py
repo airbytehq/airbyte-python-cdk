@@ -242,6 +242,20 @@ def test_default_error_handler_with_constant_backoff_strategy():
     )
 
 
+def test_default_error_handler_falls_back_when_constant_backoff_is_empty():
+    response_mock = create_response(429, json_body={"retry_in": ""})
+    error_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        backoff_strategies=[
+            ConstantBackoffStrategy("{{ response.get('retry_in', '') }}", config={}, parameters={}),
+            ExponentialBackoffStrategy(factor=5, config={}, parameters={}),
+        ],
+    )
+
+    assert error_handler.backoff_time(response_mock, attempt_count=2) == 20
+
+
 @pytest.mark.parametrize(
     "attempt_count",
     [

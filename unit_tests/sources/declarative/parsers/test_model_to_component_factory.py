@@ -2786,6 +2786,38 @@ requester:
     assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
 
 
+def test_create_requester_with_constant_backoff_max_waiting_time():
+    content = """
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  url_base: "https://api.sendgrid.com"
+  error_handler:
+    backoff_strategies:
+      - type: ConstantBackoffStrategy
+        backoff_time_in_seconds: 5
+        max_waiting_time_in_seconds: 30
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester.error_handler, DefaultErrorHandler)
+    backoff_strategy = requester.error_handler.backoff_strategies[0]
+    assert isinstance(backoff_strategy, ConstantBackoffStrategy)
+    assert backoff_strategy.max_waiting_time_in_seconds == 30
+
+
 @pytest.mark.parametrize(
     "backoff_strategy_model, backoff_strategy_arguments",
     [

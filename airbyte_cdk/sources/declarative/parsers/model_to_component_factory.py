@@ -1855,6 +1855,7 @@ class ModelToComponentFactory:
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
             jitter_range_in_seconds=model.jitter_range_in_seconds,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
             config=config,
             parameters=model.parameters or {},
         )
