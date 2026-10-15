@@ -9,11 +9,12 @@ import requests
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+from airbyte_cdk.sources.declarative.extractors.record_selector import extracted_record_count
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
-from airbyte_cdk.sources.types import Config, Record
+from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -25,6 +26,8 @@ class PageIncrement(PaginationStrategy):
     Attributes:
         page_size (int): the number of records to request
         start_from_page (int): number of the initial page
+        extractor (Optional[RecordExtractor]): counts the records of a page by extracting them
+            again. Leave it unset to use the count of the `RecordSelector` that read the page
     """
 
     config: Config
@@ -56,6 +59,7 @@ class PageIncrement(PaginationStrategy):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Any]:
         if page_size_override is not None:
             # Reachable only when the factory is bypassed: a manifest naming PageIncrement, and a
@@ -72,11 +76,13 @@ class PageIncrement(PaginationStrategy):
                 failure_type=FailureType.config_error,
             )
 
+        # The record count is dependent on the records returned from the response which may not always
+        # align with the size of pages emitted. For example, a record filter can reduce the number of
+        # records observed below the page size even though the API returned a full page.
         if self.extractor:
-            # The record count is dependent on the records returned from the response which may not always
-            # align with the size of pages emitted. For example, a record filter can reduce the number of
-            # records observed below the page size even though the API returned a full page.
             last_page_size = len(list(self.extractor.extract_records(response=response)))
+        else:
+            last_page_size = extracted_record_count(response, default=last_page_size)
 
         # Stop paginating when there are fewer records than the page size or the current page has no records
         if (self._page_size and last_page_size < self._page_size) or last_page_size == 0:

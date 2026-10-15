@@ -12,7 +12,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import I
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import (
     CursorPaginationStrategy,
 )
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 
 @pytest.mark.parametrize(
@@ -305,3 +305,61 @@ def test_given_a_page_size_when_an_expression_reads_page_size_then_accept(page_s
     assert strategy.next_page_token(response, 100, None, None) == "a token"
     assert strategy.next_page_token(response, 50, None, None, page_size_override=50) == "a token"
     assert strategy.next_page_token(response, 49, None, None, page_size_override=50) is None
+
+
+@pytest.mark.parametrize(
+    "oldest_created_at, expected_token",
+    [
+        pytest.param(
+            "2024-06-20T00:00:00Z", "page-2", id="test_oldest_run_inside_the_window_then_continue"
+        ),
+        pytest.param(
+            "2024-05-30T00:00:00Z",
+            "page-2",
+            id="test_oldest_run_exactly_at_the_limit_then_continue",
+        ),
+        pytest.param("2024-05-29T23:59:59Z", None, id="test_oldest_run_past_the_limit_then_stop"),
+        pytest.param(None, "page-2", id="test_oldest_run_without_created_at_then_continue"),
+    ],
+)
+def test_stop_condition_can_compare_the_page_against_the_stream_slice(
+    oldest_created_at, expected_token
+):
+    strategy = CursorPaginationStrategy(
+        cursor_value="{{ response.next }}",
+        stop_condition=(
+            "{{ str_to_datetime((response.get('runs') or [{}])[-1].get('created_at') or '9999-01-01T00:00:00Z')"
+            " < str_to_datetime(stream_interval['start_time']) - duration('P32D') }}"
+        ),
+        config={},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps(
+        {"next": "page-2", "runs": [{"created_at": oldest_created_at}]}
+    ).encode("utf-8")
+    stream_slice = StreamSlice(
+        partition={"repository": "airbytehq/airbyte"},
+        cursor_slice={"start_time": "2024-07-01T00:00:00Z", "end_time": "2024-07-31T00:00:00Z"},
+    )
+
+    assert (
+        strategy.next_page_token(response, 1, None, None, stream_slice=stream_slice)
+        == expected_token
+    )
+
+
+def test_cursor_value_can_read_the_stream_partition():
+    strategy = CursorPaginationStrategy(
+        cursor_value="{{ response.next ~ ':' ~ stream_partition['repository'] }}",
+        config={},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "page-2"}).encode("utf-8")
+    stream_slice = StreamSlice(partition={"repository": "airbytehq/airbyte"}, cursor_slice={})
+
+    assert (
+        strategy.next_page_token(response, 1, None, None, stream_slice=stream_slice)
+        == "page-2:airbytehq/airbyte"
+    )

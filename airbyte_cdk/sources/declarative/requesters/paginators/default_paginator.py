@@ -16,6 +16,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
     Paginator,
     page_size_override_kwargs,
+    stream_slice_kwargs,
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
@@ -146,6 +147,7 @@ class DefaultPaginator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         next_page_token = self.pagination_strategy.next_page_token(
             response=response,
@@ -153,6 +155,7 @@ class DefaultPaginator(Paginator):
             last_record=last_record,
             last_page_token_value=last_page_token_value,
             **page_size_override_kwargs(page_size_override),
+            **stream_slice_kwargs(self.pagination_strategy.next_page_token, stream_slice),
         )
         if next_page_token:
             return {"next_page_token": next_page_token}
@@ -265,6 +268,10 @@ class PaginatorTestReadDecorator(Paginator):
     class (`connector_builder/test_reader/reader.py::_has_reached_limit`). The two counts agree because
     `HttpClient` logs a response resolving to `REDUCE_PAGE_SIZE` as an auxiliary request, which the Builder
     does not turn into a page.
+
+    `get_initial_token()` also resets this count, and `SimpleRetriever._read_pages` calls it again from scratch
+    for every child window a `SPLIT_REQUEST_WINDOW` response produces. A split slice can therefore fetch up to
+    `maximum_number_of_pages` per child rather than sharing one budget across the whole original partition.
     """
 
     _PAGE_COUNT_BEFORE_FIRST_NEXT_CALL = 1
@@ -292,6 +299,7 @@ class PaginatorTestReadDecorator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         if self._page_count >= self._maximum_number_of_pages:
             return None
@@ -303,6 +311,7 @@ class PaginatorTestReadDecorator(Paginator):
             last_record,
             last_page_token_value,
             **page_size_override_kwargs(page_size_override),
+            **stream_slice_kwargs(self._decorated.next_page_token, stream_slice),
         )
 
     def path(

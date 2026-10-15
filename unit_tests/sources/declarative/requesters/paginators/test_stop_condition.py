@@ -15,7 +15,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condi
     StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 ANY_RECORD = Mock()
 NO_RECORD = None
@@ -130,4 +130,20 @@ def test_given_page_size_override_when_next_page_token_then_forward_to_delegate(
 
     mocked_pagination_strategy.next_page_token.assert_called_once_with(
         ANY_RESPONSE, 25, NO_RECORD, None, page_size_override=25
+    )
+
+
+def test_given_stream_slice_when_next_page_token_then_forward_to_delegate(
+    mocked_pagination_strategy, mocked_stop_condition
+):
+    mocked_stop_condition.is_met.return_value = False
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
+    stream_slice = StreamSlice(partition={"repository": "a/b"}, cursor_slice={})
+
+    decorator.next_page_token(ANY_RESPONSE, 25, NO_RECORD, None, stream_slice=stream_slice)
+
+    mocked_pagination_strategy.next_page_token.assert_called_once_with(
+        ANY_RESPONSE, 25, NO_RECORD, None, stream_slice=stream_slice
     )

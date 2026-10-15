@@ -89,7 +89,6 @@ def validate_python_code(
                     {
                         "expected_checksum": checksum,
                         "actual_checksum": calculated_checksum,
-                        "code_text": code_text,
                     }
                 ),
             )

@@ -4,19 +4,21 @@
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, MutableMapping, Optional
 from unittest import TestCase
 from unittest.mock import Mock
 
 import freezegun
 import pytest
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
+    DayClampingStrategy,
     MonthClampingStrategy,
     WeekClampingStrategy,
     Weekday,
@@ -34,8 +36,10 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     EpochValueConcurrentStreamStateConverter,
+    IsoMillisConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"
@@ -561,7 +565,7 @@ class ConcurrentCursorStateTest(TestCase):
         ]
 
     @freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(50, timezone.utc))
-    def test_given_difference_between_slices_match_slice_range_and_cursor_granularity_when_generate_slices_then_create_one_slice(
+    def test_given_difference_between_slices_match_slice_range_and_cursor_granularity_when_generate_slices_then_create_one_slice_for_the_gap_and_read_the_end_unit(
         self,
     ):
         start = datetime.fromtimestamp(1, timezone.utc)
@@ -603,6 +607,14 @@ class ConcurrentCursorStateTest(TestCase):
                 cursor_slice={
                     _SLICE_BOUNDARY_FIELDS[0]: 31,
                     _SLICE_BOUNDARY_FIELDS[1]: 40,
+                },
+            ),
+            # the last state slice ends at the end, which the last window includes
+            StreamSlice(
+                partition={},
+                cursor_slice={
+                    _SLICE_BOUNDARY_FIELDS[0]: 50,
+                    _SLICE_BOUNDARY_FIELDS[1]: 50,
                 },
             ),
         ]
@@ -1121,6 +1133,255 @@ class ClampingIntegrationTest(TestCase):
             {"lower_boundary": "2024-01-23T00:00:00Z", "upper_boundary": "2024-01-29T00:00:00Z"},
         ]
 
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 1, 30, 10, tzinfo=timezone.utc))
+    def test_given_weekly_clamp_and_now_on_target_weekday_when_stream_slices_then_include_last_complete_week(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2024, 1, 2, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                WeekClampingStrategy(Weekday.TUESDAY, is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=7),
+            granularity=timedelta(days=1),
+            clamping_strategy=WeekClampingStrategy(Weekday.TUESDAY),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices[-1] == {
+            "lower_boundary": "2024-01-23T00:00:00Z",
+            "upper_boundary": "2024-01-29T00:00:00Z",
+        }
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 1, 5, 12, tzinfo=timezone.utc))
+    def test_given_daily_clamp_and_midnight_boundaries_when_stream_slices_then_do_not_skip_days(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                DayClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(seconds=1),
+            ),
+            slice_range=timedelta(days=1),
+            granularity=timedelta(seconds=1),
+            clamping_strategy=DayClampingStrategy(),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-01-01T00:00:00Z", "upper_boundary": "2024-01-01T23:59:59Z"},
+            {"lower_boundary": "2024-01-02T00:00:00Z", "upper_boundary": "2024-01-02T23:59:59Z"},
+            {"lower_boundary": "2024-01-03T00:00:00Z", "upper_boundary": "2024-01-03T23:59:59Z"},
+            {"lower_boundary": "2024-01-04T00:00:00Z", "upper_boundary": "2024-01-04T23:59:59Z"},
+        ]
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 1, 5, 12, tzinfo=timezone.utc))
+    def test_given_daily_clamp_and_one_window_when_stream_slices_then_end_at_the_clamped_end(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                DayClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(seconds=1),
+            ),
+            slice_range=timedelta(days=30),
+            granularity=timedelta(seconds=1),
+            clamping_strategy=DayClampingStrategy(),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-01-01T00:00:00Z", "upper_boundary": "2024-01-04T23:59:59Z"},
+        ]
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 1, 4, 12, tzinfo=timezone.utc))
+    def test_given_daily_clamp_and_step_not_in_whole_days_when_stream_slices_then_read_the_last_day(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                DayClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(hours=36),
+            granularity=timedelta(days=1),
+            clamping_strategy=DayClampingStrategy(),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-01-01T00:00:00Z", "upper_boundary": "2024-01-03T00:00:00Z"},
+        ]
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 6, 15, tzinfo=timezone.utc))
+    def test_given_monthly_clamp_and_step_shorter_than_distance_to_next_month_when_stream_slices_then_slice_per_month(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2024, 3, 2, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=27),
+            granularity=timedelta(days=1),
+            clamping_strategy=MonthClampingStrategy(),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-04-01T00:00:00Z", "upper_boundary": "2024-04-30T00:00:00Z"},
+            {"lower_boundary": "2024-05-01T00:00:00Z", "upper_boundary": "2024-05-31T00:00:00Z"},
+        ]
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 3, 15, tzinfo=timezone.utc))
+    def test_given_monthly_clamp_and_no_complete_month_left_when_stream_slices_then_do_not_read_past_the_end(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2024, 2, 10, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=27),
+            granularity=timedelta(days=1),
+            clamping_strategy=MonthClampingStrategy(),
+        )
+        assert list(cursor.stream_slices()) == []
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 10, 2, tzinfo=timezone.utc))
+    def test_given_state_at_clamped_end_when_stream_slices_then_do_not_read_past_the_end(
+        self,
+    ) -> None:
+        cursor = ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {
+                "state_type": ConcurrencyCompatibleStateType.date_range.value,
+                "slices": [{"start": "2024-01-01T00:00:00Z", "end": "2024-09-30T00:00:00Z"}],
+            },
+            self._message_repository,
+            self._state_manager,
+            CustomFormatConcurrentStreamStateConverter(
+                "%Y-%m-%dT%H:%M:%SZ", is_sequential_state=_NOT_SEQUENTIAL
+            ),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            _SLICE_BOUNDARY_FIELDS,
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=27),
+            cursor_granularity=timedelta(days=1),
+            clamping_strategy=MonthClampingStrategy(),
+        )
+
+        # the end is 2024-09-30: clamping [end, end] would move it into October, which is not over
+        assert list(cursor.stream_slices()) == []
+
+
+@freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(50, timezone.utc))
+@pytest.mark.parametrize(
+    "cursor_granularity, is_compare_strictly, expected_slices",
+    [
+        pytest.param(
+            timedelta(seconds=1),
+            False,
+            [{_LOWER_SLICE_BOUNDARY_FIELD: 50, _UPPER_SLICE_BOUNDARY_FIELD: 50}],
+            id="one_unit_window_with_granularity",
+        ),
+        pytest.param(timedelta(seconds=1), True, [], id="skipped_when_compare_strictly"),
+        pytest.param(None, False, [], id="skipped_without_granularity"),
+    ],
+)
+def test_given_start_equals_end_when_stream_slices_then_read_the_end_unit_if_the_window_includes_it(
+    cursor_granularity: Optional[timedelta], is_compare_strictly: bool, expected_slices
+) -> None:
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        deepcopy(_NO_STATE),
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(is_sequential_state=True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(50, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        slice_range=timedelta(seconds=10) if cursor_granularity else None,
+        cursor_granularity=cursor_granularity,
+        is_compare_strictly=is_compare_strictly,
+    )
+
+    assert list(cursor.stream_slices()) == expected_slices
+    assert list(cursor.copy_without_state().stream_slices()) == expected_slices
+
+
+@freezegun.freeze_time(time_to_freeze=datetime(2024, 3, 5, 12, tzinfo=timezone.utc))
+@pytest.mark.parametrize(
+    "state_slices, is_compare_strictly, expected_slices",
+    [
+        pytest.param(
+            [
+                {"start": "2024-01-01T00:00:00Z", "end": "2024-01-30T10:00:00Z"},
+                {"start": "2024-02-01T00:00:00Z", "end": "2024-03-01T00:00:00Z"},
+            ],
+            False,
+            [
+                {
+                    _LOWER_SLICE_BOUNDARY_FIELD: "2024-03-01T00:00:00Z",
+                    _UPPER_SLICE_BOUNDARY_FIELD: "2024-03-04T00:00:00Z",
+                }
+            ],
+            id="gap_left_empty_by_the_clamp",
+        ),
+        pytest.param(
+            [{"start": "2024-01-01T00:00:00Z", "end": "2024-03-03T10:00:00Z"}],
+            True,
+            [],
+            id="end_unit_with_compare_strictly",
+        ),
+    ],
+)
+def test_given_daily_clamp_moves_lower_onto_upper_when_stream_slices_then_skip_the_window(
+    state_slices, is_compare_strictly: bool, expected_slices
+) -> None:
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "state_type": ConcurrencyCompatibleStateType.date_range.value,
+            "slices": deepcopy(state_slices),
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        CustomFormatConcurrentStreamStateConverter(
+            "%Y-%m-%dT%H:%M:%SZ", is_sequential_state=_NOT_SEQUENTIAL
+        ),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
+        ClampingEndProvider(
+            DayClampingStrategy(is_ceiling=False),
+            CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+            granularity=timedelta(days=1),
+        ),
+        slice_range=timedelta(days=10),
+        cursor_granularity=timedelta(days=1),
+        clamping_strategy=DayClampingStrategy(),
+        is_compare_strictly=is_compare_strictly,
+    )
+
+    assert list(cursor.stream_slices()) == expected_slices
+
 
 _SHOULD_BE_SYNCED_START = 10
 
@@ -1210,6 +1471,94 @@ def test_given_state_when_should_be_synced_then_use_cursor_value_to_filter():
         )
         == True
     )
+
+
+def _cursor_with_lookback(state: MutableMapping[str, Any]) -> ConcurrentCursor:
+    return ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        state,
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        timedelta(seconds=3),
+    )
+
+
+def _is_synced(cursor: ConcurrentCursor, cursor_value: int) -> bool:
+    return cursor.should_be_synced(
+        Record(data={_A_CURSOR_FIELD_KEY: cursor_value}, stream_name="test_stream")
+    )
+
+
+def test_given_state_and_lookback_window_when_should_be_synced_then_keep_records_within_lookback():
+    state_value = _SHOULD_BE_SYNCED_START + 5
+    cursor = _cursor_with_lookback({_A_CURSOR_FIELD_KEY: state_value})
+
+    assert _is_synced(cursor, state_value - 3)
+    assert not _is_synced(cursor, state_value - 4)
+
+
+def test_given_lookback_window_when_should_be_synced_then_never_keep_records_before_start():
+    cursor = _cursor_with_lookback({})
+    assert _is_synced(cursor, _SHOULD_BE_SYNCED_START)
+    assert not _is_synced(cursor, _SHOULD_BE_SYNCED_START - 1)
+
+    cursor = _cursor_with_lookback({_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START + 1})
+    assert not _is_synced(cursor, _SHOULD_BE_SYNCED_START - 1)
+
+
+def test_given_concurrent_state_before_start_and_lookback_window_when_should_be_synced_then_keep_records_from_state():
+    state_value = _SHOULD_BE_SYNCED_START - 5
+    cursor = _cursor_with_lookback(
+        {"state_type": "date-range", "slices": [{"start": 0, "end": state_value}]}
+    )
+
+    assert _is_synced(cursor, state_value + 2)
+    assert not _is_synced(cursor, state_value - 1)
+
+
+def test_given_no_start_nor_state_and_lookback_window_when_should_be_synced_then_do_not_overflow():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        IsoMillisConcurrentStreamStateConverter(),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        IsoMillisConcurrentStreamStateConverter.get_end_provider(),
+        timedelta(days=1),
+    )
+
+    assert cursor.should_be_synced(
+        Record(data={_A_CURSOR_FIELD_KEY: "2024-01-01T00:00:00.000Z"}, stream_name="test_stream")
+    )
+
+
+def test_given_state_without_start_and_lookback_window_when_should_be_synced_then_keep_records_within_lookback():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {_A_CURSOR_FIELD_KEY: 10},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        timedelta(seconds=3),
+    )
+
+    assert _is_synced(cursor, 7)
+    assert not _is_synced(cursor, 6)
 
 
 def test_given_partitioned_state_without_slices_nor_start_when_should_be_synced_then_use_zero_value_to_filter():
@@ -1411,3 +1760,264 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
 
     result_with_empty_state = cursor.get_cursor_datetime_from_state({})
     assert result_with_empty_state is None
+
+
+class ConcurrentCursorReduceWindowTest(TestCase):
+    """
+    Covers ConcurrentCursor.split_request_window(), the implementation `SimpleRetriever.request_window_splitter`
+    binds to for declarative `request_window_splitting`. See
+    airbyte_cdk.sources.declarative.retrievers.simple_retriever.
+    """
+
+    def setUp(self) -> None:
+        self._message_repository = Mock(spec=MessageRepository)
+        self._state_manager = Mock(spec=ConnectorStateManager)
+
+    def _cursor(
+        self,
+        granularity: Optional[timedelta] = timedelta(seconds=1),
+        datetime_format: str = "%Y-%m-%dT%H:%M:%SZ",
+        slice_boundary_fields: Optional[tuple] = _SLICE_BOUNDARY_FIELDS,
+    ) -> ConcurrentCursor:
+        return ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            CustomFormatConcurrentStreamStateConverter(
+                datetime_format, is_sequential_state=_NOT_SEQUENTIAL
+            ),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            slice_boundary_fields,
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            lambda: datetime(2024, 2, 1, tzinfo=timezone.utc),
+            cursor_granularity=granularity,
+        )
+
+    def _slice(self, start: str, end: str) -> StreamSlice:
+        return StreamSlice(
+            partition={},
+            cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: start, _UPPER_SLICE_BOUNDARY_FIELD: end},
+        )
+
+    def test_given_window_when_reduce_then_split_in_half_at_cursor_granularity_boundary(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T11:59:59Z"),
+            self._slice("2024-01-01T12:00:00Z", "2024-01-01T23:59:59Z"),
+        ]
+
+    def test_given_odd_number_of_granularity_units_when_reduce_then_children_still_cover_parent_exactly(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+
+        # 3 whole seconds: [00:00:00, 00:00:02]
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
+            self._slice("2024-01-01T00:00:01Z", "2024-01-01T00:00:02Z"),
+        ]
+
+    def test_given_single_granularity_unit_window_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"))
+            is None
+        )
+
+    def test_given_window_at_or_below_min_split_window_when_reduce_then_return_none(self) -> None:
+        """
+        `min_split_window` is a connector-configured floor independent of, and typically looser than,
+        `cursor_granularity`: a window already at or below it must not be split further even though
+        `cursor_granularity` alone would still allow it.
+        """
+        cursor = self._cursor()
+
+        # spans exactly 1 day - at the floor when min_split_window is 1 day, even though cursor_granularity
+        # (1 second) would otherwise allow splitting this down much further
+        assert (
+            cursor.split_request_window(
+                self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"),
+                min_split_window=timedelta(days=1),
+            )
+            is None
+        )
+
+    def test_given_window_above_min_split_window_when_reduce_then_split_normally(self) -> None:
+        cursor = self._cursor()
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-02T23:59:59Z"),
+            min_split_window=timedelta(days=1),
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"),
+            self._slice("2024-01-02T00:00:00Z", "2024-01-02T23:59:59Z"),
+        ]
+
+    def test_given_repeated_reduction_when_reduce_then_eventually_reaches_granularity_floor(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+        current = self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z")
+
+        depth = 0
+        while True:
+            children = cursor.split_request_window(current)
+            if children is None:
+                break
+            # exactly at the boundary
+            assert (
+                children[0].cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+                < current.cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+            )
+            current = children[0]
+            depth += 1
+            assert depth < 30, "split_request_window did not converge to the granularity floor"
+
+        assert (
+            current.cursor_slice[_LOWER_SLICE_BOUNDARY_FIELD]
+            == current.cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+            == "2024-01-01T00:00:00Z"
+        )
+
+    def test_given_reversed_boundaries_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.split_request_window(self._slice("2024-01-01T00:00:05Z", "2024-01-01T00:00:00Z"))
+            is None
+        )
+
+    def test_given_no_cursor_granularity_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor(granularity=None)
+
+        assert (
+            cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+            is None
+        )
+
+    def test_given_malformed_boundary_when_reduce_then_raise(self) -> None:
+        """
+        A malformed boundary means the slice was produced wrong - a bug, not the API rejecting a window - so
+        this must not be silently swallowed as `None` (which `SimpleRetriever` reports as "the API kept
+        rejecting...", misattributing the cause).
+        """
+        cursor = self._cursor()
+
+        with pytest.raises(AirbyteTracedException) as exception:
+            cursor.split_request_window(
+                StreamSlice(
+                    partition={},
+                    cursor_slice={
+                        _LOWER_SLICE_BOUNDARY_FIELD: "not-a-date",
+                        _UPPER_SLICE_BOUNDARY_FIELD: "2024-01-01T23:59:59Z",
+                    },
+                )
+            )
+        assert exception.value.failure_type == FailureType.system_error
+        assert _LOWER_SLICE_BOUNDARY_FIELD in exception.value.internal_message
+
+    def test_given_missing_boundary_field_when_reduce_then_raise(self) -> None:
+        cursor = self._cursor()
+
+        with pytest.raises(AirbyteTracedException) as exception:
+            cursor.split_request_window(
+                StreamSlice(partition={}, cursor_slice={"only_one_field": "x"})
+            )
+        assert exception.value.failure_type == FailureType.system_error
+
+    def test_split_request_window_preserves_partition_and_extra_fields(self) -> None:
+        cursor = self._cursor()
+        original = StreamSlice(
+            partition={"parent_id": "123"},
+            cursor_slice={
+                _LOWER_SLICE_BOUNDARY_FIELD: "2024-01-01T00:00:00Z",
+                _UPPER_SLICE_BOUNDARY_FIELD: "2024-01-01T23:59:59Z",
+            },
+            extra_fields={"some_extra": "value"},
+        )
+
+        children = cursor.split_request_window(original)
+
+        for child in children:
+            assert child.partition == {"parent_id": "123"}
+            assert child.extra_fields == {"some_extra": "value"}
+
+    def test_given_epoch_cursor_when_reduce_then_split_using_epoch_output_format(self) -> None:
+        cursor = ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            EpochValueConcurrentStreamStateConverter(is_sequential_state=_NOT_SEQUENTIAL),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            _SLICE_BOUNDARY_FIELDS,
+            0,
+            lambda: 1000,
+            cursor_granularity=timedelta(seconds=1),
+        )
+
+        children = cursor.split_request_window(
+            StreamSlice(
+                partition={},
+                cursor_slice={
+                    _LOWER_SLICE_BOUNDARY_FIELD: 0,
+                    _UPPER_SLICE_BOUNDARY_FIELD: 99,
+                },
+            )
+        )
+
+        assert children == [
+            StreamSlice(
+                partition={},
+                cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 49},
+            ),
+            StreamSlice(
+                partition={},
+                cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: 50, _UPPER_SLICE_BOUNDARY_FIELD: 99},
+            ),
+        ]
+
+    def test_given_multiple_datetime_formats_when_reduce_then_round_trip_format_correctly(
+        self,
+    ) -> None:
+        cursor = self._cursor(datetime_format="%Y-%m-%d %H:%M:%S")
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59")
+        )
+
+        assert children == [
+            self._slice("2024-01-01 00:00:00", "2024-01-01 11:59:59"),
+            self._slice("2024-01-01 12:00:00", "2024-01-01 23:59:59"),
+        ]
+
+    def test_given_non_utc_timezone_offset_when_reduce_then_preserve_offset_in_round_trip(
+        self,
+    ) -> None:
+        cursor = self._cursor(datetime_format="%Y-%m-%dT%H:%M:%S%z")
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00+0530", "2024-01-01T23:59:59+0530")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00+0530", "2024-01-01T11:59:59+0530"),
+            self._slice("2024-01-01T12:00:00+0530", "2024-01-01T23:59:59+0530"),
+        ]

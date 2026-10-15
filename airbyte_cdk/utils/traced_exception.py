@@ -89,11 +89,17 @@ class AirbyteTracedException(Exception):
         return AirbyteMessage(type=MessageType.TRACE, trace=trace_message)
 
     def as_connection_status_message(self) -> Optional[AirbyteMessage]:
+        """Build a failed CONNECTION_STATUS from a config error, with secrets masked.
+
+        The message can quote config values, as a config validation error does, so it goes
+        through the same secret filter as logs and traces.
+        """
         if self.failure_type == FailureType.config_error:
             return AirbyteMessage(
                 type=MessageType.CONNECTION_STATUS,
                 connectionStatus=AirbyteConnectionStatus(
-                    status=Status.FAILED, message=self.message
+                    status=Status.FAILED,
+                    message=filter_secrets(self.message) if self.message else self.message,
                 ),
             )
         return None

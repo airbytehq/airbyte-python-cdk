@@ -38,7 +38,7 @@ class PartitionEnqueuer:
         When all the partitions are added to the queue, a sentinel is added to the queue to indicate that all the partitions have been generated.
 
         If an exception is encountered, the exception will be caught and put in the queue. This is very important because if we don't, the
-        main thread will have no way to know that something when wrong and will wait until the timeout is reached
+        main thread will have no way to know that something went wrong and will block on the queue forever.
 
         This method is meant to be called in a separate thread.
         """

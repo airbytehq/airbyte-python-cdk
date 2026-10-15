@@ -34,9 +34,10 @@ class PageSizeReductionRequiredException(AirbyteTracedException):
         detail = f": {error_message}" if error_message else ""
         super().__init__(
             internal_message=f"An error handler{stream} resolved to REDUCE_PAGE_SIZE{detail}",
-            message=f"The API rejected a page{stream} and asked the connector for a smaller one. If this message ends a sync, the stream is not set up to request a smaller page: add `page_size_reduction` to its retriever, or remove the REDUCE_PAGE_SIZE action from its error handler.",
+            message=f"The API rejected a page{stream} and asked the connector for a smaller one{detail or '.'}",
             failure_type=FailureType.config_error,
         )
+        self.error_message = error_message
 
 
 class PageSizeReductionNotSupportedException(AirbyteTracedException):

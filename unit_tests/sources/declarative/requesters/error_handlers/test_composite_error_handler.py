@@ -372,3 +372,51 @@ def test_given_reduce_page_size_when_interpret_response_then_stop_at_the_matchin
 
     assert error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
     assert failing_handler.interpret_response.call_count == 0
+
+
+def test_given_split_request_window_when_interpret_response_then_stop_at_the_matching_handler():
+    """
+    Mirrors test_given_reduce_page_size_when_interpret_response_then_stop_at_the_matching_handler: without the
+    short circuit, a later handler resolving to FAIL would win over the request window reduction.
+    """
+    reducing_handler = MagicMock()
+    reducing_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.SPLIT_REQUEST_WINDOW,
+        failure_type=FailureType.config_error,
+    )
+    failing_handler = MagicMock()
+    failing_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.FAIL, failure_type=FailureType.system_error
+    )
+    error_handler = CompositeErrorHandler(
+        error_handlers=[reducing_handler, failing_handler], parameters={}
+    )
+
+    error_resolution = error_handler.interpret_response(MagicMock())
+
+    assert error_resolution.response_action == ResponseAction.SPLIT_REQUEST_WINDOW
+    assert failing_handler.interpret_response.call_count == 0
+
+
+def test_given_unrelated_response_error_when_interpret_response_then_behavior_is_unaffected():
+    """
+    Adding SPLIT_REQUEST_WINDOW to the short-circuit list must not change behavior for actions that were
+    never in it: RATE_LIMITED still does not short-circuit, so a later handler's FAIL still wins over an
+    earlier handler's RATE_LIMITED, exactly as before this action existed.
+    """
+    rate_limited_handler = MagicMock()
+    rate_limited_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.RATE_LIMITED, failure_type=FailureType.transient_error
+    )
+    failing_handler = MagicMock()
+    failing_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.FAIL, failure_type=FailureType.system_error
+    )
+    error_handler = CompositeErrorHandler(
+        error_handlers=[rate_limited_handler, failing_handler], parameters={}
+    )
+
+    error_resolution = error_handler.interpret_response(MagicMock())
+
+    assert error_resolution.response_action == ResponseAction.FAIL
+    assert failing_handler.interpret_response.call_count == 1

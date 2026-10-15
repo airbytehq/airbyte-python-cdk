@@ -624,6 +624,74 @@ class TestOauth2Authenticator:
             assert oauth.get_token_expiry_date() == ab_datetime_parse(next_day)
 
     @freezegun.freeze_time("2022-01-01")
+    def test_custom_component_returning_raw_expires_in(self):
+        """Custom components written before 6.45.5 (e.g. source-okta) return the raw `expires_in`."""
+
+        class CustomOauth2Authenticator(DeclarativeOauth2Authenticator):
+            def refresh_access_token(self):
+                return "access_token", 948
+
+        oauth = CustomOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            parameters=parameters,
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=948)
+
+    def test_custom_component_returning_unparseable_expires_in_stores_it_as_is(self):
+        class CustomOauth2Authenticator(DeclarativeOauth2Authenticator):
+            def refresh_access_token(self):
+                return "access_token", None
+
+        oauth = CustomOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            parameters=parameters,
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() is None
+
+    @freezegun.freeze_time("2022-01-01")
+    def test_custom_component_parse_token_expiration_date_override_only_gets_raw_values(
+        self, mocker
+    ):
+        parsed = []
+
+        class CustomOauth2Authenticator(DeclarativeOauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return ab_datetime_now() + timedelta(seconds=int(value))
+
+        oauth = CustomOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            parameters=parameters,
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 948}
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert parsed == [948]
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=948)
+
+    @freezegun.freeze_time("2022-01-01")
     def test_profile_assertion(self, mocker):
         with HttpMocker() as http_mocker:
             jwt = JwtAuthenticator(
