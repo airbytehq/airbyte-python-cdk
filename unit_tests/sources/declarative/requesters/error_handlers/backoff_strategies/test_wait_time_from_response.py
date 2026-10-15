@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
 import json
@@ -164,6 +164,47 @@ def test_wait_time_from_response_gmail_expression(message, expected_wait):
         assert actual_wait is None
     else:
         assert actual_wait == pytest.approx(expected_wait)
+
+
+@pytest.mark.parametrize(
+    "retry_in",
+    [
+        pytest.param(-0.5, id="negative_fraction"),
+        pytest.param(-30, id="negative"),
+        pytest.param("nan", id="not_a_number"),
+        pytest.param("inf", id="infinite"),
+    ],
+)
+def test_wait_time_from_response_returns_none_for_negative_or_non_finite_result(retry_in):
+    """A negative wait would reach `time.sleep` and fail the stream; the next strategy decides."""
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ response.retry_in }}", parameters={}, config={}
+    )
+
+    assert strategy.backoff_time(_response({"retry_in": retry_in}), 1) is None
+
+
+def test_wait_time_from_response_returns_none_for_non_numeric_result(caplog):
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ response.retry_in }}", parameters={}, config={}
+    )
+
+    assert strategy.backoff_time(_response({"retry_in": "soon"}), 1) is None
+    assert any("non-numeric str" in message for message in caplog.messages)
+    assert all("soon" not in message for message in caplog.messages)
+
+
+@freeze_time("2026-10-15T13:00:00Z")
+def test_wait_time_from_response_past_timestamp_without_a_floor_defers():
+    """`retry_at - now` is negative once the time has passed, without the `max(1, ...)` floor."""
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ timestamp(response.retry_at) - now_utc().timestamp() }}",
+        parameters={},
+        config={},
+    )
+
+    assert strategy.backoff_time(_response({"retry_at": "2026-10-15T12:59:30Z"}), 1) is None
+    assert strategy.backoff_time(_response({"retry_at": "2026-10-15T13:00:30Z"}), 1) == 30
 
 
 def _response(json_body, headers=None):

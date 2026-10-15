@@ -1459,7 +1459,7 @@ class WaitTimeFromResponse(BaseModel):
     type: Literal["WaitTimeFromResponse"]
     wait_time_in_seconds: str = Field(
         ...,
-        description="The expression defining how long to wait before retrying. An empty result defers to the next backoff strategy.",
+        description="The expression defining how long to wait before retrying. An empty, negative or non-numeric result defers to the next backoff strategy.",
         examples=[
             "{{ response.retry_after_seconds }}",
             "{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response.get('error', {}).get('message', '') | regex_search('Retry after (\\S+Z)')) else '' }}",

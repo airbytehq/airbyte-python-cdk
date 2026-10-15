@@ -1,7 +1,9 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+import logging
+import math
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union, cast
 
@@ -17,6 +19,8 @@ from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.utils import AirbyteTracedException
 
+LOGGER = logging.getLogger("airbyte")
+
 
 @dataclass
 class WaitTimeFromResponseBackoffStrategy(BackoffStrategy):
@@ -24,7 +28,8 @@ class WaitTimeFromResponseBackoffStrategy(BackoffStrategy):
     Extract wait time from the response body or headers.
 
     Attributes:
-        wait_time_in_seconds: Expression defining how long to wait before retrying.
+        wait_time_in_seconds: Expression defining how long to wait before retrying. An empty,
+            negative, non-finite or non-numeric result defers to the next backoff strategy.
         max_waiting_time_in_seconds: Optional inclusive cap on the computed wait.
     """
 
@@ -65,7 +70,23 @@ class WaitTimeFromResponseBackoffStrategy(BackoffStrategy):
         ):
             return None
 
-        wait_time = float(evaluated_wait_time)
+        try:
+            wait_time = float(evaluated_wait_time)
+        except (TypeError, ValueError):
+            # Mirrors the header strategies, which return None for a value they cannot read, so
+            # the next backoff strategy decides. The value is not logged: it comes from the
+            # response body and may hold anything.
+            LOGGER.warning(
+                "WaitTimeFromResponse: `wait_time_in_seconds` resolved to a non-numeric "
+                f"{type(evaluated_wait_time).__name__}; deferring to the next backoff strategy."
+            )
+            return None
+        if not math.isfinite(wait_time) or wait_time < 0:
+            # A retry time that has already passed gives a negative wait, which is not a wait to
+            # take: the next strategy decides, as `WaitUntilTimeFromHeader` does for a past
+            # timestamp. Returned as-is, a negative value would reach `time.sleep` and fail the
+            # stream. A zero wait is returned as 0, like `WaitTimeFromHeader` for a `0` header.
+            return None
         max_waiting_time = evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
         if max_waiting_time is not None and wait_time and wait_time >= max_waiting_time:
             raise AirbyteTracedException(

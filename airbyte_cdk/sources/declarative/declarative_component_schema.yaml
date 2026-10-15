@@ -5131,7 +5131,7 @@ definitions:
         enum: [WaitTimeFromResponse]
       wait_time_in_seconds:
         title: Wait Time in Seconds
-        description: The expression defining how long to wait before retrying. An empty result defers to the next backoff strategy.
+        description: The expression defining how long to wait before retrying. An empty, negative or non-numeric result defers to the next backoff strategy.
         type: string
         interpolation_context:
           - config
