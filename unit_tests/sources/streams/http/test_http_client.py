@@ -35,6 +35,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     UserDefinedBackoffException,
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.opaque_token_reset_exception import (
+    OpaqueTokenResetRequiredException,
+)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -242,6 +245,23 @@ def test_send_raises_airbyte_traced_exception_with_fail_response_action():
         http_client._send(prepared_request, {})
 
     assert http_client._session.send.call_count == 1
+
+
+def test_reset_opaque_token_action_raises_exception_with_error_message():
+    http_client = test_http_client()
+    error_message = "sync_token_expired"
+    with pytest.raises(OpaqueTokenResetRequiredException) as exc_info:
+        http_client._handle_error_resolution(
+            response=None,
+            exc=None,
+            request=requests.PreparedRequest(),
+            error_resolution=ErrorResolution(
+                response_action=ResponseAction.RESET_OPAQUE_TOKEN,
+                error_message=error_message,
+            ),
+        )
+
+    assert exc_info.value.error_message == error_message
 
 
 def test_send_ignores_with_ignore_reponse_action_and_returns_response():

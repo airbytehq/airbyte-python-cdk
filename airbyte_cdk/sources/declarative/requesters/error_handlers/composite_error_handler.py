@@ -71,6 +71,7 @@ class CompositeErrorHandler(ErrorHandler):
                 ResponseAction.RETRY,
                 ResponseAction.IGNORE,
                 ResponseAction.RESET_PAGINATION,
+                ResponseAction.RESET_OPAQUE_TOKEN,
                 ResponseAction.REDUCE_PAGE_SIZE,
                 ResponseAction.SPLIT_REQUEST_WINDOW,
             ]:
