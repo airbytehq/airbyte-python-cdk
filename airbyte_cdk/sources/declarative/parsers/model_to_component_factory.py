@@ -4182,6 +4182,9 @@ class ModelToComponentFactory:
             page_observer=(
                 cursor.on_page_completed if isinstance(cursor, OpaqueTokenCursor) else None
             ),
+            token_reset_handler=(
+                cursor.restart_without_token if isinstance(cursor, OpaqueTokenCursor) else None
+            ),
             parameters=model.parameters or {},
         )
 

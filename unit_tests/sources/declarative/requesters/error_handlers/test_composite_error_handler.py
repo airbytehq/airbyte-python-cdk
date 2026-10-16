@@ -132,6 +132,24 @@ def test_given_unmatched_response_or_exception_then_return_default_error_resolut
     assert error_resolution.failure_type == FailureType.system_error
 
 
+def test_composite_error_handler_preserves_reset_opaque_token():
+    reset_handler = MagicMock()
+    reset_resolution = ErrorResolution(
+        response_action=ResponseAction.RESET_OPAQUE_TOKEN,
+        error_message="sync_token_expired",
+    )
+    reset_handler.interpret_response.return_value = reset_resolution
+    success_handler = MagicMock()
+    success_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.SUCCESS
+    )
+    composite_error_handler = CompositeErrorHandler(
+        error_handlers=[reset_handler, success_handler], parameters={}
+    )
+
+    assert composite_error_handler.interpret_response(MagicMock()) == reset_resolution
+
+
 def test_composite_error_handler_no_handlers():
     try:
         CompositeErrorHandler(error_handlers=[], parameters={})

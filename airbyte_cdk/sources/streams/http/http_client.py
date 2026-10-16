@@ -43,6 +43,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.opaque_token_reset_exception import (
+    OpaqueTokenResetRequiredException,
+)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -619,6 +622,9 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.RESET_OPAQUE_TOKEN:
+            raise OpaqueTokenResetRequiredException(error_resolution.error_message)
 
         if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
             raise PageSizeReductionRequiredException(
