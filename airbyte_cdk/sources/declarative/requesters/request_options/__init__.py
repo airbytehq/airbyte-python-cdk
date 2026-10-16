@@ -11,6 +11,9 @@ from airbyte_cdk.sources.declarative.requesters.request_options.default_request_
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_options_provider import (
     InterpolatedRequestOptionsProvider,
 )
+from airbyte_cdk.sources.declarative.requesters.request_options.opaque_token_request_options_provider import (
+    OpaqueTokenRequestOptionsProvider,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
@@ -19,5 +22,6 @@ __all__ = [
     "DatetimeBasedRequestOptionsProvider",
     "DefaultRequestOptionsProvider",
     "InterpolatedRequestOptionsProvider",
+    "OpaqueTokenRequestOptionsProvider",
     "RequestOptionsProvider",
 ]

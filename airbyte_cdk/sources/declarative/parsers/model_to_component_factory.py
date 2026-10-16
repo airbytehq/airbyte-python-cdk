@@ -128,6 +128,7 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
 from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentCursorFactory,
     ConcurrentPerPartitionCursor,
+    OpaqueTokenCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -392,6 +393,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     OffsetIncrement as OffsetIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    OpaqueTokenCursor as OpaqueTokenCursorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -572,6 +576,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     DatetimeBasedRequestOptionsProvider,
     DefaultRequestOptionsProvider,
     InterpolatedRequestOptionsProvider,
+    OpaqueTokenRequestOptionsProvider,
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_options.per_partition_request_option_provider import (
@@ -2127,6 +2132,7 @@ class ModelToComponentFactory:
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
+        self._validate_opaque_token_stream(model)
         self._migrate_state(model, config)
         self._warn_on_ineffective_incremental_dependency(model)
 
@@ -2137,6 +2143,7 @@ class ModelToComponentFactory:
             **kwargs,
         )
         concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
+        request_options_provider: Optional[RequestOptionsProvider]
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model: DatetimeBasedCursorModel = model.incremental_sync
 
@@ -2169,6 +2176,27 @@ class ModelToComponentFactory:
                 else PerPartitionRequestOptionsProvider(
                     partition_router, datetime_request_options_provider
                 )
+            )
+        elif isinstance(model.incremental_sync, OpaqueTokenCursorModel):
+            opaque_cursor_model = model.incremental_sync
+            token_option = self._create_component_from_model(
+                opaque_cursor_model.token_option,
+                config,
+                parameters=opaque_cursor_model.parameters or {},
+            )
+            opaque_request_options_provider = OpaqueTokenRequestOptionsProvider(
+                token_option=token_option,
+                config=config,
+                parameters=opaque_cursor_model.parameters or {},
+                initial_token=opaque_cursor_model.initial_token,
+            )
+            request_options_provider = (
+                PerPartitionRequestOptionsProvider(
+                    partition_router, opaque_request_options_provider
+                )
+                if isinstance(concurrent_cursor, OpaqueTokenCursor)
+                and concurrent_cursor._partitioned
+                else opaque_request_options_provider
             )
         elif model.incremental_sync and isinstance(
             model.incremental_sync, IncrementingCountCursorModel
@@ -2283,7 +2311,119 @@ class ModelToComponentFactory:
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
+            source_defined_incremental=isinstance(model.incremental_sync, OpaqueTokenCursorModel),
         )
+
+    @staticmethod
+    def _validate_opaque_token_stream(model: DeclarativeStreamModel) -> None:
+        cursor_model = model.incremental_sync
+        stream_name = model.name or ""
+        retriever_model = model.retriever
+        router_model = getattr(retriever_model, "partition_router", None)
+        routers = router_model if isinstance(router_model, list) else [router_model]
+        for router in routers:
+            if isinstance(router, SubstreamPartitionRouterModel):
+                for parent in router.parent_stream_configs:
+                    parent_sync = getattr(parent.stream, "incremental_sync", None)
+                    if isinstance(parent.stream, StateDelegatingStreamModel):
+                        parent_sync = parent.stream.incremental_stream.incremental_sync
+                    if parent.incremental_dependency and isinstance(
+                        parent_sync, OpaqueTokenCursorModel
+                    ):
+                        raise ValueError(
+                            f"Stream {stream_name}: an OpaqueTokenCursor parent cannot be used with "
+                            "`incremental_dependency`."
+                        )
+        if not isinstance(cursor_model, OpaqueTokenCursorModel):
+            return
+        datetime_only_keys = {
+            "start_datetime",
+            "end_datetime",
+            "step",
+            "cursor_granularity",
+            "datetime_format",
+            "cursor_datetime_formats",
+            "start_time_option",
+            "end_time_option",
+            "lookback_window",
+            "partition_field_start",
+            "partition_field_end",
+            "is_data_feed",
+            "is_client_side_incremental",
+            "is_compare_strictly",
+            "global_substream_cursor",
+            "clamping",
+        }
+        unsupported = sorted(datetime_only_keys.intersection(cursor_model.__dict__))
+        if unsupported:
+            raise ValueError(
+                f"Stream {stream_name}: OpaqueTokenCursor does not support datetime-only setting(s): "
+                f"{', '.join(unsupported)}."
+            )
+        if isinstance(model.retriever, AsyncRetrieverModel):
+            raise ValueError(
+                f"Stream {stream_name}: OpaqueTokenCursor is not supported with AsyncRetriever; "
+                "use SimpleRetriever so response pages can be observed."
+            )
+        if isinstance(retriever_model, CustomRetrieverModel):
+            LOGGER.warning(
+                "Stream %s: CustomRetriever does not expose response pages to OpaqueTokenCursor; "
+                "no change token will be captured.",
+                stream_name,
+            )
+
+        for router in routers:
+            if isinstance(router, GroupingPartitionRouterModel):
+                raise ValueError(
+                    f"Stream {stream_name}: OpaqueTokenCursor does not support GroupingPartitionRouter; "
+                    "use an ungrouped partition router."
+                )
+            if isinstance(router, ListPartitionRouterModel) and router.cursor_field == "token":
+                raise ValueError(
+                    f"Stream {stream_name}: partition router field 'token' conflicts with OpaqueTokenCursor."
+                )
+            if isinstance(router, SubstreamPartitionRouterModel):
+                for parent in router.parent_stream_configs:
+                    if parent.partition_field == "token":
+                        raise ValueError(
+                            f"Stream {stream_name}: parent partition field 'token' conflicts with OpaqueTokenCursor."
+                        )
+                    if parent.lazy_read_pointer:
+                        raise ValueError(
+                            f"Stream {stream_name}: OpaqueTokenCursor is not supported with parent "
+                            "`lazy_read_pointer`; remove the lazy pointer."
+                        )
+                    if parent.incremental_dependency:
+                        raise ValueError(
+                            f"Stream {stream_name}: OpaqueTokenCursor is not supported with "
+                            "`incremental_dependency` on a SubstreamPartitionRouter."
+                        )
+        pagination_reset = getattr(retriever_model, "pagination_reset", None)
+        if pagination_reset and pagination_reset.limits:
+            raise ValueError(
+                f"Stream {stream_name}: pagination reset `limits` are not supported with OpaqueTokenCursor."
+            )
+        requester_model = getattr(retriever_model, "requester", None)
+        query_properties = [getattr(requester_model, "query_properties", None)]
+        request_parameters = getattr(requester_model, "request_parameters", None)
+        if isinstance(request_parameters, Mapping):
+            query_properties.extend(
+                value
+                for value in request_parameters.values()
+                if isinstance(value, QueryPropertiesModel)
+                or (isinstance(value, Mapping) and value.get("type") == "QueryProperties")
+            )
+        for properties in query_properties:
+            property_chunking = (
+                properties.get("property_chunking")
+                if isinstance(properties, Mapping)
+                else getattr(properties, "property_chunking", None)
+            )
+            if property_chunking:
+                raise ValueError(
+                    f"Stream {stream_name}: query property chunking is not supported with "
+                    "OpaqueTokenCursor."
+                )
 
     def _warn_on_ineffective_incremental_dependency(self, model: DeclarativeStreamModel) -> None:
         """
@@ -2405,6 +2545,16 @@ class ModelToComponentFactory:
         stream_name = model.name or ""
         stream_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
+        if isinstance(model.incremental_sync, OpaqueTokenCursorModel):
+            return self.create_opaque_token_cursor(
+                model.incremental_sync,
+                config=config,
+                stream_name=stream_name,
+                stream_state=stream_state,
+                partition_router=stream_slicer or SinglePartitionRouter(parameters={}),
+                retriever_model=model.retriever,
+            )
+
         if (
             model.incremental_sync
             and stream_slicer
@@ -2454,6 +2604,37 @@ class ModelToComponentFactory:
                     f"Incremental sync of type {type(model.incremental_sync)} is not supported"
                 )
         return FinalStateCursor(stream_name, None, self._message_repository)
+
+    def create_opaque_token_cursor(
+        self,
+        model: OpaqueTokenCursorModel,
+        *,
+        config: Config,
+        stream_name: str,
+        stream_state: Optional[Mapping[str, Any]],
+        partition_router: PartitionRouter,
+        retriever_model: Any,
+    ) -> OpaqueTokenCursor:
+        decoder_model = getattr(retriever_model, "decoder", None)
+        decoder = (
+            self._create_component_from_model(model=decoder_model, config=config)
+            if decoder_model
+            else JsonDecoder(parameters={})
+        )
+        return OpaqueTokenCursor(
+            stream_name=stream_name,
+            stream_namespace=None,
+            stream_state=stream_state,
+            message_repository=self._message_repository,
+            connector_state_manager=self._connector_state_manager,
+            partition_router=partition_router,
+            token_path=model.token_path,
+            decoder=decoder,
+            config=config or {},
+            parameters=model.parameters or {},
+            completion_condition=model.completion_condition,
+            cursor_field=model.cursor_field,
+        )
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -3708,7 +3889,11 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
-            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+            Union[
+                IncrementingCountCursorModel,
+                DatetimeBasedCursorModel,
+                OpaqueTokenCursorModel,
+            ]
         ] = None,
         use_cache: Optional[bool] = None,
         log_formatter: Optional[Callable[[Response], Any]] = None,
@@ -3765,9 +3950,13 @@ class ModelToComponentFactory:
             )
 
         decoder = (
-            self._create_component_from_model(model=model.decoder, config=config)
-            if model.decoder
-            else JsonDecoder(parameters={})
+            cursor._decoder
+            if isinstance(cursor, OpaqueTokenCursor)
+            else (
+                self._create_component_from_model(model=model.decoder, config=config)
+                if model.decoder
+                else JsonDecoder(parameters={})
+            )
         )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
@@ -3841,6 +4030,15 @@ class ModelToComponentFactory:
                 model=model.requester.query_properties,
                 stream_name=name,
                 config=config,
+            )
+
+        if (
+            isinstance(cursor, OpaqueTokenCursor)
+            and query_properties
+            and query_properties.property_chunking
+        ):
+            raise ValueError(
+                f"Stream {name}: query property chunking is not supported with OpaqueTokenCursor."
             )
 
         requester = self._create_component_from_model(
@@ -3981,6 +4179,9 @@ class ModelToComponentFactory:
                 else None
             ),
             post_pagination_filter=post_pagination_filter,
+            page_observer=(
+                cursor.on_page_completed if isinstance(cursor, OpaqueTokenCursor) else None
+            ),
             parameters=model.parameters or {},
         )
 
@@ -4291,7 +4492,7 @@ class ModelToComponentFactory:
         name: str,
         cursor: Optional[Cursor],
         incremental_sync: Optional[
-            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel, OpaqueTokenCursorModel]
         ] = None,
         query_properties: Optional[QueryProperties] = None,
         file_uploader: Optional[DefaultFileUploader] = None,
@@ -4342,7 +4543,7 @@ class ModelToComponentFactory:
         name: str,
         cursor: Optional[Cursor],
         incremental_sync: Optional[
-            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel, OpaqueTokenCursorModel]
         ] = None,
         min_split_window: Optional[str] = None,
         query_properties: Optional[QueryProperties] = None,

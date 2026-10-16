@@ -284,10 +284,16 @@ class PaginatorTestReadDecorator(Paginator):
         self._maximum_number_of_pages = maximum_number_of_pages
         self._decorated = decorated
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
+        self._did_reach_page_limit = False
 
     def get_initial_token(self) -> Optional[Any]:
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
+        self._did_reach_page_limit = False
         return self._decorated.get_initial_token()
+
+    @property
+    def did_reach_page_limit(self) -> bool:
+        return self._did_reach_page_limit
 
     def get_page_size(self) -> Optional[int]:
         return self._decorated.get_page_size()
@@ -302,6 +308,7 @@ class PaginatorTestReadDecorator(Paginator):
         stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         if self._page_count >= self._maximum_number_of_pages:
+            self._did_reach_page_limit = True
             return None
 
         self._page_count += 1
