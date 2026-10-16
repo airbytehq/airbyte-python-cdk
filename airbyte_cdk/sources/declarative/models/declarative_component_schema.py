@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic.v1 import BaseModel, Extra, Field, PositiveFloat, confloat, conint
+from pydantic.v1 import BaseModel, Extra, Field
 
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     BaseModelWithDeprecations,
@@ -87,9 +87,10 @@ class DynamicStreamCheckConfig(BaseModel):
     dynamic_stream_name: str = Field(
         ..., description="The dynamic stream name.", title="Dynamic Stream Name"
     )
-    stream_count: Optional[conint(ge=1)] = Field(
+    stream_count: Optional[int] = Field(
         None,
         description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
@@ -133,16 +134,17 @@ class ConcurrencyLevel(BaseModel):
 
 class ConstantBackoffStrategy(BaseModel):
     type: Literal["ConstantBackoffStrategy"]
-    backoff_time_in_seconds: Union[confloat(ge=0.0), str] = Field(
+    backoff_time_in_seconds: Union[float, str] = Field(
         ...,
         description="Backoff time in seconds.",
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
-    jitter_range_in_seconds: Optional[confloat(ge=0.0)] = Field(
+    jitter_range_in_seconds: Optional[float] = Field(
         None,
         description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
         examples=[15],
+        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -581,10 +583,11 @@ class ExponentialBackoffStrategy(BaseModel):
         examples=[5, 5.5, "10"],
         title="Factor",
     )
-    jitter_range_in_seconds: Optional[confloat(ge=0.0)] = Field(
+    jitter_range_in_seconds: Optional[float] = Field(
         None,
         description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
         examples=[2],
+        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -915,18 +918,14 @@ class Scope(BaseModel):
     class Config:
         extra = Extra.allow
 
-    scope: str = Field(
-        ..., description="The OAuth scope string to request from the provider."
-    )
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
 
 
 class OptionalScope(BaseModel):
     class Config:
         extra = Extra.allow
 
-    scope: str = Field(
-        ..., description="The OAuth scope string to request from the provider."
-    )
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
 
 
 class ScopesJoinStrategy(Enum):
@@ -1063,28 +1062,24 @@ class OAuthConfigSpecification(BaseModel):
     class Config:
         extra = Extra.allow
 
-    oauth_user_input_from_connector_config_specification: Optional[Dict[str, Any]] = (
-        Field(
-            None,
-            description="OAuth specific blob. This is a Json Schema used to validate Json configurations used as input to OAuth.\nMust be a valid non-nested JSON that refers to properties from ConnectorSpecification.connectionSpecification\nusing special annotation 'path_in_connector_config'.\nThese are input values the user is entering through the UI to authenticate to the connector, that might also shared\nas inputs for syncing data via the connector.\nExamples:\nif no connector values is shared during oauth flow, oauth_user_input_from_connector_config_specification=[]\nif connector values such as 'app_id' inside the top level are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['app_id']\n    }\n  }\nif connector values such as 'info.app_id' nested inside another object are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['info', 'app_id']\n    }\n  }",
-            examples=[
-                {"app_id": {"type": "string", "path_in_connector_config": ["app_id"]}},
-                {
-                    "app_id": {
-                        "type": "string",
-                        "path_in_connector_config": ["info", "app_id"],
-                    }
-                },
-            ],
-            title="OAuth user input",
-        )
+    oauth_user_input_from_connector_config_specification: Optional[Dict[str, Any]] = Field(
+        None,
+        description="OAuth specific blob. This is a Json Schema used to validate Json configurations used as input to OAuth.\nMust be a valid non-nested JSON that refers to properties from ConnectorSpecification.connectionSpecification\nusing special annotation 'path_in_connector_config'.\nThese are input values the user is entering through the UI to authenticate to the connector, that might also shared\nas inputs for syncing data via the connector.\nExamples:\nif no connector values is shared during oauth flow, oauth_user_input_from_connector_config_specification=[]\nif connector values such as 'app_id' inside the top level are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['app_id']\n    }\n  }\nif connector values such as 'info.app_id' nested inside another object are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['info', 'app_id']\n    }\n  }",
+        examples=[
+            {"app_id": {"type": "string", "path_in_connector_config": ["app_id"]}},
+            {
+                "app_id": {
+                    "type": "string",
+                    "path_in_connector_config": ["info", "app_id"],
+                }
+            },
+        ],
+        title="OAuth user input",
     )
-    oauth_connector_input_specification: Optional[OauthConnectorInputSpecification] = (
-        Field(
-            None,
-            description='The DeclarativeOAuth specific blob.\nPertains to the fields defined by the connector relating to the OAuth flow.\n\nInterpolation capabilities:\n- The variables placeholders are declared as `{{my_var}}`.\n- The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {{ {{my_var_a}}:{{my_var_b}} | base64Encoder }}\n  + base64Decorer - decode from `base64` encoded string, {{ {{my_string_variable_or_string_value}} | base64Decoder }}\n  + urlEncoder - encode the input string to URL-like format, {{ https://test.host.com/endpoint | urlEncoder}}\n  + urlDecorer - decode the input url-encoded string into text format, {{ urlDecoder:https%3A%2F%2Fairbyte.io | urlDecoder}}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {{ {{state_value}} | codeChallengeS256 }}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{ {{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{{ auth_code_key }}": "{{ auth_code_value }}",\n              "{{ client_id_key }}": "{{ client_id_value }}",\n              "{{ client_secret_key }}": "{{ client_secret_value }}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
-            title="DeclarativeOAuth Connector Specification",
-        )
+    oauth_connector_input_specification: Optional[OauthConnectorInputSpecification] = Field(
+        None,
+        description='The DeclarativeOAuth specific blob.\nPertains to the fields defined by the connector relating to the OAuth flow.\n\nInterpolation capabilities:\n- The variables placeholders are declared as `{{my_var}}`.\n- The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {{ {{my_var_a}}:{{my_var_b}} | base64Encoder }}\n  + base64Decorer - decode from `base64` encoded string, {{ {{my_string_variable_or_string_value}} | base64Decoder }}\n  + urlEncoder - encode the input string to URL-like format, {{ https://test.host.com/endpoint | urlEncoder}}\n  + urlDecorer - decode the input url-encoded string into text format, {{ urlDecoder:https%3A%2F%2Fairbyte.io | urlDecoder}}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {{ {{state_value}} | codeChallengeS256 }}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{ {{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{{ auth_code_key }}": "{{ auth_code_value }}",\n              "{{ client_id_key }}": "{{ client_id_value }}",\n              "{{ client_secret_key }}": "{{ client_secret_value }}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
+        title="DeclarativeOAuth Connector Specification",
     )
     complete_oauth_output_specification: Optional[Dict[str, Any]] = Field(
         None,
@@ -1102,9 +1097,7 @@ class OAuthConfigSpecification(BaseModel):
     complete_oauth_server_input_specification: Optional[Dict[str, Any]] = Field(
         None,
         description="OAuth specific blob. This is a Json Schema used to validate Json configurations persisted as Airbyte Server configurations.\nMust be a valid non-nested JSON describing additional fields configured by the Airbyte Instance or Workspace Admins to be used by the\nserver when completing an OAuth flow (typically exchanging an auth code for refresh token).\nExamples:\n    complete_oauth_server_input_specification={\n      client_id: {\n        type: string\n      },\n      client_secret: {\n        type: string\n      }\n    }",
-        examples=[
-            {"client_id": {"type": "string"}, "client_secret": {"type": "string"}}
-        ],
+        examples=[{"client_id": {"type": "string"}, "client_secret": {"type": "string"}}],
         title="OAuth input specification",
     )
     complete_oauth_server_output_specification: Optional[Dict[str, Any]] = Field(
@@ -1341,34 +1334,39 @@ class ResetPolicy(Enum):
 
 class PageSizeReduction(BaseModel):
     type: Literal["PageSizeReduction"]
-    reduction_factor: Optional[confloat(gt=1.0)] = Field(
+    reduction_factor: Optional[float] = Field(
         2,
         description="Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).",
         examples=[2, 4],
+        gt=1,
         title="Reduction Factor",
     )
-    minimum_page_size: Optional[conint(ge=1)] = Field(
+    minimum_page_size: Optional[int] = Field(
         1,
         description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied. It is one of two bounds on the reduction and whichever is tighter wins: an unbroken run of failing pages divides the page size by reduction_factor at most max_attempts times, so reaching this floor in a single run needs max_attempts of at least log(page_size / minimum_page_size) / log(reduction_factor) - with the defaults, a page size of 1000 bottoms out at 31 records per page and a floor of 10 is never reached. Pages that succeed in between restart the max_attempts budget, so the floor is still reachable over a partition.",
         examples=[1, 10],
+        ge=1,
         title="Minimum Page Size",
     )
-    max_attempts: Optional[conint(ge=1)] = Field(
+    max_attempts: Optional[int] = Field(
         5,
         description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. The budget restarts after every page that succeeds, under either reset_policy, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have: a stream that needs a reduction every now and then reads to the end however long it is. Under NEVER the page size also strictly decreases, so minimum_page_size bounds the reductions of the whole partition on its own. The wait between reduction attempts is the CDK's own - it grows with each attempt - and does not consult the error handler's backoff_strategies or a Retry-After header.",
         examples=[5, 10],
+        ge=1,
         title="Maximum Reduction Attempts",
     )
-    backoff_seconds: Optional[confloat(ge=0.0)] = Field(
+    backoff_seconds: Optional[float] = Field(
         0.5,
         description='Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches the error handler\'s retry budget, backoff_strategies or a Retry-After header, so this is the only thing spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than only "your page is too big", since the default spaces the whole run of attempts over a few seconds.',
         examples=[0.5, 5],
+        ge=0,
         title="Backoff Seconds",
     )
-    retries_at_minimum_page_size: Optional[conint(ge=0)] = Field(
+    retries_at_minimum_page_size: Optional[int] = Field(
         0,
         description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds. It applies however the page size arrived at the floor, whether by reduction or because page_size was already there; a page size that minimum_page_size blocks from ever being reduced is still reported as a configuration error, but only once this budget is spent.",
         examples=[0, 3],
+        ge=0,
         title="Retries At Minimum Page Size",
     )
     failure_message: Optional[str] = Field(
@@ -1694,9 +1692,7 @@ class CustomConfigTransformation(BaseModel):
     class_name: str = Field(
         ...,
         description="Fully-qualified name of the class that will be implementing the custom config transformation. The format is `source_<name>.<package>.<class_name>`.",
-        examples=[
-            "source_declarative_manifest.components.MyCustomConfigTransformation"
-        ],
+        examples=["source_declarative_manifest.components.MyCustomConfigTransformation"],
     )
     parameters: Optional[Dict[str, Any]] = Field(
         None,
@@ -2014,42 +2010,6 @@ class DatetimeBasedCursor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class OpaqueTokenCursor(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    type: Literal["OpaqueTokenCursor"]
-    token_path: List[str] = Field(
-        ...,
-        description="Path to the next token in the decoded response that ends a pagination pass. The value must be a string or an integer, and is stored and sent as a string. A missing, null or empty value means the response carried no token.",
-        examples=[["syncToken"], ["nextSyncToken"], ["meta", "sync_token"]],
-        title="Token Path",
-    )
-    token_option: RequestOption = Field(
-        ...,
-        description="Where to send the stored token on each request of a pass: the JSON body, the query string, a header or the form body.",
-        title="Send Token In",
-    )
-    completion_condition: Optional[str] = Field(
-        None,
-        description="Must be true on the last response of a pass for its token to be committed. Defaults to a token being present at token_path. Set it when the API repeats the old token on intermediate pages or returns a position on every page.",
-        examples=["{{ not response.moreDataAvailable }}"],
-        title="Completion Condition",
-    )
-    initial_token: Optional[str] = Field(
-        None,
-        description='Value to send when no token is stored, for an API that needs one to start a full pass, such as Todoist\'s "*". When unset, nothing is sent.',
-        examples=["*"],
-        title="Initial Token",
-    )
-    cursor_field: Optional[str] = Field(
-        None,
-        description="Optional top-level record field advertised as the stream's cursor, so destinations can order versions of a record when deduplicating. It is never used to filter records or to build state.",
-        title="Destination Cursor Field",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class JwtAuthenticator(BaseModel):
     type: Literal["JwtAuthenticator"]
     secret_key: str = Field(
@@ -2230,9 +2190,7 @@ class OAuthAuthenticator(BaseModel):
     scopes: Optional[List[str]] = Field(
         None,
         description="List of scopes that should be granted to the access token.",
-        examples=[
-            ["crm.list.read", "crm.objects.contacts.read", "crm.schema.contacts.read"]
-        ],
+        examples=[["crm.list.read", "crm.objects.contacts.read", "crm.schema.contacts.read"]],
         title="Scopes",
     )
     token_expiry_date: Optional[str] = Field(
@@ -2383,6 +2341,53 @@ class DefaultPaginator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class RecordExpander(BaseModel):
+    type: Literal["RecordExpander"]
+    expand_records_from_field: List[str] = Field(
+        ...,
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        examples=[
+            ["lines", "data"],
+            ["items"],
+            ["nested", "array"],
+            ["sections", "*", "items"],
+        ],
+        title="Expand Records From Field",
+    )
+    remain_original_record: Optional[bool] = Field(
+        False,
+        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
+        title="Remain Original Record",
+    )
+    parent_fields: Optional[List[ParentFieldPath]] = Field(
+        None,
+        description="Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Parent Fields",
+    )
+    merge_parent: Optional[bool] = Field(
+        False,
+        description="If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Merge Parent",
+    )
+    on_no_records: Optional[OnNoRecords] = Field(
+        OnNoRecords.skip,
+        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
+        title="On No Records",
+    )
+    truncation_indicator_path: Optional[List[str]] = Field(
+        None,
+        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Glob characters (`*`, `?`, `[`) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured; this is enforced on the interpolated values. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        examples=[["data", "object", "lines", "has_more"]],
+        title="Truncation Indicator Path",
+    )
+    truncated_list_retriever: Optional[Union[SimpleRetriever, CustomRetriever]] = Field(
+        None,
+        description="Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. One fetch is issued per truncated record, so enable `use_cache` on the requester when the same list can be fetched repeatedly. Configure a `paginator`, since without one only the first page of the complete list is read. If the retriever returns no records, the embedded items are expanded as a fallback; if it returns fewer records than the `total_count` field next to the indicator, a WARNING is logged once per stream. Request failures surface through the retriever's `error_handler` and fail the stream like any other request. `$parameters` of the enclosing stream propagate into this retriever's components (including `request_parameters` on its requester); move request-shaping parameters to the outer requester's `request_parameters` when adopting this field. `partition_router` and `pagination_reset` are not supported. In Connector Builder test reads, its requests appear as auxiliary requests and the test-read page limit applies to each fetch independently, so the fetched list may be shorter than `total_count`; the incomplete-fetch warning is not emitted in test reads when a `paginator` is configured (without one the retriever is not capped, so the warning still applies). Requires `truncation_indicator_path`. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Truncated List Retriever",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class SessionTokenRequestApiKeyAuthenticator(BaseModel):
     type: Literal["ApiKey"]
     inject_into: RequestOption = Field(
@@ -2480,12 +2485,10 @@ class DpathValidator(BaseModel):
         ],
         title="Field Path",
     )
-    validation_strategy: Union[ValidateAdheresToSchema, CustomValidationStrategy] = (
-        Field(
-            ...,
-            description="The condition that the specified config value will be evaluated against",
-            title="Validation Strategy",
-        )
+    validation_strategy: Union[ValidateAdheresToSchema, CustomValidationStrategy] = Field(
+        ...,
+        description="The condition that the specified config value will be evaluated against",
+        title="Validation Strategy",
     )
 
 
@@ -2502,12 +2505,10 @@ class PredicateValidator(BaseModel):
         ],
         title="Value",
     )
-    validation_strategy: Union[ValidateAdheresToSchema, CustomValidationStrategy] = (
-        Field(
-            ...,
-            description="The validation strategy to apply to the value.",
-            title="Validation Strategy",
-        )
+    validation_strategy: Union[ValidateAdheresToSchema, CustomValidationStrategy] = Field(
+        ...,
+        description="The validation strategy to apply to the value.",
+        title="Validation Strategy",
     )
 
 
@@ -2589,12 +2590,12 @@ class RateLimitedMultipleTokenAuthenticator(BaseModel):
 
 class CompositeErrorHandler(BaseModel):
     type: Literal["CompositeErrorHandler"]
-    error_handlers: List[
-        Union[CompositeErrorHandler, DefaultErrorHandler, CustomErrorHandler]
-    ] = Field(
-        ...,
-        description="List of error handlers to iterate on to determine how to handle a failed response.",
-        title="Error Handlers",
+    error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler, CustomErrorHandler]] = (
+        Field(
+            ...,
+            description="List of error handlers to iterate on to determine how to handle a failed response.",
+            title="Error Handlers",
+        )
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2632,18 +2633,78 @@ class HTTPAPIBudget(BaseModel):
     )
 
 
+class DpathExtractor(BaseModel):
+    type: Literal["DpathExtractor"]
+    field_path: List[str] = Field(
+        ...,
+        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
+        ],
+        title="Field Path",
+    )
+    record_expander: Optional[RecordExpander] = Field(
+        None,
+        description="Optional component to expand records by extracting items from nested array fields.",
+        title="Record Expander",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class CombinedExtractor(BaseModel):
+    type: Literal["CombinedExtractor"]
+    extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
+        ...,
+        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
+        title="Extractors",
+    )
+    mode: Optional[CombineMode] = Field(
+        CombineMode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor, which is usually the number of records the API returned for the page.',
+        title="Combine Mode",
+    )
+    skip_empty_records: Optional[bool] = Field(
+        False,
+        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried. The dropped records still count toward the page size of an OffsetIncrement or PageIncrement paginator, so a full page holding a null does not end pagination early.',
+        title="Skip Empty Records",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    decoder: Union[
-        CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder
-    ] = Field(
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
     )
+
+
+class RecordSelector(BaseModel):
+    type: Literal["RecordSelector"]
+    extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
+    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
+        None,
+        description="Responsible for filtering records to be emitted by the Source.",
+        title="Record Filter",
+    )
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        None,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
+    )
+    transform_before_filtering: Optional[bool] = Field(
+        None,
+        description="If true, transformation will be applied before record filtering.",
+        title="Transform Before Filtering",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ConfigMigration(BaseModel):
@@ -2763,9 +2824,9 @@ class DeclarativeSource2(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: Optional[
-        List[Union[ConditionalStreams, DeclarativeStream, StateDelegatingStream]]
-    ] = None
+    streams: Optional[List[Union[ConditionalStreams, DeclarativeStream, StateDelegatingStream]]] = (
+        None
+    )
     dynamic_streams: List[DynamicDeclarativeStream]
     version: str = Field(
         ...,
@@ -2872,11 +2933,11 @@ class FileUploader(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    download_target_extractor: Union[
-        DpathExtractor, CustomRecordExtractor, CombinedExtractor
-    ] = Field(
-        ...,
-        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = (
+        Field(
+            ...,
+            description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+        )
     )
     file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
         None,
@@ -2893,14 +2954,48 @@ class FileUploader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class OpaqueTokenCursor(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["OpaqueTokenCursor"]
+    token_path: List[str] = Field(
+        ...,
+        description="Path to the next token in the decoded response that ends a pagination pass. The value must be a string or an integer, and is stored and sent as a string. A missing, null or empty value means the response carried no token.",
+        examples=[["syncToken"], ["nextSyncToken"], ["meta", "sync_token"]],
+        title="Token Path",
+    )
+    token_option: RequestOption = Field(
+        ...,
+        description="Where to send the stored token on each request of a pass: the JSON body, the query string, a header or the form body.",
+        title="Send Token In",
+    )
+    completion_condition: Optional[str] = Field(
+        None,
+        description="Must be true on the last response of a pass for its token to be committed. Defaults to a token being present at token_path. Set it when the API repeats the old token on intermediate pages or returns a position on every page.",
+        examples=["{{ not response.moreDataAvailable }}"],
+        title="Completion Condition",
+    )
+    initial_token: Optional[str] = Field(
+        None,
+        description='Value to send when no token is stored, for an API that needs one to start a full pass, such as Todoist\'s "*". When unset, nothing is sent.',
+        examples=["*"],
+        title="Initial Token",
+    )
+    cursor_field: Optional[str] = Field(
+        None,
+        description="Optional top-level record field advertised as the stream's cursor, so destinations can order versions of a record when deduplicating. It is never used to filter records or to build state.",
+        title="Destination Cursor Field",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DeclarativeStream(BaseModel):
     class Config:
         extra = Extra.allow
 
     type: Literal["DeclarativeStream"]
-    name: Optional[str] = Field(
-        "", description="The stream name.", example=["Users"], title="Name"
-    )
+    name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
@@ -2963,96 +3058,6 @@ class DeclarativeStream(BaseModel):
         None,
         description="(experimental) Describes how to fetch a file",
         title="File Uploader",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class CombinedExtractor(BaseModel):
-    type: Literal["CombinedExtractor"]
-    extractors: List[
-        Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
-    ] = Field(
-        ...,
-        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
-        title="Extractors",
-    )
-    mode: Optional[CombineMode] = Field(
-        CombineMode.union,
-        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor, which is usually the number of records the API returned for the page.',
-        title="Combine Mode",
-    )
-    skip_empty_records: Optional[bool] = Field(
-        False,
-        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried. The dropped records still count toward the page size of an OffsetIncrement or PageIncrement paginator, so a full page holding a null does not end pagination early.',
-        title="Skip Empty Records",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class DpathExtractor(BaseModel):
-    type: Literal["DpathExtractor"]
-    field_path: List[str] = Field(
-        ...,
-        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
-        examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", "{{ parameters.name }}"],
-            ["data", "*", "record"],
-        ],
-        title="Field Path",
-    )
-    record_expander: Optional[RecordExpander] = Field(
-        None,
-        description="Optional component to expand records by extracting items from nested array fields.",
-        title="Record Expander",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class RecordExpander(BaseModel):
-    type: Literal["RecordExpander"]
-    expand_records_from_field: List[str] = Field(
-        ...,
-        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
-        examples=[
-            ["lines", "data"],
-            ["items"],
-            ["nested", "array"],
-            ["sections", "*", "items"],
-        ],
-        title="Expand Records From Field",
-    )
-    remain_original_record: Optional[bool] = Field(
-        False,
-        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
-        title="Remain Original Record",
-    )
-    parent_fields: Optional[List[ParentFieldPath]] = Field(
-        None,
-        description="Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
-        title="Parent Fields",
-    )
-    merge_parent: Optional[bool] = Field(
-        False,
-        description="If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
-        title="Merge Parent",
-    )
-    on_no_records: Optional[OnNoRecords] = Field(
-        OnNoRecords.skip,
-        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
-        title="On No Records",
-    )
-    truncation_indicator_path: Optional[List[str]] = Field(
-        None,
-        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Glob characters (`*`, `?`, `[`) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured; this is enforced on the interpolated values. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
-        examples=[["data", "object", "lines", "has_more"]],
-        title="Truncation Indicator Path",
-    )
-    truncated_list_retriever: Optional[Union[SimpleRetriever, CustomRetriever]] = Field(
-        None,
-        description="Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. One fetch is issued per truncated record, so enable `use_cache` on the requester when the same list can be fetched repeatedly. Configure a `paginator`, since without one only the first page of the complete list is read. If the retriever returns no records, the embedded items are expanded as a fallback; if it returns fewer records than the `total_count` field next to the indicator, a WARNING is logged once per stream. Request failures surface through the retriever's `error_handler` and fail the stream like any other request. `$parameters` of the enclosing stream propagate into this retriever's components (including `request_parameters` on its requester); move request-shaping parameters to the outer requester's `request_parameters` when adopting this field. `partition_router` and `pagination_reset` are not supported. In Connector Builder test reads, its requests appear as auxiliary requests and the test-read page limit applies to each fetch independently, so the fetched list may be shorter than `total_count`; the incomplete-fetch warning is not emitted in test reads when a `paginator` is configured (without one the retriever is not capped, so the warning still applies). Requires `truncation_indicator_path`. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
-        title="Truncated List Retriever",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -3176,20 +3181,18 @@ class HttpRequester(BaseModelWithDeprecations):
         description="For APIs that require explicit specification of the properties to query for, this component will take a static or dynamic set of properties (which can be optionally split into chunks) and allow them to be injected into an outbound request by accessing stream_partition.extra_fields.",
         title="Query Properties",
     )
-    request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = (
-        Field(
-            None,
-            description="Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.",
-            examples=[
-                {"unit": "day"},
-                {
-                    "query": 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
-                },
-                {"searchIn": "{{ ','.join(config.get('search_in', [])) }}"},
-                {"sort_by[asc]": "updated_at"},
-            ],
-            title="Query Parameters",
-        )
+    request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = Field(
+        None,
+        description="Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.",
+        examples=[
+            {"unit": "day"},
+            {
+                "query": 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
+            },
+            {"searchIn": "{{ ','.join(config.get('search_in', [])) }}"},
+            {"sort_by[asc]": "updated_at"},
+        ],
+        title="Query Parameters",
     )
     request_headers: Optional[Union[Dict[str, str], str]] = Field(
         None,
@@ -3243,16 +3246,18 @@ class HttpRequester(BaseModelWithDeprecations):
         description="Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).",
         title="Use Cache",
     )
-    connect_timeout_in_seconds: Optional[PositiveFloat] = Field(
+    connect_timeout_in_seconds: Optional[float] = Field(
         None,
         description="Maximum time to establish the connection (TCP + TLS handshake). When unset, no connect timeout is applied.",
         examples=[30],
+        gt=0,
         title="Connect Timeout (seconds)",
     )
-    read_timeout_in_seconds: Optional[PositiveFloat] = Field(
+    read_timeout_in_seconds: Optional[float] = Field(
         None,
         description="The maximum time to wait for the server to send any data (the first byte of the response, or the next chunk while the body is read). It is NOT a limit on the total request duration. When unset, no read timeout is applied. Only set it when every endpoint served by this requester responds well within the value; synchronous report or export endpoints can stay silent for minutes. Each timed-out attempt counts against the error handler's retry window (600 s for manifest connectors), so a value near 300 allows only a few retries.",
         examples=[300],
+        gt=0,
         title="Read Timeout (seconds)",
     )
     use_tcp_keepalive: Optional[bool] = Field(
@@ -3377,34 +3382,9 @@ class QueryProperties(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class RecordSelector(BaseModel):
-    type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
-    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
-        None,
-        description="Responsible for filtering records to be emitted by the Source.",
-        title="Record Filter",
-    )
-    schema_normalization: Optional[
-        Union[SchemaNormalization, CustomSchemaNormalization]
-    ] = Field(
-        None,
-        description="Responsible for normalization according to the schema.",
-        title="Schema Normalization",
-    )
-    transform_before_filtering: Optional[bool] = Field(
-        None,
-        description="If true, transformation will be applied before record filtering.",
-        title="Transform Before Filtering",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class StateDelegatingStream(BaseModel):
     type: Literal["StateDelegatingStream"]
-    name: str = Field(
-        ..., description="The stream name.", example=["Users"], title="Name"
-    )
+    name: str = Field(..., description="The stream name.", example=["Users"], title="Name")
     full_refresh_stream: DeclarativeStream = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
@@ -3505,9 +3485,7 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[
-        DpathExtractor, CustomRecordExtractor, CombinedExtractor
-    ] = Field(
+    status_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
     download_target_extractor: Optional[
@@ -3517,15 +3495,8 @@ class AsyncRetriever(BaseModel):
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[
-        Union[
-            DpathExtractor,
-            CustomRecordExtractor,
-            ResponseToFileExtractor,
-            CombinedExtractor,
-        ]
-    ] = Field(
-        None, description="Responsible for fetching the records from provided urls."
-    )
+        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor, CombinedExtractor]
+    ] = Field(None, description="Responsible for fetching the records from provided urls.")
     creation_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.",
@@ -3538,9 +3509,10 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
-    failed_retry_wait_time_in_seconds: Optional[Union[conint(ge=1), str]] = Field(
+    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
@@ -3727,13 +3699,13 @@ class DynamicDeclarativeStream(BaseModel):
 ComplexFieldType.update_forward_refs()
 GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
+CombinedExtractor.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
 ConditionalStreams.update_forward_refs()
 FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
-CombinedExtractor.update_forward_refs()
 DpathExtractor.update_forward_refs()
 RecordExpander.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
