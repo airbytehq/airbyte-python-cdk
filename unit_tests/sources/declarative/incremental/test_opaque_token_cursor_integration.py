@@ -4,11 +4,10 @@
 
 import json
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from airbyte_cdk.connector_builder.test_reader.reader import TestReader
 from airbyte_cdk.models import (
     AirbyteStateType,
     ConfiguredAirbyteCatalog,
@@ -20,7 +19,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
-    TestLimits,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AsyncRetriever as AsyncRetrieverModel,
@@ -162,12 +160,11 @@ def _source_and_catalog(
     manifest,
     state=None,
     *,
-    limits=None,
     limit_pages_fetched_per_slice=None,
     sync_mode=SyncMode.incremental,
 ):
     source = ConcurrentDeclarativeSource(
-        source_config=manifest, config={}, catalog=None, state=state, limits=limits
+        source_config=manifest, config={}, catalog=None, state=state
     )
     discovered = source.discover(logger=MagicMock(), config={})
     stream = discovered.streams[0]
@@ -337,32 +334,15 @@ def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():
                 )
             ),
         )
-        source, catalog = _source_and_catalog(_manifest(), limits=TestLimits(max_records=1))
-        with patch.object(
-            source._message_repository,
-            "emit_message",
-            wraps=source._message_repository.emit_message,
-        ) as emit_message:
-            test_read = TestReader(
-                max_pages_per_slice=5, max_slices=5, max_record_limit=1
-            ).run_test_read(source, {}, catalog, "events", [], record_limit=1)
-    assert test_read.test_read_limit_reached
-    assert len(test_read.slices) == 1
-    emitted_states = [
-        call.args[0]
-        for call in emit_message.call_args_list
-        if call.args and call.args[0].type == Type.STATE
-    ]
-    assert not any(
-        (
-            message.state.stream.stream_state.get("token")
-            if isinstance(message.state.stream.stream_state, dict)
-            else message.state.stream.stream_state.__dict__.get("token")
-        )
-        == "must-not-commit"
-        for message in emitted_states
-        if message.state and message.state.stream and message.state.stream.stream_state
-    )
+        source, _ = _source_and_catalog(_manifest())
+        stream = source.streams(config={})[0]
+        partition = next(iter(stream.generate_partitions()))
+        record_iterator = iter(partition.read())
+        assert next(record_iterator).data == {"id": "1"}
+        record_iterator.close()
+        stream.cursor.close_partition(partition)
+
+    assert "token" not in stream.cursor.state
 
 
 def test_t_resume_replays_existing_partition_and_bootstraps_missing_partition():

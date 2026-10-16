@@ -760,7 +760,6 @@ class ModelToComponentFactory:
         self,
         limit_pages_fetched_per_slice: Optional[int] = None,
         limit_slices_fetched: Optional[int] = None,
-        max_records_limit: Optional[int] = None,
         emit_connector_builder_messages: bool = False,
         disable_retries: bool = False,
         disable_cache: bool = False,
@@ -778,7 +777,6 @@ class ModelToComponentFactory:
         self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
-        self._max_records_limit = max_records_limit
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
@@ -2298,7 +2296,6 @@ class ModelToComponentFactory:
                     schema_loader,
                     retriever,
                     self._message_repository,
-                    max_records_limit=self._max_records_limit,
                 ),
                 stream_slicer,
                 slice_limit=self._limit_slices_fetched,

@@ -198,7 +198,6 @@ class ConcurrentDeclarativeSource(Source):
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
             limit_pages_fetched_per_slice=limits.max_pages_per_slice if limits else None,
             limit_slices_fetched=limits.max_slices if limits else None,
-            max_records_limit=limits.max_records if limits else None,
             disable_retries=True if limits else False,
             disable_cache=True if limits else False,
         )
