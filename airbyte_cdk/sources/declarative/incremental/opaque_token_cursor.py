@@ -4,6 +4,7 @@
 
 import copy
 import datetime
+import json
 import logging
 import threading
 import time
@@ -80,11 +81,15 @@ class OpaqueTokenCursor(Cursor):
         self._serializer = PerPartitionKeySerializer()
         self._committed: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._pending: dict[str, dict[str, Any]] = {}
+        self._page_counts: dict[str, int] = {}
         self._lock = threading.RLock()
         self._last_emission_time = 0.0
+        self._logged_bootstrap_reasons: set[str] = set()
+        self._state_is_foreign = False
+        self._state_emitted = False
         self._warned_no_token = False
         self._warned_cap = False
-        self._partitions_over_cap = 0
+        self._partitions_over_cap: set[str] = set()
         self._load_state(stream_state or {})
 
     @property
@@ -121,6 +126,14 @@ class OpaqueTokenCursor(Cursor):
             with self._lock:
                 committed = self._committed.get(partition_key)
                 token = committed["token"] if committed else None
+                at_partition_cap = len(self._committed) >= self._max_partitions
+                if token:
+                    self._log_replay(partition, committed or {})
+                elif at_partition_cap:
+                    self._partitions_over_cap.add(partition_key)
+                    self._log_bootstrap("partition cap")
+                elif not self._state_is_foreign:
+                    self._log_bootstrap("none")
             yield StreamSlice(
                 partition=partition,
                 cursor_slice={"token": token} if token else {},
@@ -140,6 +153,10 @@ class OpaqueTokenCursor(Cursor):
                     )
 
     def on_page_completed(self, page: PageCompleted) -> None:
+        partition_key = self._serializer.to_partition_key(page.stream_slice.partition or {})
+        with self._lock:
+            self._page_counts[partition_key] = self._page_counts.get(partition_key, 0) + 1
+
         if not page.pagination_exhausted or page.response is None:
             return
 
@@ -180,8 +197,7 @@ class OpaqueTokenCursor(Cursor):
                 .replace("+00:00", "Z"),
             }
 
-    @staticmethod
-    def _coerce_token(value: Any, path: list[str]) -> Optional[str]:
+    def _coerce_token(self, value: Any, path: list[str]) -> Optional[str]:
         if value is None or value == "":
             return None
         if isinstance(value, bool):
@@ -193,16 +209,81 @@ class OpaqueTokenCursor(Cursor):
         elif isinstance(value, float):
             value_type = "float"
         elif isinstance(value, Mapping):
-            value_type = "object"
+            value_type = "dict"
         elif isinstance(value, list):
             value_type = "list"
         else:
             value_type = type(value).__name__
+        message = (
+            f"Stream {self._stream_name}: token_path {json.dumps(path)} holds a {value_type}, "
+            "not a string or integer. Check token_path."
+        )
         raise AirbyteTracedException(
-            internal_message=f"Stream token_path {path} holds a {value_type}, not a string or integer.",
-            message=f"Token path {path} holds a {value_type}, not a string or integer. Check token_path.",
+            internal_message=message,
+            message=message,
             failure_type=FailureType.system_error,
         )
+
+    def _log_bootstrap(self, reason: str) -> None:
+        if reason not in self._logged_bootstrap_reasons:
+            logger.info(
+                "Stream %s: no stored change token (reason: %s); reading all records.",
+                self._stream_name,
+                reason,
+            )
+            self._logged_bootstrap_reasons.add(reason)
+
+    def _log_foreign_state(self) -> None:
+        self._state_is_foreign = True
+        self._log_bootstrap("foreign state")
+
+    def _log_replay(self, partition: Mapping[str, Any], committed: Mapping[str, Any]) -> None:
+        age = self._human_age(committed.get("committed_at"))
+        if self._partitioned:
+            logger.debug(
+                "Stream %s: replaying the change token committed %s ago for partition %s.",
+                self._stream_name,
+                age,
+                dict(partition),
+            )
+        else:
+            logger.info(
+                "Stream %s: replaying the change token committed %s ago.",
+                self._stream_name,
+                age,
+            )
+
+    @staticmethod
+    def _human_age(committed_at: Any) -> str:
+        if not isinstance(committed_at, str) or not committed_at:
+            return "an unknown time"
+        try:
+            committed_time = datetime.datetime.fromisoformat(committed_at.replace("Z", "+00:00"))
+            if committed_time.tzinfo is None:
+                committed_time = committed_time.replace(tzinfo=datetime.timezone.utc)
+            age_seconds = max(
+                0,
+                int(
+                    (datetime.datetime.now(datetime.timezone.utc) - committed_time).total_seconds()
+                ),
+            )
+        except (OverflowError, ValueError):
+            return "an unknown time"
+
+        units = (
+            ("day", 24 * 60 * 60),
+            ("hour", 60 * 60),
+            ("minute", 60),
+            ("second", 1),
+        )
+        parts = []
+        for unit, unit_seconds in units:
+            count, age_seconds = divmod(age_seconds, unit_seconds)
+            if count:
+                parts.append(f"{count} {unit}{'' if count == 1 else 's'}")
+            if len(parts) == 2:
+                break
+        return " ".join(parts) if parts else "0 seconds"
 
     def _warn_missing_token(self) -> None:
         if not self._warned_no_token:
@@ -223,18 +304,20 @@ class OpaqueTokenCursor(Cursor):
         partition_key = self._serializer.to_partition_key(partition_values)
         with self._lock:
             pending = self._pending.pop(partition_key, None)
+            page_count = self._page_counts.pop(partition_key, 0)
             if pending is not None:
                 if partition_key in self._committed or len(self._committed) < self._max_partitions:
                     self._committed[partition_key] = pending
+                    self._partitions_over_cap.discard(partition_key)
+                    logger.debug(
+                        "Stream %s: committed change token %s for partition %s after %s pages.",
+                        self._stream_name,
+                        pending["token"],
+                        self._serializer.to_partition(partition_key),
+                        page_count,
+                    )
                 else:
-                    self._partitions_over_cap += 1
-                    if not self._warned_cap:
-                        logger.warning(
-                            "Stream %s: %s partitions already store tokens; additional partitions read in full.",
-                            self._stream_name,
-                            len(self._committed),
-                        )
-                        self._warned_cap = True
+                    self._partitions_over_cap.add(partition_key)
             if not self._partitioned:
                 self._emit_state_message()
             elif time.time() - self._last_emission_time > 600:
@@ -250,9 +333,19 @@ class OpaqueTokenCursor(Cursor):
                 self._stream_name, self._stream_namespace
             )
         )
+        self._state_emitted = True
 
     def ensure_at_least_one_state_emitted(self) -> None:
-        self._emit_state_message()
+        if self._partitioned or not self._state_emitted:
+            self._emit_state_message()
+        if self._partitions_over_cap and not self._warned_cap:
+            logger.warning(
+                "Stream %s: %s partitions already store tokens; %s more read in full on every sync.",
+                self._stream_name,
+                len(self._committed),
+                len(self._partitions_over_cap),
+            )
+            self._warned_cap = True
 
     def observe(self, record: Record) -> None:
         return
@@ -262,29 +355,21 @@ class OpaqueTokenCursor(Cursor):
 
     def _load_state(self, stream_state: StreamState) -> None:
         if not stream_state:
+            self._log_bootstrap("none")
             return
         if stream_state.get("state_type") != self.STATE_TYPE:
-            logger.info(
-                "Stream %s: ignoring foreign state and reading from the beginning.",
-                self._stream_name,
-            )
+            self._log_foreign_state()
             return
         if self._partitioned:
             states = stream_state.get("states")
             if not isinstance(states, list) or "token" in stream_state:
-                logger.info(
-                    "Stream %s: ignoring state with an incompatible partition shape.",
-                    self._stream_name,
-                )
+                self._log_foreign_state()
                 return
             committed: dict[str, dict[str, Any]] = {}
             for state in states:
                 if not isinstance(state, Mapping):
-                    logger.info(
-                        "Stream %s: ignoring state with an incompatible opaque token partition.",
-                        self._stream_name,
-                    )
-                    return
+                    self._log_bootstrap("foreign state")
+                    continue
                 partition = state.get("partition")
                 cursor = state.get("cursor")
                 if (
@@ -298,18 +383,11 @@ class OpaqueTokenCursor(Cursor):
                         "committed_at": cursor.get("committed_at", ""),
                     }
                 else:
-                    logger.info(
-                        "Stream %s: ignoring state with an incompatible opaque token partition.",
-                        self._stream_name,
-                    )
-                    return
+                    self._log_bootstrap("foreign state")
             self._committed.update(committed)
         else:
             if "states" in stream_state:
-                logger.info(
-                    "Stream %s: ignoring state with an incompatible unpartitioned shape.",
-                    self._stream_name,
-                )
+                self._log_foreign_state()
                 return
             token = stream_state.get("token")
             if isinstance(token, str) and token:
@@ -318,7 +396,4 @@ class OpaqueTokenCursor(Cursor):
                     "committed_at": stream_state.get("committed_at", ""),
                 }
             elif token is not None:
-                logger.info(
-                    "Stream %s: ignoring an incompatible opaque token state.",
-                    self._stream_name,
-                )
+                self._log_foreign_state()

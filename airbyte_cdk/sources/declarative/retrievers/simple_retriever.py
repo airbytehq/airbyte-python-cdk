@@ -560,8 +560,7 @@ class SimpleRetriever(Retriever):
                         PageCompleted(
                             stream_slice=stream_slice,
                             response=response,
-                            pagination_exhausted=not next_page_token
-                            and not getattr(self._paginator, "did_reach_page_limit", False),
+                            pagination_exhausted=not next_page_token,
                         )
                     )
                 if not next_page_token:

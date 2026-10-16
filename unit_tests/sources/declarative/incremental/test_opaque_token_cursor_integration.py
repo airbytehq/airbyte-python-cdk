@@ -4,10 +4,11 @@
 
 import json
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from airbyte_cdk.connector_builder.test_reader.reader import TestReader
 from airbyte_cdk.models import (
     AirbyteStateType,
     ConfiguredAirbyteCatalog,
@@ -16,8 +17,10 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
+    TestLimits,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AsyncRetriever as AsyncRetrieverModel,
@@ -58,11 +61,19 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 )
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _URL = "https://api.example.com/events"
 
 
-def _manifest(*, initial_token=None, partitioned=False):
+def _manifest(
+    *,
+    initial_token=None,
+    partitioned=False,
+    partition_values=("a", "b"),
+    completion_condition=None,
+    error_handler=None,
+):
     stream = {
         "type": "DeclarativeStream",
         "name": "events",
@@ -111,13 +122,17 @@ def _manifest(*, initial_token=None, partitioned=False):
             },
         },
     }
+    if completion_condition is not None:
+        stream["incremental_sync"]["completion_condition"] = completion_condition
+    if error_handler is not None:
+        stream["retriever"]["requester"]["error_handler"] = error_handler
     if initial_token is not None:
         stream["incremental_sync"]["initial_token"] = initial_token
     if partitioned:
         stream["retriever"]["partition_router"] = {
             "type": "ListPartitionRouter",
             "cursor_field": "account",
-            "values": ["a", "b"],
+            "values": list(partition_values),
             "request_option": {
                 "type": "RequestOption",
                 "field_name": "account",
@@ -143,9 +158,16 @@ def _manifest(*, initial_token=None, partitioned=False):
     }
 
 
-def _source_and_catalog(manifest, state=None):
+def _source_and_catalog(
+    manifest,
+    state=None,
+    *,
+    limits=None,
+    limit_pages_fetched_per_slice=None,
+    sync_mode=SyncMode.incremental,
+):
     source = ConcurrentDeclarativeSource(
-        source_config=manifest, config={}, catalog=None, state=state
+        source_config=manifest, config={}, catalog=None, state=state, limits=limits
     )
     discovered = source.discover(logger=MagicMock(), config={})
     stream = discovered.streams[0]
@@ -153,18 +175,33 @@ def _source_and_catalog(manifest, state=None):
         streams=[
             ConfiguredAirbyteStream(
                 stream=stream,
-                sync_mode=SyncMode.incremental,
+                sync_mode=sync_mode,
                 destination_sync_mode=DestinationSyncMode.append,
                 cursor_field=stream.default_cursor_field,
                 primary_key=stream.source_defined_primary_key,
             )
         ]
     )
+    if limit_pages_fetched_per_slice is not None:
+        source._constructor = ModelToComponentFactory(
+            message_repository=source._message_repository,
+            connector_state_manager=source._connector_state_manager,
+            configured_catalog=catalog,
+            limit_pages_fetched_per_slice=limit_pages_fetched_per_slice,
+        )
     return source, catalog
 
 
 def _read(source, catalog, state=None):
     return list(source.read(logger=MagicMock(), config={}, catalog=catalog, state=state))
+
+
+def _read_until_error(source, catalog, state):
+    messages = []
+    with pytest.raises(AirbyteTracedException):
+        for message in source.read(logger=MagicMock(), config={}, catalog=catalog, state=state):
+            messages.append(message)
+    return messages
 
 
 def _state(messages):
@@ -173,6 +210,238 @@ def _state(messages):
         for message in messages
         if message.type == Type.STATE and message.state.type == AirbyteStateType.STREAM
     ]
+
+
+def _incoming_state(stream_state):
+    state_manager = ConnectorStateManager()
+    state_manager.update_state_for_stream("events", None, stream_state)
+    return [state_manager.create_state_message("events", None).state]
+
+
+def test_t_boot_commits_after_three_pages_and_records():
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "p2"}),
+            HttpResponse(json.dumps({"items": [{"id": "2"}], "nextCursor": "p3"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "p3"}),
+            HttpResponse(json.dumps({"items": [{"id": "3"}], "syncToken": "T1"})),
+        )
+        source, catalog = _source_and_catalog(_manifest())
+        messages = _read(source, catalog)
+
+    records = [index for index, message in enumerate(messages) if message.type == Type.RECORD]
+    state_messages = _state(messages)
+    assert len(state_messages) == 1
+    assert state_messages[0].stream.stream_state.__dict__["token"] == "T1"
+    state_index = next(
+        index for index, message in enumerate(messages) if message.type == Type.STATE
+    )
+    assert records and max(records) < state_index
+
+
+@pytest.mark.parametrize("echo_initial_token", [True, False], ids=["incremental", "no-echo"])
+def test_t_inc_and_t_noecho_never_commit_intermediate_token(echo_initial_token):
+    first_response = {"items": [{"id": "1"}], "nextCursor": "p2"}
+    if echo_initial_token:
+        first_response["syncToken"] = "T1"
+    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            HttpResponse(json.dumps(first_response)),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"}),
+            HttpResponse(json.dumps({"items": [{"id": "2"}], "syncToken": "T2"})),
+        )
+        source, catalog = _source_and_catalog(_manifest(), state)
+        messages = _read(source, catalog, state)
+
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T2"
+
+
+def test_t_empty_pages_can_commit_terminal_token():
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(json.dumps({"items": [], "nextCursor": "p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "p2"}),
+            HttpResponse(json.dumps({"items": [], "syncToken": "T2"})),
+        )
+        source, catalog = _source_and_catalog(_manifest())
+        messages = _read(source, catalog)
+
+    assert not any(message.type == Type.RECORD for message in messages)
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T2"
+
+
+def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
+    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    manifest = _manifest(
+        error_handler={
+            "type": "DefaultErrorHandler",
+            "max_retries": 0,
+            "backoff_strategies": [],
+        }
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"}),
+            HttpResponse("{}", status_code=500),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read_until_error(source, catalog, state)
+
+    assert any(message.type == Type.RECORD for message in messages)
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T1"
+    assert any(
+        message.type == Type.TRACE
+        and message.trace.stream_status
+        and message.trace.stream_status.status.value == "INCOMPLETE"
+        for message in messages
+    )
+
+
+def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
+        )
+        source, catalog = _source_and_catalog(_manifest(), limit_pages_fetched_per_slice=1)
+        messages = _read(source, catalog)
+    assert not any("token" in message.stream.stream_state.__dict__ for message in _state(messages))
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(
+                json.dumps(
+                    {
+                        "items": [{"id": "1"}, {"id": "2"}],
+                        "syncToken": "must-not-commit",
+                        "nextCursor": "p2",
+                    }
+                )
+            ),
+        )
+        source, catalog = _source_and_catalog(_manifest(), limits=TestLimits(max_records=1))
+        with patch.object(
+            source._message_repository,
+            "emit_message",
+            wraps=source._message_repository.emit_message,
+        ) as emit_message:
+            test_read = TestReader(
+                max_pages_per_slice=5, max_slices=5, max_record_limit=1
+            ).run_test_read(source, {}, catalog, "events", [], record_limit=1)
+    assert test_read.test_read_limit_reached
+    assert len(test_read.slices) == 1
+    emitted_states = [
+        call.args[0]
+        for call in emit_message.call_args_list
+        if call.args and call.args[0].type == Type.STATE
+    ]
+    assert not any(
+        (
+            message.state.stream.stream_state.get("token")
+            if isinstance(message.state.stream.stream_state, dict)
+            else message.state.stream.stream_state.__dict__.get("token")
+        )
+        == "must-not-commit"
+        for message in emitted_states
+        if message.state and message.state.stream and message.state.stream.stream_state
+    )
+
+
+def test_t_resume_replays_existing_partition_and_bootstraps_missing_partition():
+    state = _incoming_state(
+        {
+            "state_type": "opaque_token",
+            "states": [
+                {
+                    "partition": {"account": "a"},
+                    "cursor": {"token": "A1", "committed_at": "2024-01-01T00:00:00Z"},
+                }
+            ],
+        }
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"account": "a", "syncToken": "A1"}),
+            HttpResponse(json.dumps({"items": [], "syncToken": "A2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"account": "b"}),
+            HttpResponse(json.dumps({"items": [], "syncToken": "B1"})),
+        )
+        source, catalog = _source_and_catalog(_manifest(partitioned=True), state)
+        messages = _read(source, catalog, state)
+    committed = {
+        item["partition"]["account"]: item["cursor"]["token"]
+        for item in _state(messages)[-1].stream.stream_state.__dict__["states"]
+    }
+    assert committed == {"a": "A2", "b": "B1"}
+
+
+def test_t_par_keeps_successful_partition_commits_when_another_fails():
+    state = _incoming_state(
+        {
+            "state_type": "opaque_token",
+            "states": [
+                {
+                    "partition": {"account": "c"},
+                    "cursor": {"token": "C0", "committed_at": "2024-01-01T00:00:00Z"},
+                }
+            ],
+        }
+    )
+    manifest = _manifest(
+        partitioned=True,
+        partition_values=("b", "a", "c"),
+        error_handler={
+            "type": "DefaultErrorHandler",
+            "max_retries": 0,
+            "backoff_strategies": [],
+        },
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"account": "b"}),
+            HttpResponse(json.dumps({"items": [], "syncToken": "B1"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"account": "a"}),
+            HttpResponse(json.dumps({"items": [], "syncToken": "A1"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"account": "c", "syncToken": "C0"}),
+            HttpResponse("{}", status_code=500),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read_until_error(source, catalog, state)
+    committed = {
+        item["partition"]["account"]: item["cursor"]["token"]
+        for item in _state(messages)[-1].stream.stream_state.__dict__["states"]
+    }
+    assert committed == {"a": "A1", "b": "B1", "c": "C0"}
+    assert any(
+        message.type == Type.TRACE
+        and message.trace.stream_status
+        and message.trace.stream_status.status.value == "INCOMPLETE"
+        for message in messages
+    )
 
 
 def test_t_boot_inc_builder_and_resume_send_exact_request_bodies():
@@ -242,15 +511,40 @@ def test_t_disc_advertises_source_defined_incremental_without_cursor_field():
     assert stream.default_cursor_field == []
 
 
-def test_t_valid_rejects_datetime_only_extra_settings():
+def test_t_disc_datetime_cursor_has_non_none_default_cursor_field():
     manifest = _manifest()
-    manifest["streams"][0]["incremental_sync"]["start_datetime"] = "2024-01-01"
+    manifest["streams"][0]["incremental_sync"] = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "created_at",
+        "start_datetime": "2020-01-01T00:00:00Z",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+    }
+    source = ConcurrentDeclarativeSource(source_config=manifest, config={}, catalog=None)
+
+    stream = source.discover(logger=MagicMock(), config={}).streams[0]
+
+    assert stream.default_cursor_field is not None
+    assert stream.default_cursor_field == ["created_at"]
+
+
+@pytest.mark.parametrize("setting", ["start_datetime", "lookback_window"])
+def test_t_schema_rejects_datetime_only_extra_settings(setting):
+    manifest = _manifest()
+    manifest["streams"][0]["incremental_sync"][setting] = "2024-01-01"
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config={}, catalog=None, state=None
     )
 
-    with pytest.raises(ValueError, match="datetime-only setting.*start_datetime"):
+    with pytest.raises(ValueError, match=setting):
         source.discover(logger=MagicMock(), config={})
+
+
+def test_t_schema_accepts_stream_parameters_and_builds_stream():
+    manifest = _manifest()
+    manifest["streams"][0]["$parameters"] = {"parameter": "value"}
+    source, _ = _source_and_catalog(manifest)
+
+    assert isinstance(source.streams(config={})[0], DefaultStream)
 
 
 def _stream_model():
@@ -381,6 +675,55 @@ def test_t_inert_leaves_page_observer_unset_for_datetime_cursor():
     }
     source = ConcurrentDeclarativeSource(source_config=manifest, config={}, catalog=None)
 
+    stream = source.streams(config={})[0]
+    assert isinstance(stream, DefaultStream)
+    generator = stream._stream_partition_generator
+    assert isinstance(generator, StreamSlicerPartitionGenerator)
+    retriever = generator._partition_factory._retriever
+    assert isinstance(retriever, SimpleRetriever)
+    assert retriever.page_observer is None
+
+
+@pytest.mark.parametrize("cursor_kind", ["datetime", "count", "none"])
+def test_t_inert_cursor_types_read_without_opaque_page_observer(cursor_kind):
+    manifest = _manifest()
+    if cursor_kind == "datetime":
+        manifest["streams"][0]["incremental_sync"] = {
+            "type": "DatetimeBasedCursor",
+            "cursor_field": "created_at",
+            "start_datetime": "2020-01-01T00:00:00Z",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        }
+    elif cursor_kind == "count":
+        manifest["streams"][0]["incremental_sync"] = {
+            "type": "IncrementingCountCursor",
+            "cursor_field": "id",
+            "start_value": 0,
+        }
+    else:
+        manifest["streams"][0].pop("incremental_sync")
+
+    sync_mode = SyncMode.full_refresh if cursor_kind == "none" else SyncMode.incremental
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "id": 1 if cursor_kind == "count" else "1",
+                                "created_at": "2020-01-02T00:00:00Z",
+                            }
+                        ]
+                    }
+                )
+            ),
+        )
+        source, catalog = _source_and_catalog(manifest, sync_mode=sync_mode)
+        messages = _read(source, catalog)
+
+    assert any(message.type == Type.RECORD for message in messages)
     stream = source.streams(config={})[0]
     assert isinstance(stream, DefaultStream)
     generator = stream._stream_partition_generator

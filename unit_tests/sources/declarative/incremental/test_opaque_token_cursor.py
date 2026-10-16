@@ -3,11 +3,11 @@
 #
 
 import json
+import logging
 from unittest.mock import MagicMock
 
 import pytest
 import requests
-from requests import Response
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -15,9 +15,6 @@ from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.incremental.opaque_token_cursor import OpaqueTokenCursor
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
-)
-from airbyte_cdk.sources.declarative.requesters.paginators.default_paginator import (
-    PaginatorTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import PageCompleted
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
@@ -78,6 +75,13 @@ def test_t_token_preserves_string_and_converts_integer_but_rejects_other_types()
         with pytest.raises(AirbyteTracedException) as exc:
             cursor._coerce_token(value, ["syncToken"])
         assert exc.value.failure_type == FailureType.system_error
+        if isinstance(value, list):
+            expected = (
+                'Stream events: token_path ["syncToken"] holds a list, '
+                "not a string or integer. Check token_path."
+            )
+            assert exc.value.message == expected
+            assert exc.value.internal_message == expected
 
 
 def test_t_boot_and_t_inc_commit_only_after_partition_close_and_resume_from_state():
@@ -154,26 +158,6 @@ def test_t_fail_discards_pending_token_when_pass_does_not_complete():
     )
     cursor.close_partition(_partition({}))
 
-    assert cursor.state == {"state_type": "opaque_token"}
-
-
-def test_t_builder_page_limit_is_not_treated_as_a_completed_pass():
-    paginator = PaginatorTestReadDecorator(MagicMock(), maximum_number_of_pages=1)
-    paginator.get_initial_token()
-    next_page_token = paginator.next_page_token(Response(), last_page_size=1, last_record=None)
-
-    cursor = _cursor()
-    stream_slice = StreamSlice(partition={}, cursor_slice={})
-    cursor.on_page_completed(
-        PageCompleted(
-            stream_slice,
-            _response({"syncToken": "truncated"}),
-            pagination_exhausted=not next_page_token and not paginator.did_reach_page_limit,
-        )
-    )
-    cursor.close_partition(_partition({}))
-
-    assert paginator.did_reach_page_limit
     assert cursor.state == {"state_type": "opaque_token"}
 
 
@@ -296,6 +280,138 @@ def test_t_foreign_ignores_state_from_another_cursor_type():
     assert cursor.state == {"state_type": "opaque_token"}
 
 
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"state_type": "datetime", "token": "not-a-token"},
+        {"__ab_no_cursor_state_message": True},
+        {
+            "state_type": "datetime",
+            "states": [
+                {
+                    "partition": {"account": "a"},
+                    "cursor": {"created_at": "2024-01-01T00:00:00Z"},
+                }
+            ],
+        },
+    ],
+)
+def test_t_foreign_datetime_and_missing_cursor_states_bootstrap(state):
+    router = Router([StreamSlice(partition={"account": "a"}, cursor_slice={})])
+    cursor = _cursor(router=router, state=state)
+
+    assert list(cursor.stream_slices())[0].cursor_slice == {}
+    assert cursor.state["state_type"] == "opaque_token"
+    assert cursor.state["states"] == []
+
+
+def test_partition_state_load_skips_only_malformed_entries(caplog):
+    router = Router(
+        [
+            StreamSlice(partition={"account": "a"}, cursor_slice={}),
+            StreamSlice(partition={"account": "b"}, cursor_slice={}),
+        ]
+    )
+    cursor = _cursor(
+        router=router,
+        state={
+            "state_type": "opaque_token",
+            "states": [
+                {
+                    "partition": {"account": "a"},
+                    "cursor": {"token": "A1", "committed_at": "2026-01-01T00:00:00Z"},
+                },
+                None,
+                {
+                    "partition": {"account": "b"},
+                    "cursor": {"token": ["invalid"]},
+                },
+            ],
+        },
+    )
+
+    slices = list(cursor.stream_slices())
+
+    assert [stream_slice.cursor_slice for stream_slice in slices] == [
+        {"token": "A1"},
+        {},
+    ]
+    assert len(cursor.state["states"]) == 1
+    assert "reason: foreign state" in caplog.text
+
+
+def test_t_cap_warns_once_at_final_emission_with_over_cap_partition_count(caplog):
+    router = Router(
+        [
+            StreamSlice(partition={"account": account}, cursor_slice={})
+            for account in ("a", "b", "c", "d", "e")
+        ]
+    )
+    state = {
+        "state_type": "opaque_token",
+        "states": [
+            {
+                "partition": {"account": account},
+                "cursor": {"token": account.upper(), "committed_at": "2026-01-01T00:00:00Z"},
+            }
+            for account in ("a", "b", "c")
+        ],
+    }
+    cursor = _cursor(router=router, state=state, max_partitions=3)
+
+    with caplog.at_level(logging.INFO):
+        list(cursor.stream_slices())
+        assert "partitions already store tokens" not in caplog.text
+        cursor.ensure_at_least_one_state_emitted()
+        cursor.ensure_at_least_one_state_emitted()
+
+    assert (
+        caplog.text.count(
+            "Stream events: 3 partitions already store tokens; 2 more read in full on every sync."
+        )
+        == 1
+    )
+    assert caplog.text.count("reason: partition cap") == 1
+
+
+def test_bootstrap_and_replay_observability_are_deduplicated_and_aged(caplog):
+    router = Router(
+        [StreamSlice(partition={"account": account}, cursor_slice={}) for account in ("a", "b")]
+    )
+    cursor = _cursor(router=router)
+    with caplog.at_level(logging.INFO):
+        list(cursor.stream_slices())
+    assert caplog.text.count("reason: none") == 1
+
+    caplog.clear()
+    replay = _cursor(
+        state={
+            "state_type": "opaque_token",
+            "token": "T1",
+            "committed_at": "2024-01-01T00:00:00Z",
+        }
+    )
+    with caplog.at_level(logging.INFO):
+        list(replay.stream_slices())
+    assert "Stream events: replaying the change token committed " in caplog.text
+    assert " ago." in caplog.text
+
+
+def test_commit_observability_counts_completed_pages_per_partition(caplog):
+    cursor = _cursor()
+    stream_slice = StreamSlice(partition={}, cursor_slice={})
+    with caplog.at_level(logging.DEBUG, logger="airbyte"):
+        for exhausted, body in (
+            (False, {"nextCursor": "p2"}),
+            (False, {"nextCursor": "p3"}),
+            (True, {"syncToken": "T1"}),
+        ):
+            cursor.on_page_completed(PageCompleted(stream_slice, _response(body), exhausted))
+        cursor.close_partition(_partition({}))
+
+    assert "Stream events: committed change token T1 for partition {} after 3 pages." in caplog.text
+
+
 def test_t_schema_ignores_incompatible_partition_state_shape():
     cursor = _cursor(
         router=Router([]),
@@ -303,6 +419,12 @@ def test_t_schema_ignores_incompatible_partition_state_shape():
     )
 
     assert cursor.state == {"state_type": "opaque_token", "states": []}
+
+
+def test_t_schema_ignores_partition_state_shape_on_unpartitioned_stream():
+    cursor = _cursor(state={"state_type": "opaque_token", "states": []})
+
+    assert cursor.state == {"state_type": "opaque_token"}
 
 
 def test_t_valid_and_t_init_use_partition_router_and_initial_token_slice():
