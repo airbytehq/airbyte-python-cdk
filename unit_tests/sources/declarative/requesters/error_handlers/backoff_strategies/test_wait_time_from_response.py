@@ -3,6 +3,8 @@
 #
 
 import json
+import logging
+from unittest.mock import patch
 
 import pytest
 import requests
@@ -12,6 +14,10 @@ from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_time_from_response_backoff_strategy import (
     WaitTimeFromResponseBackoffStrategy,
 )
+from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import (
+    DefaultErrorHandler,
+)
+from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.utils import AirbyteTracedException
 
 GMAIL_WAIT_TIME_EXPRESSION = r"{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response is mapping and response.get('error') is mapping and ((response.error.message or '') | string | regex_search('Retry after (\\S+Z)'))) else '' }}"
@@ -239,6 +245,113 @@ def test_wait_time_from_response_returns_none_when_the_expression_fails_on_the_b
     assert strategy.backoff_time(_response([{"retry": "soon"}]), 1) is None
     assert any("could not be evaluated" in message for message in caplog.messages)
     assert all("soon" not in message for message in caplog.messages)
+
+
+def test_wait_time_from_response_a_failed_render_does_not_disable_the_strategy(caplog):
+    """A `TypeError` while rendering one body must not turn the strategy off for later bodies."""
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ response.reset_in - 1 }}", parameters={}, config={}
+    )
+
+    assert strategy.backoff_time(_response({"reset_in": "abc"}), 1) is None
+    assert any("could not be evaluated" in message for message in caplog.messages)
+    assert strategy.backoff_time(_response({"reset_in": 30}), 1) == 29
+
+
+@pytest.mark.parametrize(
+    "expression, body",
+    [
+        pytest.param("{{ 10 / response.n }}", b'{"n": 0}', id="division_by_zero"),
+        pytest.param("{{ response.n }}", b'{"n": 1' + b"0" * 400 + b"}", id="float_overflow"),
+    ],
+)
+def test_wait_time_from_response_returns_none_for_arithmetic_errors(expression, body):
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds=expression, parameters={}, config={}
+    )
+
+    assert strategy.backoff_time(_response_body(body), 1) is None
+
+
+def test_wait_time_from_response_unreadable_body_falls_back_to_headers():
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ headers['Retry-After'] }}", parameters={}, config={}
+    )
+
+    deeply_nested_body = b"[" * 100_000
+    assert strategy.backoff_time(_response_body(deeply_nested_body, {"Retry-After": "5"}), 1) == 5
+
+
+def test_wait_time_from_response_undeclared_variable_fails_at_construction():
+    with pytest.raises(AirbyteTracedException) as error:
+        WaitTimeFromResponseBackoffStrategy(
+            wait_time_in_seconds="{{ resposne.retry_in }}", parameters={}, config={}
+        )
+
+    assert error.value.failure_type == FailureType.system_error
+    assert "resposne" in error.value.internal_message
+
+
+def test_wait_time_from_response_interpolates_parameters():
+    strategy = WaitTimeFromResponseBackoffStrategy(
+        wait_time_in_seconds="{{ response[parameters.wait_field] }}",
+        parameters={"wait_field": "retry_in"},
+        config={},
+    )
+
+    assert strategy.backoff_time(_response({"retry_in": 7}), 1) == 7
+
+
+def test_wait_time_from_response_wait_reaches_the_sleep_in_http_client(requests_mock):
+    requests_mock.get(
+        "https://api.example.com/data",
+        [{"status_code": 429, "json": {"retry_in": 7}}, {"status_code": 200, "json": {}}],
+    )
+    http_client = _http_client(
+        WaitTimeFromResponseBackoffStrategy(
+            wait_time_in_seconds="{{ response.retry_in }}", parameters={}, config={}
+        )
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=sleeps.append):
+        _, response = http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    # `user_defined_backoff_handler` adds one second to cover fractions of a second; the `backoff`
+    # library's own wait is 0.
+    assert max(sleeps) == 8
+
+
+def test_wait_time_from_response_wait_above_cap_stops_the_request_in_http_client(requests_mock):
+    requests_mock.get("https://api.example.com/data", status_code=429, json={"retry_in": 3600})
+    http_client = _http_client(
+        WaitTimeFromResponseBackoffStrategy(
+            wait_time_in_seconds="{{ response.retry_in }}",
+            parameters={},
+            config={},
+            max_waiting_time_in_seconds=60,
+        )
+    )
+
+    with patch("time.sleep") as sleep, pytest.raises(AirbyteTracedException) as error:
+        http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+
+    assert error.value.failure_type == FailureType.transient_error
+    sleep.assert_not_called()
+
+
+def _http_client(backoff_strategy):
+    return HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        error_handler=DefaultErrorHandler(config={}, parameters={}),
+        backoff_strategy=[backoff_strategy],
+    )
 
 
 def _response(json_body, headers=None):

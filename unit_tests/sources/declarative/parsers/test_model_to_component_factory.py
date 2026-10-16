@@ -2796,8 +2796,10 @@ requester:
   error_handler:
     backoff_strategies:
       - type: WaitTimeFromResponse
-        wait_time_in_seconds: "{{ response.retry_after_seconds }}"
+        wait_time_in_seconds: "{{ response[parameters.wait_field] }}"
         max_waiting_time_in_seconds: 30
+        $parameters:
+          wait_field: retry_after_seconds
     """
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
@@ -2817,6 +2819,10 @@ requester:
     backoff_strategy = requester.error_handler.backoff_strategies[0]
     assert isinstance(backoff_strategy, WaitTimeFromResponseBackoffStrategy)
     assert backoff_strategy.max_waiting_time_in_seconds == 30
+    rate_limited = requests.Response()
+    rate_limited.status_code = 429
+    rate_limited._content = b'{"retry_after_seconds": 12}'
+    assert backoff_strategy.backoff_time(rate_limited, 1) == 12
 
 
 @pytest.mark.parametrize(
