@@ -3,6 +3,7 @@
 #
 
 import dataclasses
+from typing import Any, List, Mapping
 
 import pytest
 
@@ -37,7 +38,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     OauthConnectorInputSpecification as component_declarative_oauth_connector_input_spec,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Spec as SpecModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     State as component_declarative_oauth_state,
+)
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.spec.spec import ConfigMigration
 from airbyte_cdk.sources.declarative.spec.spec import Spec as component_spec
@@ -315,3 +322,99 @@ def test_protocol_override_fields_in_sync(
         f"Upstream protocol added fields {missing} to {upstream_class_name} "
         f"that are missing from the airbyte_protocol.py override. Update the override to match."
     )
+
+
+def _create_spec_with_validations(validations: List[Mapping[str, Any]]) -> component_spec:
+    return ModelToComponentFactory().create_component(
+        model_type=SpecModel,
+        component_definition={
+            "type": "Spec",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "validations": validations,
+            },
+        },
+        config={},
+    )
+
+
+_UNIQUE_STREAM_NAMES_VALIDATION = {
+    "type": "PredicateValidator",
+    "value": "{{ config['report_options_list'] | map(attribute='stream_name') | list }}",
+    "validation_strategy": {
+        "type": "ValidateAdheresToSchema",
+        "base_schema": {"type": "array", "uniqueItems": True},
+    },
+}
+
+_JIRA_DOMAIN_VALIDATION = {
+    "type": "DpathValidator",
+    "field_path": ["domain"],
+    "validation_strategy": {
+        "type": "ValidateAdheresToSchema",
+        "base_schema": {"type": "string", "pattern": "^[a-zA-Z0-9-]+\\.atlassian\\.net$"},
+    },
+}
+
+
+def test_given_predicate_validator_with_unique_interpolated_list_when_validate_config_then_succeeds() -> (
+    None
+):
+    spec = _create_spec_with_validations([_UNIQUE_STREAM_NAMES_VALIDATION])
+
+    spec.validate_config(
+        {"report_options_list": [{"stream_name": "orders"}, {"stream_name": "returns"}]}
+    )
+
+
+def test_given_predicate_validator_with_duplicate_interpolated_list_when_validate_config_then_raises() -> (
+    None
+):
+    spec = _create_spec_with_validations([_UNIQUE_STREAM_NAMES_VALIDATION])
+
+    with pytest.raises(ValueError, match="non-unique elements"):
+        spec.validate_config(
+            {"report_options_list": [{"stream_name": "orders"}, {"stream_name": "orders"}]}
+        )
+
+
+def test_given_predicate_validator_reading_transformed_config_when_validate_config_then_uses_passed_config() -> (
+    None
+):
+    spec = _create_spec_with_validations(
+        [
+            {
+                "type": "PredicateValidator",
+                "value": "{{ config['added_field'] }}",
+                "validation_strategy": {
+                    "type": "ValidateAdheresToSchema",
+                    "base_schema": {"type": "string", "const": "expected"},
+                },
+            }
+        ]
+    )
+
+    spec.validate_config({"added_field": "expected"})
+    with pytest.raises(ValueError):
+        spec.validate_config({"added_field": "unexpected"})
+
+
+@pytest.mark.parametrize(
+    "domain, is_valid",
+    [
+        pytest.param("example.atlassian.net", True, id="valid_hostname"),
+        pytest.param("https://example.atlassian.net/", False, id="url_instead_of_hostname"),
+        pytest.param("example.com", False, id="non_atlassian_hostname"),
+    ],
+)
+def test_given_dpath_validator_with_plain_string_pattern_when_validate_config(
+    domain: str, is_valid: bool
+) -> None:
+    spec = _create_spec_with_validations([_JIRA_DOMAIN_VALIDATION])
+
+    if is_valid:
+        spec.validate_config({"domain": domain})
+    else:
+        with pytest.raises(ValueError, match="does not match"):
+            spec.validate_config({"domain": domain})
