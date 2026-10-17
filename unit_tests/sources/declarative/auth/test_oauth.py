@@ -17,6 +17,7 @@ from requests import Response
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
+from airbyte_cdk.sources.streams.http.exceptions import DefaultBackoffException
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
@@ -845,6 +846,30 @@ class TestOauth2AuthenticatorTransientErrorHandling:
 
             assert exc_info.value.failure_type == FailureType.transient_error
             assert "network error" in exc_info.value.message.lower()
+
+    @pytest.mark.usefixtures("mock_sleep")
+    def test_refresh_access_token_retries_exhausted_raises_transient_error(self, requests_mock):
+        """A token endpoint that keeps returning 503 past the backoff window raises AirbyteTracedException with transient_error."""
+        oauth = self._create_authenticator()
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            status_code=503,
+            text="<!DOCTYPE html><html>Server Unavailable</html>",
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        exc = exc_info.value
+        assert exc.failure_type == FailureType.transient_error
+        assert (
+            exc.message
+            == "OAuth token refresh failed because the provider's token endpoint was temporarily unavailable (HTTP 503)."
+        )
+        assert "DefaultBackoffException" not in exc.message
+        assert "https://" not in exc.message
+        assert isinstance(exc.__cause__, DefaultBackoffException)
+        assert requests_mock.call_count > 1
 
     def test_connection_error_is_retried_before_raising(self, mocker):
         """ConnectionError triggers backoff retries in _make_handled_request before propagating."""
