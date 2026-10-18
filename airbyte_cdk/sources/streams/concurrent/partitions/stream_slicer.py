@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import threading
 from abc import ABC, ABCMeta, abstractmethod
 from typing import Any, Iterable
 
@@ -16,12 +17,28 @@ class StreamSlicerMeta(ABCMeta):
         isinstance(declarative_stream.retriever.stream_slicer,(GlobalSubstreamCursor, PerPartitionWithGlobalCursor))
     """
 
-    def __instancecheck__(cls, instance: Any) -> bool:
-        # Check if it's our wrapper with matching wrapped class
-        if hasattr(instance, "wrapped_slicer"):
-            return isinstance(instance.wrapped_slicer, cls)
+    _checking: threading.local = threading.local()
 
-        return super().__instancecheck__(instance)
+    def __instancecheck__(cls, instance: Any) -> bool:
+        if not hasattr(cls._checking, "in_progress"):
+            cls._checking.in_progress = set()
+
+        instance_id = id(instance)
+        if instance_id in cls._checking.in_progress:
+            return super().__instancecheck__(instance)
+
+        # Use object.__getattribute__ to bypass any custom __getattr__ that
+        # could trigger further isinstance() calls and cause recursion.
+        try:
+            wrapped = object.__getattribute__(instance, "wrapped_slicer")
+        except AttributeError:
+            return super().__instancecheck__(instance)
+
+        cls._checking.in_progress.add(instance_id)
+        try:
+            return isinstance(wrapped, cls)
+        finally:
+            cls._checking.in_progress.discard(instance_id)
 
 
 class StreamSlicer(ABC, metaclass=StreamSlicerMeta):
