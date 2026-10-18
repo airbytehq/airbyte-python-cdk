@@ -344,6 +344,25 @@ class AsyncJobOrchestratorTest(TestCase):
 
         assert job_tracker.try_to_get_intent()
 
+    @mock.patch(sleep_mock_target)
+    def test_given_jobs_failed_more_than_max_attempts_when_create_and_get_completed_partitions_then_raise_transient_error(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        jobs = [self._an_async_job(str(i), _A_STREAM_SLICE) for i in range(_MAX_NUMBER_OF_ATTEMPTS)]
+        self._job_repository.start.side_effect = jobs
+        self._job_repository.update_jobs_status.side_effect = _status_update_per_jobs(
+            {job: [AsyncJobStatus.FAILED] for job in jobs}
+        )
+
+        orchestrator = self._orchestrator([_A_STREAM_SLICE], JobTracker(1))
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            list(orchestrator.create_and_get_completed_partitions())
+
+        assert exc_info.value.message == "Async job partition did not complete successfully."
+        assert exc_info.value.failure_type == FailureType.transient_error
+        assert "At least one job could not be completed" in exc_info.value.internal_message
+
     def given_budget_already_taken_before_start_when_create_and_get_completed_partitions_then_wait_for_budget_to_be_freed(
         self,
     ) -> None:
