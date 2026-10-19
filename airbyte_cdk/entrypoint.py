@@ -199,7 +199,7 @@ class AirbyteEntrypoint(object):
                         AirbyteEntrypoint.airbyte_message_to_string,
                         self._discover_without_config(),
                     )
-                elif not parsed_args.config:
+                elif cmd == "discover" and not parsed_args.config:
                     raise AirbyteTracedException(
                         message="This connector requires a config to run `discover`. Provide one with `--config`.",
                         internal_message="`--config` was not provided and the source does not support config-free discover.",
