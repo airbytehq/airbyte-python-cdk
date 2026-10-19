@@ -9,6 +9,9 @@ import pytest
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    MissingConfigValueError,
+)
 
 _RETRIEVER = {
     "type": "SimpleRetriever",
@@ -182,3 +185,124 @@ def test_discover_static_schema_without_config() -> None:
     catalog = source.discover(source.logger, {})
 
     assert sorted(stream.name for stream in catalog.streams) == ["dynamic_items", "items"]
+
+
+_INCREMENTAL_SYNC = {
+    "type": "DatetimeBasedCursor",
+    "cursor_field": "{{ parameters['cursor'] }}",
+    "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+    "start_datetime": "{{ config['start_date'] }}",
+}
+
+
+def _incremental_stream(name: str) -> dict[str, Any]:
+    return {
+        **_stream(name, _INLINE_SCHEMA_LOADER),
+        "primary_key": ["id"],
+        "incremental_sync": _INCREMENTAL_SYNC,
+        "$parameters": {"cursor": "updated_at"},
+    }
+
+
+def _substream(name: str, parent: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **_incremental_stream(name),
+        "retriever": {
+            **_RETRIEVER,
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "stream": parent,
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                    }
+                ],
+            },
+        },
+    }
+
+
+def _state_delegating_stream(name: str) -> dict[str, Any]:
+    return {
+        "type": "StateDelegatingStream",
+        "name": name,
+        "full_refresh_stream": {**_stream(name, _INLINE_SCHEMA_LOADER), "primary_key": ["id"]},
+        "incremental_stream": _incremental_stream(name),
+    }
+
+
+@pytest.mark.parametrize(
+    "streams",
+    [
+        pytest.param([_incremental_stream("items")], id="config_dependent_cursor"),
+        pytest.param(
+            [_substream("children", _incremental_stream("parents"))],
+            id="substream_with_config_dependent_parent",
+        ),
+        pytest.param([_state_delegating_stream("items")], id="state_delegating_stream"),
+    ],
+)
+def test_config_free_discover_matches_configured_discover(streams: list[Mapping[str, Any]]) -> None:
+    config = {"api_key": "dummy", "start_date": "2024-01-01T00:00:00Z"}
+    configured_source = ConcurrentDeclarativeSource(source_config=_manifest(streams), config=config)
+    config_free_source = ConcurrentDeclarativeSource(source_config=_manifest(streams), config={})
+
+    configured_catalog = configured_source.discover(configured_source.logger, config)
+    config_free_catalog = config_free_source.discover(config_free_source.logger, {})
+
+    assert config_free_catalog == configured_catalog
+
+
+def test_config_free_discover_streams_cannot_be_read() -> None:
+    source = ConcurrentDeclarativeSource(
+        source_config=_manifest([_incremental_stream("items")]), config={}
+    )
+
+    (stream,) = source._catalog_streams()
+
+    with pytest.raises(RuntimeError, match="discover only"):
+        list(stream.generate_partitions())
+
+
+def test_discover_without_config_fails_for_config_dependent_cursor_without_catalog_streams() -> (
+    None
+):
+    source = ConcurrentDeclarativeSource(
+        source_config=_manifest([_incremental_stream("items")]), config={}
+    )
+
+    with pytest.raises(ValueError):
+        source.streams(config={})
+
+
+@pytest.mark.parametrize(
+    "cursor_field",
+    [
+        pytest.param("{{ config['record_cursor'] }}", id="whole_field"),
+        pytest.param("updated_{{ config['suffix'] }}", id="partial_field"),
+    ],
+)
+def test_config_free_discover_fails_when_cursor_field_reads_missing_config(
+    cursor_field: str,
+) -> None:
+    stream = _incremental_stream("items")
+    stream["incremental_sync"] = {**_INCREMENTAL_SYNC, "cursor_field": cursor_field}
+    source = ConcurrentDeclarativeSource(source_config=_manifest([stream]), config={})
+
+    with pytest.raises(MissingConfigValueError):
+        source.discover(source.logger, {})
+
+
+def test_config_free_discover_uses_cursor_field_template_default() -> None:
+    stream = _incremental_stream("items")
+    stream["incremental_sync"] = {
+        **_INCREMENTAL_SYNC,
+        "cursor_field": "{{ config.get('record_cursor', 'updated_at') }}",
+    }
+    source = ConcurrentDeclarativeSource(source_config=_manifest([stream]), config={})
+
+    (catalog_stream,) = source.discover(source.logger, {}).streams
+
+    assert catalog_stream.default_cursor_field == ["updated_at"]
