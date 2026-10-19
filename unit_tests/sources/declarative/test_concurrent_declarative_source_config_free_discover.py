@@ -9,6 +9,9 @@ import pytest
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    MissingConfigValueError,
+)
 
 _RETRIEVER = {
     "type": "SimpleRetriever",
@@ -272,3 +275,34 @@ def test_discover_without_config_fails_for_config_dependent_cursor_without_catal
 
     with pytest.raises(ValueError):
         source.streams(config={})
+
+
+@pytest.mark.parametrize(
+    "cursor_field",
+    [
+        pytest.param("{{ config['record_cursor'] }}", id="whole_field"),
+        pytest.param("updated_{{ config['suffix'] }}", id="partial_field"),
+    ],
+)
+def test_config_free_discover_fails_when_cursor_field_reads_missing_config(
+    cursor_field: str,
+) -> None:
+    stream = _incremental_stream("items")
+    stream["incremental_sync"] = {**_INCREMENTAL_SYNC, "cursor_field": cursor_field}
+    source = ConcurrentDeclarativeSource(source_config=_manifest([stream]), config={})
+
+    with pytest.raises(MissingConfigValueError):
+        source.discover(source.logger, {})
+
+
+def test_config_free_discover_uses_cursor_field_template_default() -> None:
+    stream = _incremental_stream("items")
+    stream["incremental_sync"] = {
+        **_INCREMENTAL_SYNC,
+        "cursor_field": "{{ config.get('record_cursor', 'updated_at') }}",
+    }
+    source = ConcurrentDeclarativeSource(source_config=_manifest([stream]), config={})
+
+    (catalog_stream,) = source.discover(source.logger, {}).streams
+
+    assert catalog_stream.default_cursor_field == ["updated_at"]

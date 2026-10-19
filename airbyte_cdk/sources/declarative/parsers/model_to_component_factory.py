@@ -2257,8 +2257,9 @@ class ModelToComponentFactory:
         The stream gets the same name, schema loader, primary key, cursor field and file transfer
         flag as `create_default_stream`, so `as_airbyte_stream()` returns the same catalog entry.
         Requesters, authenticators, partition routers and cursors are never created, so a config is
-        not needed unless the schema loader or cursor field interpolates it. Reading from the stream
-        raises an error.
+        not needed unless the schema loader or cursor field interpolates it. Reading a config value
+        that is not set raises `MissingConfigValueError` rather than producing an incomplete catalog
+        entry. Reading from the stream raises an error.
         """
         model = model_type.parse_obj(component_definition)
         if isinstance(model, StateDelegatingStreamModel):
@@ -2273,6 +2274,7 @@ class ModelToComponentFactory:
                 f"Expected a DeclarativeStream or StateDelegatingStream component, but received {model.__class__.__name__}"
             )
 
+        config = _StrictConfig(config)
         stream_name = model.name or ""
         cursor_field: Optional[CursorField] = None
         if isinstance(
@@ -5861,4 +5863,20 @@ class _CatalogOnlyPartitionGenerator(PartitionGenerator):
     def generate(self) -> Iterable[Partition]:
         raise RuntimeError(
             f"Stream `{self._stream_name}` was created for discover only and cannot be read."
+        )
+
+
+class MissingConfigValueError(ValueError):
+    """Raised when a catalog-only stream reads a config value that is not set."""
+
+
+class _StrictConfig(Dict[str, Any]):
+    """Config that raises on missing keys instead of letting interpolation render them as empty.
+
+    Explicit defaults such as `config.get('key', 'default')` still work.
+    """
+
+    def __missing__(self, key: str) -> Any:
+        raise MissingConfigValueError(
+            f"Config value `{key}` is required to build this stream's catalog entry."
         )
