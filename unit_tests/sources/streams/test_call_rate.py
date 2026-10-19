@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+from freezegun import freeze_time
 from requests import Request
 
 from airbyte_cdk.models import SyncMode
@@ -304,6 +305,82 @@ class TestMovingWindowCallRatePolicy:
 
         assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(3600, 0.1)
         assert str(excinfo.value) == "Bucket for item=call with Rate limit=2/1.0h is already full"
+
+    def test_update_available_calls_zero_exhausts_bucket(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 10
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+            frozen.tick(61)
+            policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_when_bucket_full_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(3, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 3
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_ignores_expired_entries(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(
+                rates=[
+                    Rate(5, timedelta(seconds=10)),
+                    Rate(10, timedelta(minutes=1)),
+                ],
+                matchers=[],
+            )
+            for _ in range(5):
+                policy.try_acquire("call", weight=1)
+
+            frozen.tick(11)
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 10
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_multiple_rates(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(
+                rates=[
+                    Rate(10, timedelta(minutes=10)),
+                    Rate(3, timedelta(seconds=10)),
+                    Rate(2, timedelta(hours=1)),
+                ],
+                matchers=[],
+            )
+            policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 2
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_positive_available_calls_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=5, call_reset_ts=None)
+            assert policy._bucket.count() == 3
+
+            policy.update(available_calls=0, call_reset_ts=datetime.now())
+            assert policy._bucket.count() == 3
 
 
 class TestHttpStreamIntegration:

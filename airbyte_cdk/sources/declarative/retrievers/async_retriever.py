@@ -82,6 +82,12 @@ class AsyncRetriever(Retriever):
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice] = None,
     ) -> Iterable[StreamData]:
+        if stream_slice is None:
+            # Slice-less callers such as DynamicSchemaLoader read this way: create and poll the jobs here
+            for job_slice in self.stream_slicer.stream_slices():
+                yield from self.read_records(records_schema, job_slice)
+            return
+
         # emit the slice_descriptor log message, for connector builder TestRead
         yield self.slice_logger.create_slice_log_message(stream_slice.cursor_slice)  # type: ignore
 

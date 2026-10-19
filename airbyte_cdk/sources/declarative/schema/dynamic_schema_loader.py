@@ -10,6 +10,7 @@ from typing import Any, List, Mapping, MutableMapping, Optional, Union
 import dpath
 from typing_extensions import deprecated
 
+from airbyte_cdk.models import AirbyteMessage, Type
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -120,6 +121,10 @@ class SchemaTypeIdentifier:
 class DynamicSchemaLoader(SchemaLoader):
     """
     Dynamically loads a JSON Schema by extracting data from retrieved records.
+
+    With an AsyncRetriever, each schema load creates one async job (retried on failure) and stops at
+    the first record, so the job's delete endpoint is not called. During a read the schema loads on
+    the first partition read and its job takes a slot from max_concurrent_async_job_count.
     """
 
     retriever: Retriever
@@ -134,7 +139,15 @@ class DynamicSchemaLoader(SchemaLoader):
         Constructs a JSON Schema based on retrieved data.
         """
         properties = {}
-        retrieved_record = next(self.retriever.read_records({}), None)  # type: ignore[call-overload] # read_records return Iterable data type
+        retrieved_record = next(
+            (
+                record
+                for record in self.retriever.read_records({})
+                # AsyncRetriever emits a slice log message before its records
+                if not (isinstance(record, AirbyteMessage) and record.type == Type.LOG)
+            ),
+            None,
+        )
 
         raw_schema = (
             self._extract_data(

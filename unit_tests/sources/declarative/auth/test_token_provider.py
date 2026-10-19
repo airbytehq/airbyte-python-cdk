@@ -1,8 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import itertools
 import json
-from unittest.mock import MagicMock
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import MagicMock, patch
 
 import freezegun
 import pytest
@@ -14,6 +17,7 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.exceptions import ReadException
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 def create_session_token_provider():
@@ -80,6 +84,52 @@ def test_session_token_provider_ignored_response():
     provider.login_requester.send_request.return_value = None
     with pytest.raises(ReadException):
         provider.get_token()
+
+
+def test_session_token_provider_refreshes_once_for_concurrent_calls():
+    with freezegun.freeze_time("2001-05-21T12:00:00Z"):
+        provider = create_session_token_provider()
+        provider.get_token()
+    provider.login_requester.send_request.reset_mock()
+    provider.login_requester.send_request.return_value.content = json.dumps(
+        {"nested": {"token": "updated_token"}}
+    ).encode()
+
+    both_calls_found_token_expired = threading.Barrier(2, timeout=10)
+    clock_reads = itertools.count()
+
+    def now():
+        # The first two clock reads are the unlocked expiry checks of the two calls
+        if next(clock_reads) < 2:
+            both_calls_found_token_expired.wait()
+        return ab_datetime_now()
+
+    with patch(
+        "airbyte_cdk.sources.declarative.auth.token_provider.ab_datetime_now", side_effect=now
+    ):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(provider.get_token) for _ in range(2)]
+
+    assert [future.result() for future in futures] == ["updated_token", "updated_token"]
+    assert provider.login_requester.send_request.call_count == 1
+
+
+def test_session_token_provider_sets_token_before_expiry():
+    """
+    `get_token` skips the lock once the expiry is fresh, so a fresh expiry must never be visible before its token.
+    """
+    provider = create_session_token_provider()
+    tokens_when_expiry_was_set = []
+
+    def record_token_when_expiry_is_set(self, name, value):
+        object.__setattr__(self, name, value)
+        if name == "_next_expiration_time":
+            tokens_when_expiry_was_set.append(self._token)
+
+    with patch.object(SessionTokenProvider, "__setattr__", record_token_when_expiry_is_set):
+        assert provider.get_token() == "my_token"
+
+    assert tokens_when_expiry_was_set == ["my_token"]
 
 
 @pytest.mark.parametrize(

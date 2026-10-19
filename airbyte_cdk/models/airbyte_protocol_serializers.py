@@ -32,17 +32,23 @@ def custom_type_resolver(t: type) -> CustomType[AirbyteStateBlob, Dict[str, Any]
     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
 
-AirbyteCatalogSerializer = Serializer(AirbyteCatalog, omit_none=True)
-AirbyteStreamSerializer = Serializer(AirbyteStream, omit_none=True)
-AirbyteStreamStateSerializer = Serializer(
+AirbyteCatalogSerializer: Serializer[AirbyteCatalog] = Serializer(AirbyteCatalog, omit_none=True)
+AirbyteStreamSerializer: Serializer[AirbyteStream] = Serializer(AirbyteStream, omit_none=True)
+AirbyteStreamStateSerializer: Serializer[AirbyteStreamState] = Serializer(
     AirbyteStreamState, omit_none=True, custom_type_resolver=custom_type_resolver
 )
-AirbyteStateMessageSerializer = Serializer(
+AirbyteStateMessageSerializer: Serializer[AirbyteStateMessage] = Serializer(
     AirbyteStateMessage, omit_none=True, custom_type_resolver=custom_type_resolver
 )
-AirbyteMessageSerializer = Serializer(
+AirbyteMessageSerializer: Serializer[AirbyteMessage] = Serializer(
     AirbyteMessage, omit_none=True, custom_type_resolver=custom_type_resolver
 )
-ConfiguredAirbyteCatalogSerializer = Serializer(ConfiguredAirbyteCatalog, omit_none=True)
-ConfiguredAirbyteStreamSerializer = Serializer(ConfiguredAirbyteStream, omit_none=True)
-ConnectorSpecificationSerializer = Serializer(ConnectorSpecification, omit_none=True)
+ConfiguredAirbyteCatalogSerializer: Serializer[ConfiguredAirbyteCatalog] = Serializer(
+    ConfiguredAirbyteCatalog, omit_none=True
+)
+ConfiguredAirbyteStreamSerializer: Serializer[ConfiguredAirbyteStream] = Serializer(
+    ConfiguredAirbyteStream, omit_none=True
+)
+ConnectorSpecificationSerializer: Serializer[ConnectorSpecification] = Serializer(
+    ConnectorSpecification, omit_none=True
+)

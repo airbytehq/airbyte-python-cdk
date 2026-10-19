@@ -5,6 +5,7 @@
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, List, Mapping, Optional
 
+from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
@@ -97,6 +98,25 @@ class TestingCustomErrorHandler(DefaultErrorHandler):
     """
 
     __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+
+@dataclass
+class TestingCustomAuthenticator(DeclarativeAuthenticator):
+    """
+    A test class wrapping a nested authenticator, used for testing custom authenticators with subcomponents.
+    """
+
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+    inner: DeclarativeAuthenticator
+
+    @property
+    def auth_header(self) -> str:
+        return self.inner.auth_header
+
+    @property
+    def token(self) -> str:
+        return self.inner.token
 
 
 @dataclass

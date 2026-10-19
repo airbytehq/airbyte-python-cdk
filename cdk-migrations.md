@@ -1,5 +1,136 @@
 # CDK Migration Guide
 
+## Upgrading to 7.36.0
+
+This release of the CDK adds checks to the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) and changes which commands they run for the configs listed in `acceptance-test-config.yml`. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
+
+### Each config runs the command of the section that lists it
+
+Previously only the `spec`, `connection` and `basic_read` sections of `acceptance-test-config.yml` were read, every config listed there ran every test (`check`, `discover` and `read`), and configs listed only under `discovery` or `full_refresh` were never tested. Now every section with a `tests` list contributes its configs, except `incremental`, and each config runs the command the Connector Acceptance Tests (CAT) ran it with:
+
+| Section | What the config must do | Tests |
+|---|---|---|
+| `spec` | Validate against the connector's `connectionSpecification` (the CAT `test_config_match_spec` check). | `test_config_matches_spec`, `test_docker_image_build_and_config_matches_spec` |
+| `connection` | Make `check` report the declared `status` (see below). | `test_check`, `test_docker_image_build_and_check` |
+| `discovery` | Make `discover` succeed and return at least one stream. | `test_discover`, `test_docker_image_build_and_discover` |
+| `basic_read`, `full_refresh` | Make a full-refresh `read` succeed and return records. The read covers the streams of the config's `configured_catalog_path`, or every discovered stream when none is declared, minus `empty_streams`. | `test_basic_read`, `test_fail_read_with_bad_catalog`, `test_docker_image_build_and_read` |
+
+The `incremental` section is still not collected: without input state, an incremental `read` checks the same thing as a full-refresh one, so a config listed only there stays untested. A config listed under several sections runs the union of their commands, and no others: a config listed only under `spec` is no longer run through `check`, and a config listed only under `connection` is no longer read. `ConnectorTestScenario.sections` records where a config is listed and `ConnectorTestScenario.commands` the commands that run for it; a test that does not apply to a config skips with a reason naming its sections. The Docker read test keeps the `--read-scenarios` default (the `config`, `valid_config` and `default` configs), so other configs listed under the read sections are read by `airbyte-cdk connector test` (what the monorepo runs for manifest-only connectors) but not by `airbyte-cdk image test` (what it runs for Python connectors). The Docker read test also no longer fails with an `AttributeError` when the scenario declares `empty_streams`.
+
+A config's `configured_catalog_path` is now honoured, as it was in CAT: the read covers the streams named in that catalog, each with the definition and JSON schema that `discover` reports, with every stream read in full-refresh mode whatever sync mode the catalog declares. Previously the read covered every discovered stream and ignored the catalog. A config read through several sections is read once: it keeps its catalog only when every read entry declares the same one, and otherwise (one entry declares none, or the entries declare different catalogs) every discovered stream is read. A stream named in the catalog that `discover` does not report fails the read test, as it did in CAT. The Docker read test now configures every stream in full-refresh mode too, instead of the first mode the stream supports.
+
+### `check` must report the declared status
+
+Previously only an exception or a non-zero exit failed the `check` tests, so a `check` that reported `status: FAILED` passed. Both test paths now assert the reported `CONNECTION_STATUS` against the `status` declared for the config under `connection`, with the same semantics as CAT:
+
+| `status` in `acceptance-test-config.yml` | What `check` must do |
+|---|---|
+| `succeed` | Report a `CONNECTION_STATUS` message with status `SUCCEEDED`. |
+| `failed` | Report a `CONNECTION_STATUS` message with status `FAILED` (gracefully, without raising). |
+| `exception` | Raise: a `TRACE` error must be emitted and no `SUCCEEDED` status may be reported. A `CONNECTION_STATUS` message is not required. |
+| not declared | Treated as `succeed`, matching the CAT default. |
+
+The `succeed` default applies to every command a config runs, not only `check`: for a config without a `status`, `discover` and `read` errors, and a `read` without records, now fail the test (previously they were tolerated unless `status: succeed` was declared explicitly).
+
+Migration steps:
+
+- A config listed under `spec` must validate against the connector's spec: remove the keys the spec no longer declares, or declare them in the spec.
+- A config listed under `connection` without a `status` must now pass `check`. If the config is meant to fail `check`, declare `status: failed`; if its secret has expired, refresh it; if it is no longer used, remove it.
+- A `check` that raises (uncaught exception, non-zero exit) now fails the test for every config that is not declared `status: failed` or `status: exception`, on the in-process path as well as the Docker path.
+- A `status: failed` config whose `check` raises instead of reporting `FAILED` must either be fixed to report its failure gracefully, or be declared as `status: exception` if raising is the intended behaviour.
+- A `status: exception` config whose `check` reports a `CONNECTION_STATUS` without raising must be declared as `status: failed` (or `succeed`).
+- A config listed under `discovery`, `basic_read` or `full_refresh` must make that command succeed: `discover` must return streams, and a full-refresh `read` must return records. List the streams that legitimately return nothing, or that the config's credentials cannot read, under `empty_streams` (with a `bypass_reason`); move a config whose read is expected to fail out of the read sections, as the read tests carry no failure expectation.
+- A config's `configured_catalog_path` now decides which streams are read. Remove the streams that the connector no longer discovers from the catalog. To read every discovered stream instead, drop `configured_catalog_path` from the config's read entries; to skip a stream, list it under `empty_streams`.
+- Configs listed only under `discovery` or `full_refresh` were never tested before, so expect new failures from expired secrets and stale configs there. Remove the configs that are no longer needed.
+- Python code that inspects `ExpectedOutcome` directly: `ExpectedOutcome.from_status_str("exception")` now returns the new member `EXPECT_UNCAUGHT_ERROR` instead of `EXPECT_EXCEPTION`. `expect_exception()` still returns `True` for both members; use `expect_uncaught_error()` to distinguish them.
+
+Rationale: A `check` that fails is reported as `status: FAILED` in a `CONNECTION_STATUS` message with exit code 0, so an exit-code or exception check cannot detect it. The Standard Tests replaced CAT as the only `check` coverage for most connectors, and without asserting the reported status a connector whose credentials expired, or whose custom components are rejected by the CDK baked into the base image, kept passing. The sections of `acceptance-test-config.yml` name the CAT test each config was written for; running every command for every config would add syncs nobody asked for, running `check` alone would test the wrong thing for most of them, and running nothing left expired secrets and stale configs undetected. Running each config with its own command, with the `succeed` default CAT applied, restores the CAT guarantees in both paths.
+
+### Every stream returns records that match its schema (`basic_read`)
+
+This release also adds record assertions to the in-process `read` Standard Test (`SourceTestSuiteBase.test_basic_read`, run by `airbyte-cdk connector test`). Previously the test only failed when the whole read returned no records, so one stream with records passed the test for every stream. For every config listed under `basic_read` in `acceptance-test-config.yml`, it now restores two checks of the Connector Acceptance Tests (CAT) basic read test, unless the config's `status` is `failed` or `exception`. A config read only because it is listed under `full_refresh` keeps the old "some records" check, as CAT's full refresh test did not run these checks and the config has no `basic_read` entry to declare the exceptions below.
+
+- **Every stream returns records.** Every stream the read covers (the streams of the config's `configured_catalog_path`, or every discovered stream when it declares none) that is not declared in the config's `empty_streams` must return at least one record.
+- **Records match their schema.** Every record is validated against its stream's JSON schema with the validator CAT used: Draft 7, integers must be integers (`1.0` and `true` are not), `date-time` values must look like a date and a time and parse as a datetime (a space separator and a missing offset are accepted), other `format`s use the `jsonschema` defaults, and extra columns are allowed. A record that shares no field with a schema that declares `properties` also fails.
+
+The failure message names each stream, the number of failing records, and for each distinct schema error the record number, the path of the offending value inside the record, the failing schema keyword and the schema rule (for example ``record #3 at `$.items[0].price`: expected type 'number', got string``). Record values are never printed, for any kind of schema error: the message names the value's JSON type, and for an `anyOf`/`oneOf` the closest option's failure. A stream schema that cannot be applied (an unknown `type`, an unresolvable `$ref`, an invalid `pattern`) fails the check for that stream with the schema problem.
+
+Only the test harness changes, but the connector test suites of connectors whose test accounts have empty streams that are not declared, or whose records do not match their declared schemas, start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the new assertions up with this release, without a per-connector CDK bump.
+
+Migration steps:
+
+- A stream with no records for a `basic_read` config: add data to the test account, or list the stream under `empty_streams` for that config, with a `bypass_reason`. Declared empty streams are not read.
+- A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry. As in CAT, this is rejected for a connector at `test_strictness_level: high`, which has to fix the schema (or lower its strictness level).
+
+Rationale: The Standard Tests replaced CAT as the only `read` coverage for most connectors, and CAT's per-stream and schema checks were not carried over. A stream that silently stopped returning records, or a schema that drifted from the API, kept passing as long as some other stream returned a record.
+
+### New mandatory checks in `test_discover`
+
+`discover` must emit exactly one `CATALOG` message, and the catalog must pass these checks, or the test fails:
+
+- The catalog contains at least one stream.
+- No two streams share the same namespace and name.
+- Every stream declares at least one supported sync mode.
+- Stream schemas contain no unresolved `$ref`.
+- Stream schemas do not use the `allOf` or `not` keywords.
+- No stream schema sets `additionalProperties` to `false`.
+
+The test reports every problem it finds in one run, grouped by check.
+
+These checks are reported as a `DiscoveredCatalogWarning` and do not fail the test yet; a later release will enforce them:
+
+- Stream schemas are valid JSON Schema, for the draft they declare in `$schema` (Draft 7 if none).
+- The default cursor field exists in the stream schema.
+- Every primary key field exists in the stream schema.
+- No primary key field is typed as an object or an array.
+- Stream schemas stay within the Airbyte type system (top-level object, known `airbyte_type` values on compatible types, temporal formats on strings).
+
+To make the warnings fail the test now, run `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning`, or pass `-W error::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning` to `pytest`.
+
+Migration steps: fix the stream schema, primary key or cursor field that the failure or warning names.
+
+Rationale: these checks restore the `TestDiscovery` assertions of the retired Connector Acceptance Tests, so that catalog problems are caught in the connector's own tests instead of in a destination or in a customer's sync.
+
+### `airbyte_secret` marking in the spec tests
+
+`SourceTestSuiteBase.test_spec` and `test_docker_image_build_and_spec` now require exactly one `SPEC` message and lint its `connectionSpecification`. The test fails when:
+
+- a property whose name denotes a credential (such as `api_key`, `client_secret`, `password` or `*_token`) can hold a string or number but is not marked `airbyte_secret: true`;
+- a property is marked `airbyte_secret: true` but its type (boolean, object, array, or a `const`) cannot hold a secret;
+- `airbyte_secret` is not a boolean, such as the string `"true"`;
+- `airbyte_secret: true` sits under `anyOf` or `allOf`, or under a combinator at the top level of the spec, where the CDK's secret filter does not look.
+
+Migration steps: mark the property `airbyte_secret: true`, or move the flag to the property that declares the `anyOf`. If a flagged property holds no secret, set `airbyte_secret: false` on it explicitly; the lint accepts that as a reviewed decision.
+
+### Secret leak check in the `check` tests
+
+`test_check` and `test_docker_image_build_and_check` now fail when an `airbyte_secret` value from the scenario's config, of at least 8 characters and containing a digit, appears in the connector's output: any non-`CONTROL` message, and stderr on the Docker path. The failure names the config path of each leaked secret and where it was found, never the secret itself.
+
+Migration steps: stop printing the value; a `CONNECTION_STATUS` message that the connector builds itself is the usual cause. A leak in a `CONNECTION_STATUS` labeled as built by the CDK's config validation comes from an older CDK in the connector image, which did not mask secrets there; upgrade `airbyte-cdk`.
+
+Rationale: these checks restore the `test_secret_is_properly_marked` assertion of the retired Connector Acceptance Tests, and add the leak check that `test_secret_never_in_the_output` never implemented.
+
+### New mandatory test: `test_docker_image_spec_backward_compatibility`
+
+`DockerConnectorTestSuite.test_docker_image_spec_backward_compatibility` fails when the connector's spec rejects configs that the published version accepted. It replaces the spec half of the `test_backward_compatibility` test of the retired Connector Acceptance Tests (CAT).
+
+The test downloads the `latest` spec of each registry the connector is published to (OSS and Cloud) from `connectors.airbyte.com`, runs `spec` in the image with that registry's deployment mode, and compares the two. Removed properties, newly required properties, added or tightened constraints, narrowed types or enums, removed destination sync modes, moved OAuth output paths, unmarked secrets and `oneOf` branches that overlap existing configs are breaking. Annotations, defaults, relaxed constraints, new optional properties and newly secret fields are compatible.
+
+The test is skipped, rather than failing, when:
+
+- the connector has no published version, or its `dockerImageTag` is older than the published one;
+- the registry cannot be reached after retries. The skip reason and a warning say that the spec was not compared.
+
+The compatible changes, and any waived breaking ones, are reported as a warning in the test run's warnings summary.
+
+Migration steps: when the test fails, do one of the following.
+
+- Make the change backward compatible, for example by keeping the old field or value, or by making a new field optional.
+- Release the change as a breaking change: bump the major version, declare it under `releases.breakingChanges` in `metadata.yaml`, and write a migration guide. The test is waived for every version after the published one, up to the declared one, so a patch on top of a major that is still rolling out is waived too.
+- If a config migration rewrites existing configs into the new shape, or a finding is a false positive, add `backward_compatibility_tests_config: {disable_for_version: "<published version>"}` to an entry of the `spec` section of `acceptance-test-config.yml`. This is the key CAT honored, in the current (`spec.tests`) and the legacy list layout. The waiver applies only while the published version equals the given one, so it expires with the next release. A connector without `acceptance-test-config.yml`, such as one rebuilt on a new base image without a version bump, can add a file that holds only this entry.
+
+Rationale: the platform validates saved configs against the new spec when a version rolls out, so a spec change that rejects them breaks existing connections at upgrade time. CAT caught this before merge; the Standard Tests did not.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.
