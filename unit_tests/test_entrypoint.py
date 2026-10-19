@@ -1094,3 +1094,24 @@ def test_run_discover_with_config_skips_validation_when_check_config_against_spe
     )
 
     assert messages == [_wrap_message(catalog)]
+
+
+def test_run_discover_with_config_validates_config_when_config_free_discover_is_supported(mocker):
+    _mock_message_repository(mocker)
+    source = MockSource()
+    source.check_config_during_discover = False
+    mocker.patch.object(
+        MockSource,
+        "spec",
+        return_value=ConnectorSpecification(
+            connectionSpecification={"type": "object", "required": ["api_key"]}
+        ),
+    )
+    mocker.patch.object(MockSource, "read_config", return_value={})
+    mocker.patch.object(MockSource, "configure", return_value={})
+    discover = mocker.patch.object(MockSource, "discover")
+
+    with pytest.raises(AirbyteTracedException):
+        list(AirbyteEntrypoint(source).run(Namespace(command="discover", config="config_path")))
+
+    discover.assert_not_called()

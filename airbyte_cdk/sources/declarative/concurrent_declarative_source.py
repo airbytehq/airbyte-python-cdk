@@ -984,21 +984,22 @@ class ConcurrentDeclarativeSource(Source):
     def _requires_config_for_discover(self) -> bool:
         """Return whether `discover` needs a config to build this source's catalog.
 
-        A config is required when any stream (including all `ConditionalStreams` branches) uses a
-        `DynamicSchemaLoader`, or when any `dynamic_streams` definition resolves its streams from
-        the API or the config rather than from static parameters.
+        A config is required when the set of streams depends on the config (`ConditionalStreams`,
+        or `dynamic_streams` resolved from the API or the config rather than static parameters), or
+        when any stream schema is fetched from the API (`DynamicSchemaLoader`).
         """
         for dynamic_definition in self._source_config.get("dynamic_streams", []):
             resolver_type = dynamic_definition.get("components_resolver", {}).get("type")
             if resolver_type != "ParametrizedComponentsResolver":
                 return True
 
-        return _contains_component_type(
-            [
-                self._source_config.get("streams", []),
-                self._source_config.get("dynamic_streams", []),
-            ],
-            "DynamicSchemaLoader",
+        stream_definitions = [
+            self._source_config.get("streams", []),
+            self._source_config.get("dynamic_streams", []),
+        ]
+        return any(
+            _contains_component_type(stream_definitions, component_type)
+            for component_type in ("ConditionalStreams", "DynamicSchemaLoader")
         )
 
 

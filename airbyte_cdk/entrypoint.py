@@ -197,7 +197,7 @@ class AirbyteEntrypoint(object):
                     )
                     yield from map(
                         AirbyteEntrypoint.airbyte_message_to_string,
-                        self._discover_without_config(source_spec),
+                        self._discover_without_config(),
                     )
                 elif not parsed_args.config:
                     raise AirbyteTracedException(
@@ -281,19 +281,17 @@ class AirbyteEntrypoint(object):
         self, source_spec: ConnectorSpecification, config: TConfig
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
-        if self.source.check_config_against_spec and self.source.check_config_during_discover:
+        if self.source.check_config_against_spec:
             self.validate_connection(source_spec, config)
         catalog = self.source.discover(self.logger, config)
 
         yield from self._emit_queued_messages(self.source)
         yield AirbyteMessage(type=Type.CATALOG, catalog=catalog)
 
-    def _discover_without_config(
-        self, source_spec: ConnectorSpecification
-    ) -> Iterable[AirbyteMessage]:
+    def _discover_without_config(self) -> Iterable[AirbyteMessage]:
         """Run `discover` with an empty config, for sources that support config-free discover."""
         try:
-            yield from self.discover(source_spec, {})
+            catalog = self.source.discover(self.logger, {})
         except AirbyteTracedException:
             raise
         except Exception as error:
@@ -303,6 +301,9 @@ class AirbyteEntrypoint(object):
                 failure_type=FailureType.config_error,
                 exception=error,
             ) from error
+
+        yield from self._emit_queued_messages(self.source)
+        yield AirbyteMessage(type=Type.CATALOG, catalog=catalog)
 
     def read(
         self, source_spec: ConnectorSpecification, config: TConfig, catalog: Any, state: list[Any]

@@ -124,6 +124,19 @@ def _manifest(
         ),
         pytest.param(
             _manifest(
+                [
+                    {
+                        "type": "ConditionalStreams",
+                        "condition": "{{ config.get('is_sandbox') }}",
+                        "streams": [_stream("sandbox_items", _INLINE_SCHEMA_LOADER)],
+                    }
+                ]
+            ),
+            True,
+            id="conditional_streams",
+        ),
+        pytest.param(
+            _manifest(
                 [_stream("items", _INLINE_SCHEMA_LOADER)],
                 _dynamic_streams(_PARAMETRIZED_RESOLVER, _INLINE_SCHEMA_LOADER),
             ),

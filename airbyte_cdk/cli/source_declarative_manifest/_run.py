@@ -37,6 +37,7 @@ from airbyte_cdk.models import (
     AirbyteTraceMessage,
     ConfiguredAirbyteCatalog,
     ConnectorSpecificationSerializer,
+    FailureType,
     TraceType,
     Type,
 )
@@ -108,6 +109,9 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
             config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
         )
     except Exception as error:
+        is_config_free_discover = args[:1] == ["discover"] and not any(
+            arg.startswith("--config") for arg in args
+        )
         print(
             orjson.dumps(
                 AirbyteMessageSerializer.dump(
@@ -117,8 +121,15 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
                             type=TraceType.ERROR,
                             emitted_at=ab_datetime_now().to_epoch_millis(),
                             error=AirbyteErrorTraceMessage(
-                                message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
+                                message=(
+                                    f"This connector could not run `discover` without a config. Provide one with `--config`. Error: {error}"
+                                    if is_config_free_discover
+                                    else f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}"
+                                ),
                                 stack_trace=traceback.format_exc(),
+                                failure_type=FailureType.config_error
+                                if is_config_free_discover
+                                else None,
                             ),
                         ),
                     )
@@ -222,6 +233,9 @@ def create_declarative_source(
             custom_components_trusted=False,
         )
     except Exception as error:
+        is_config_free_discover = args[:1] == ["discover"] and not any(
+            arg.startswith("--config") for arg in args
+        )
         print(
             orjson.dumps(
                 AirbyteMessageSerializer.dump(
@@ -231,8 +245,15 @@ def create_declarative_source(
                             type=TraceType.ERROR,
                             emitted_at=ab_datetime_now().to_epoch_millis(),
                             error=AirbyteErrorTraceMessage(
-                                message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
+                                message=(
+                                    f"This connector could not run `discover` without a config. Provide one with `--config`. Error: {error}"
+                                    if is_config_free_discover
+                                    else f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}"
+                                ),
                                 stack_trace=traceback.format_exc(),
+                                failure_type=FailureType.config_error
+                                if is_config_free_discover
+                                else None,
                             ),
                         ),
                     )
