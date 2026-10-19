@@ -4,6 +4,7 @@
 
 
 import datetime
+import threading
 from abc import abstractmethod
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, Optional, Union
@@ -40,6 +41,9 @@ class SessionTokenProvider(TokenProvider):
     _next_expiration_time: Optional[AirbyteDateTime] = None
     _token: Optional[str] = None
 
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        self._lock = threading.Lock()
+
     def get_token(self) -> str:
         self._refresh_if_necessary()
         if self._token is None:
@@ -47,8 +51,16 @@ class SessionTokenProvider(TokenProvider):
         return self._token
 
     def _refresh_if_necessary(self) -> None:
-        if self._next_expiration_time is None or self._next_expiration_time < ab_datetime_now():
+        if self.expiration_duration is None:
+            # Without an expiry nothing is cached and every call logs in, so there is nothing to lock
             self._refresh()
+        elif self._token_has_expired():
+            with self._lock:
+                if self._token_has_expired():
+                    self._refresh()
+
+    def _token_has_expired(self) -> bool:
+        return self._next_expiration_time is None or self._next_expiration_time < ab_datetime_now()
 
     def _refresh(self) -> None:
         response = self.login_requester.send_request(
@@ -64,13 +76,16 @@ class SessionTokenProvider(TokenProvider):
         if response is None:
             raise ReadException("Failed to get session token, response got ignored by requester")
         session_token = dpath.get(next(self.decoder.decode(response)), self.session_token_path)
+        # Set the token first: `get_token` reads it without the lock as soon as the expiry is fresh
+        self._token = session_token  # type: ignore # Returned decoded response will be Mapping and therefore session_token will be str or None
         if self.expiration_duration is not None:
             self._next_expiration_time = ab_datetime_now() + self.expiration_duration
-        self._token = session_token  # type: ignore # Returned decoded response will be Mapping and therefore session_token will be str or None
 
 
 @dataclass
 class InterpolatedStringTokenProvider(TokenProvider):
+    """Provides a token by interpolating a string with config values."""
+
     config: Config
     api_token: Union[InterpolatedString, str]
     parameters: Mapping[str, Any]
@@ -80,3 +95,24 @@ class InterpolatedStringTokenProvider(TokenProvider):
 
     def get_token(self) -> str:
         return str(self._token.eval(self.config))
+
+
+@dataclass
+class InterpolatedSessionTokenProvider(TokenProvider):
+    """Provides a token by interpolating a template with the session token.
+
+    This allows flexible token formatting, such as "Token {{ session_token }}"
+    for Django REST Framework APIs that expect "Authorization: Token <value>".
+    """
+
+    config: Config
+    api_token: Union[InterpolatedString, str]
+    session_token_provider: TokenProvider
+    parameters: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        self._token_template = InterpolatedString.create(self.api_token, parameters=self.parameters)
+
+    def get_token(self) -> str:
+        session_token = self.session_token_provider.get_token()
+        return str(self._token_template.eval(self.config, session_token=session_token))

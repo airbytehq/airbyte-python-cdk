@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 import functools
 import logging
 import threading
@@ -18,6 +19,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -29,6 +31,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -38,8 +41,11 @@ def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
 
 
 class CursorField:
-    def __init__(self, cursor_field_key: str) -> None:
+    def __init__(
+        self, cursor_field_key: str, supports_catalog_defined_cursor_field: bool = False
+    ) -> None:
         self.cursor_field_key = cursor_field_key
+        self.supports_catalog_defined_cursor_field = supports_catalog_defined_cursor_field
 
     def extract_value(self, record: Record) -> Any:
         cursor_value = record.data.get(self.cursor_field_key)
@@ -86,6 +92,27 @@ class Cursor(StreamSlicer, ABC):
         """
         yield StreamSlice(partition={}, cursor_slice={})
 
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        This method is used by StateDelegatingStream to validate cursor age against
+        an API's data retention period. Subclasses should implement this method to
+        extract the cursor value from their specific state structure and parse it
+        into a datetime object.
+
+        Returns None if the cursor cannot be extracted or parsed, which will cause
+        StateDelegatingStream to fall back to full refresh (safe default).
+
+        Raises NotImplementedError by default - subclasses must implement this method
+        if they want to support cursor age validation with api_retention_period.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement get_cursor_datetime_from_state. "
+            f"Cursor age validation with api_retention_period is not supported for this cursor type."
+        )
+
 
 class FinalStateCursor(Cursor):
     """Cursor that is used to guarantee at least one state message is emitted for a concurrent stream."""
@@ -131,6 +158,22 @@ class FinalStateCursor(Cursor):
     def should_be_synced(self, record: Record) -> bool:
         return True
 
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Return now() if state indicates a completed full refresh, else None.
+
+        When the state has NO_CURSOR_STATE_KEY: True, it means the previous sync was a
+        completed full refresh. Returning now() indicates the cursor is "current" and
+        within any retention period, so we should use incremental sync.
+
+        For any other state format, return None to indicate this cursor cannot parse it,
+        allowing the incremental cursor to handle the state instead.
+        """
+        if stream_state.get(NO_CURSOR_STATE_KEY):
+            return datetime.datetime.now(datetime.timezone.utc)
+        return None
+
 
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
@@ -152,6 +195,7 @@ class ConcurrentCursor(Cursor):
             slice_range=self._slice_range,
             cursor_granularity=self._cursor_granularity,
             clamping_strategy=self._clamping_strategy,
+            is_compare_strictly=self._is_compare_strictly,
         )
 
     def __init__(
@@ -170,6 +214,7 @@ class ConcurrentCursor(Cursor):
         slice_range: Optional[GapType] = None,
         cursor_granularity: Optional[GapType] = None,
         clamping_strategy: ClampingStrategy = NoClamping(),
+        is_compare_strictly: bool = False,
     ) -> None:
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
@@ -192,6 +237,7 @@ class ConcurrentCursor(Cursor):
         # Flag to track if the logger has been triggered (per stream)
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
+        self._is_compare_strictly = is_compare_strictly
         self._is_ascending_order = True
 
         # A lock is required when closing a partition because updating the cursor's concurrent_state is
@@ -440,20 +486,30 @@ class ConcurrentCursor(Cursor):
     def _split_per_slice_range(
         self, lower: CursorValueType, upper: CursorValueType, upper_is_end: bool
     ) -> Iterable[StreamSlice]:
-        if lower >= upper:
+        if lower > upper or (lower == upper and not self._cursor_granularity):
             return
 
         if self._start and upper < self._start:
             return
 
         lower = max(lower, self._start) if self._start else lower
+        # Clamp first, else a step shorter than the clamping period collapses the first window
+        lower = self._clamping_strategy.clamp(lower)
+        # With a granularity the last window includes upper, so lower == upper is one unit to read,
+        # unless the API rejects start == end. In a gap, the next slice already reads upper.
+        if lower > upper or (lower == upper and (self._is_compare_strictly or not upper_is_end)):
+            return
         if not self._slice_range or self._evaluate_upper_safely(lower, self._slice_range) >= upper:
-            clamped_lower = self._clamping_strategy.clamp(lower)
-            clamped_upper = self._clamping_strategy.clamp(upper)
+            # With a granularity upper is the last unit to read: clamping it would read past the end
+            clamped_upper = (
+                upper
+                if upper_is_end and self._cursor_granularity
+                else self._clamping_strategy.clamp(upper)
+            )
             start_value, end_value = (
-                (clamped_lower, clamped_upper - self._cursor_granularity)
+                (lower, clamped_upper - self._cursor_granularity)
                 if self._cursor_granularity and not upper_is_end
-                else (clamped_lower, clamped_upper)
+                else (lower, clamped_upper)
             )
             yield StreamSlice(
                 partition={},
@@ -473,12 +529,14 @@ class ConcurrentCursor(Cursor):
                 current_upper_boundary = min(
                     self._evaluate_upper_safely(current_lower_boundary, self._slice_range), upper
                 )
-                has_reached_upper_boundary = current_upper_boundary >= upper
-
                 clamped_upper = (
                     self._clamping_strategy.clamp(current_upper_boundary)
                     if current_upper_boundary != upper
                     else current_upper_boundary
+                )
+                # A boundary clamped onto upper makes this the last window, else upper is dropped
+                has_reached_upper_boundary = (
+                    current_upper_boundary >= upper or clamped_upper == upper
                 )
                 clamped_lower = self._clamping_strategy.clamp(current_lower_boundary)
                 if clamped_lower >= clamped_upper:
@@ -503,7 +561,7 @@ class ConcurrentCursor(Cursor):
                     },
                 )
                 current_lower_boundary = clamped_upper
-                if current_upper_boundary >= upper:
+                if has_reached_upper_boundary:
                     stop_processing = True
 
     def _evaluate_upper_safely(self, lower: CursorValueType, step: GapType) -> CursorValueType:
@@ -529,7 +587,18 @@ class ConcurrentCursor(Cursor):
         except ValueError:
             self._log_for_record_without_cursor_value()
             return True
-        return self.start <= record_cursor_value <= self._end_provider()
+        return self._lowest_cursor_value_to_sync() <= record_cursor_value <= self._end_provider()
+
+    def _lowest_cursor_value_to_sync(self) -> CursorValueType:
+        # Keep the records the lookback window re-reads, never below the configured start. If the state is below the
+        # configured start, keep records from the state rather than raising the floor to the configured start.
+        if not self._lookback_window:
+            return self.start
+        try:
+            lower = self.start - self._lookback_window
+        except OverflowError:
+            return self.start
+        return max(lower, min(self.start, self._start)) if self._start else lower
 
     def _log_for_record_without_cursor_value(self) -> None:
         if not self._should_be_synced_logger_triggered:
@@ -565,3 +634,137 @@ class ConcurrentCursor(Cursor):
             )
         else:
             return stream_slice
+
+    def split_request_window(
+        self, stream_slice: StreamSlice, min_split_window: Optional[datetime.timedelta] = None
+    ) -> Optional[List[StreamSlice]]:
+        """
+        Split `stream_slice` in half along this cursor's own boundary fields, granularity, and output format.
+
+        Returns `None` when the slice cannot be split any further: either it spans at most one
+        `cursor_granularity` unit already (the floor), it is already at or below `min_split_window` (a
+        connector-configured floor independent of and typically looser than `cursor_granularity`), the
+        boundaries are reversed, or no `cursor_granularity` was configured at all (there is then no way to know
+        the smallest addressable unit, or how to keep two children from overlapping at their shared edge).
+        Raises `AirbyteTracedException` instead if a boundary is missing or unparseable: that is a bug in how
+        the slice was produced, not the API rejecting a window, so it must not be reported as one. This is the
+        implementation `SimpleRetriever.request_window_splitter` binds to (see
+        `airbyte_cdk.sources.declarative.retrievers.simple_retriever`) that reuses the same
+        parsing/formatting/comparison operations `_split_per_slice_range` already relies on, so it works for
+        any `CursorValueType`/`GapType` pair this cursor was built with (datetime/timedelta, or int/int),
+        without a second, duplicate implementation of that logic living outside the cursor.
+        """
+        if not self._cursor_granularity:
+            return None
+
+        start_field, end_field = self._slice_boundary_fields_wrapper
+        try:
+            start_value = self._connector_state_converter.parse_value(
+                stream_slice.cursor_slice[start_field]
+            )
+            end_value = self._connector_state_converter.parse_value(
+                stream_slice.cursor_slice[end_field]
+            )
+        except (KeyError, ValueError, TypeError) as exception:
+            # A missing or unparseable boundary means this slice was produced (or passed in) wrong - a bug in
+            # slice generation, not something the API did. Raising here, rather than returning `None` (which
+            # `SimpleRetriever` reports as "the API kept rejecting..."), keeps that distinction visible instead
+            # of blaming the API for our own state.
+            raise AirbyteTracedException(
+                internal_message=(
+                    f"Cannot split {stream_slice}: boundary field {start_field!r} or {end_field!r} is missing "
+                    f"or not parseable: {exception}"
+                ),
+                message=(
+                    f"Stream {self._stream_name} produced a request window with a missing or invalid "
+                    f"{start_field!r}/{end_field!r} boundary and could not split it further."
+                ),
+                failure_type=FailureType.system_error,
+            ) from exception
+
+        if start_value >= end_value:
+            # Reversed or degenerate boundaries: nothing safe to split.
+            return None
+
+        span = end_value - start_value  # type: ignore[operator]  # concretely a GapType (timedelta/int) at runtime
+        if min_split_window is not None and span <= min_split_window:  # type: ignore[operator]
+            return None
+
+        total_units = span // self._cursor_granularity + 1  # type: ignore[operator]  # inclusive count of granularity units
+        if total_units <= 1:
+            # Already at the minimum granularity and still rejected; nothing left to split.
+            return None
+
+        half_units = total_units // 2
+        first_end = (
+            start_value + (half_units * self._cursor_granularity) - self._cursor_granularity  # type: ignore[operator]
+        )
+        second_start = first_end + self._cursor_granularity
+
+        if not (start_value <= first_end < second_start <= end_value):
+            # No-progress guard, independent of the granularity check above: refuse to return children that
+            # are not strictly ordered and non-degenerate, rather than risk an identical or overlapping split.
+            return None
+
+        return [
+            StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    start_field: self._connector_state_converter.output_format(start_value),
+                    end_field: self._connector_state_converter.output_format(first_end),
+                },
+                extra_fields=stream_slice.extra_fields,
+            ),
+            StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    start_field: self._connector_state_converter.output_format(second_start),
+                    end_field: self._connector_state_converter.output_format(end_value),
+                },
+                extra_fields=stream_slice.extra_fields,
+            ),
+        ]
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        For concurrent cursors, the state can be in two formats:
+        1. Sequential/legacy format: {cursor_field: cursor_value}
+        2. Concurrent format: {state_type: "date-range", slices: [...]}
+
+        Returns the cursor datetime if present and parseable, otherwise returns None.
+        """
+        # Check if state is in concurrent format (need to convert to dict for type compatibility)
+        mutable_state: MutableMapping[str, Any] = dict(stream_state)
+        if self._connector_state_converter.is_state_message_compatible(mutable_state):
+            slices = stream_state.get("slices", [])
+            if not slices:
+                return None
+            # Get the most recent cursor value from the first slice (after merging)
+            first_slice = slices[0]
+            cursor_value = first_slice.get(
+                self._connector_state_converter.MOST_RECENT_RECORD_KEY
+            ) or first_slice.get(self._connector_state_converter.END_KEY)
+            if not cursor_value:
+                return None
+            try:
+                parsed_value = self._connector_state_converter.parse_value(cursor_value)
+                if isinstance(parsed_value, datetime.datetime):
+                    return parsed_value
+                return None
+            except (ValueError, TypeError):
+                return None
+
+        # Sequential/legacy format: {cursor_field: cursor_value}
+        cursor_value = stream_state.get(self._cursor_field.cursor_field_key)
+        if not cursor_value:
+            return None
+        try:
+            parsed_value = self._connector_state_converter.parse_value(cursor_value)
+            if isinstance(parsed_value, datetime.datetime):
+                return parsed_value
+            return None
+        except (ValueError, TypeError):
+            return None

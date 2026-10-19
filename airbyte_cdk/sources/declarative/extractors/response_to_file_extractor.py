@@ -27,9 +27,14 @@ class ResponseToFileExtractor(RecordExtractor):
 
     Eventually, we want to support multiple file type by re-using the file based CDK parsers if possible. However, the lift is too high for
     a first iteration so we will only support CSV parsing using pandas as salesforce and sendgrid were doing.
+
+    By default, pandas interprets strings such as "NA", "N/A", "null" and "NaN" as missing values and converts them to null. When
+    ``preserve_na_values`` is True, these strings are kept as-is (only empty cells are treated as null). This is opt-in to avoid changing
+    behavior for existing connectors.
     """
 
     parameters: InitVar[Mapping[str, Any]]
+    preserve_na_values: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
@@ -136,11 +141,20 @@ class ResponseToFileExtractor(RecordExtractor):
 
         try:
             with open(path, "r", encoding=file_encoding) as data:
+                # When preserving NA values, disable pandas' default NA parsing so strings like "NA"/"N/A" are kept as-is,
+                # and explicitly map empty cells to None. Otherwise, keep the historical behavior where pandas converts its
+                # default NA tokens (including empty cells) to NaN, which we then map to None.
+                na_replacements = {nan: None, "": None} if self.preserve_na_values else {nan: None}
                 chunks = pd.read_csv(
-                    data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object
+                    data,
+                    chunksize=chunk_size,
+                    iterator=True,
+                    dialect="unix",
+                    dtype=object,
+                    keep_default_na=not self.preserve_na_values,
                 )
                 for chunk in chunks:
-                    chunk = chunk.replace({nan: None}).to_dict(orient="records")
+                    chunk = chunk.replace(na_replacements).to_dict(orient="records")
                     for row in chunk:
                         yield row
         except pd.errors.EmptyDataError as e:

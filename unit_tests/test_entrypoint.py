@@ -46,6 +46,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 
 class MockSource(Source):
@@ -855,6 +856,153 @@ def test_given_serialization_error_using_orjson_then_fallback_on_json(
     # There will be multiple messages here because the fixture `entrypoint` sets a control message. We only care about records here
     record_messages = list(filter(lambda message: "RECORD" in message, messages))
     assert len(record_messages) == 2
+
+
+def test_given_non_json_serializable_type_then_raise_traced_exception(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """Test that types which both orjson and json cannot serialize (like complex) raise AirbyteTracedException to prevent data corruption."""
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(stream="stream", data={"value": complex(1, 2)}, emitted_at=1),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record])
+
+    with pytest.raises(AirbyteTracedException, match="failed to be serialized to JSON"):
+        list(entrypoint.run(parsed_args))
+
+
+def test_memory_failfast_flushes_queued_state_before_raising(mocker):
+    """Record emitted → check_memory_usage raises → queued STATE flushed with recordCount → exception propagates."""
+    queued_state = AirbyteMessage(
+        type=Type.STATE,
+        state=AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="users", namespace=None),
+                stream_state=AirbyteStateBlob({"cursor": "abc123"}),
+            ),
+        ),
+    )
+
+    message_repository = MagicMock()
+    message_repository.consume_queue.side_effect = [
+        [queued_state],  # flush during fail-fast exception handling
+        [],  # normal end-of-loop flush (not reached)
+    ]
+    mocker.patch.object(
+        MockSource,
+        "message_repository",
+        new_callable=mocker.PropertyMock,
+        return_value=message_repository,
+    )
+
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(stream="users", data={"id": 1}, emitted_at=1),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record])
+
+    fail_fast_exc = AirbyteTracedException(
+        message="Memory usage exceeded critical threshold (98%)",
+        failure_type=FailureType.system_error,
+    )
+
+    entrypoint_obj = AirbyteEntrypoint(MockSource())
+    mocker.patch.object(
+        entrypoint_obj._memory_monitor, "check_memory_usage", side_effect=fail_fast_exc
+    )
+
+    spec = ConnectorSpecification(connectionSpecification={})
+    config: dict[str, str] = {}
+
+    # Call read() directly to get AirbyteMessage objects (not serialised strings)
+    gen = entrypoint_obj.read(spec, config, {}, [])
+
+    # 1. First yielded message is the RECORD
+    first = next(gen)
+    assert first.type == Type.RECORD
+    assert first.record.stream == "users"  # type: ignore[union-attr]
+
+    # 2. Second yielded message is the queued STATE (flushed before exception)
+    second = next(gen)
+    assert second.type == Type.STATE
+    assert second.state.stream.stream_state == AirbyteStateBlob({"cursor": "abc123"})  # type: ignore[union-attr]
+
+    # 3. The STATE passed through handle_record_counts, so sourceStats.recordCount == 1.0
+    assert second.state.sourceStats is not None  # type: ignore[union-attr]
+    assert second.state.sourceStats.recordCount == 1.0  # type: ignore[union-attr]
+
+    # 4. Next iteration re-raises the AirbyteTracedException
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        next(gen)
+    assert exc_info.value is fail_fast_exc
+
+
+@pytest.fixture
+def reset_secret_filter():
+    yield
+    update_secrets([])
+
+
+_PASSWORD_SPEC = ConnectorSpecification(
+    connectionSpecification={
+        "type": "object",
+        "properties": {
+            "password": {"type": "string", "pattern": "^[a-z]+$", "airbyte_secret": True}
+        },
+    }
+)
+
+
+@pytest.mark.parametrize("config_mock", [{"password": "abcd1234"}], indirect=True)
+def test_check_masks_secrets_in_the_config_validation_error(
+    entrypoint: AirbyteEntrypoint, mocker, config_mock, reset_secret_filter
+):
+    """jsonschema quotes the rejected value, so the CONNECTION_STATUS must mask it."""
+    mocker.patch.object(MockSource, "spec", return_value=_PASSWORD_SPEC)
+    check_mock = mocker.patch.object(MockSource, "check")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    check_mock.assert_not_called()
+    status_message = orjson.loads(messages[-1])["connectionStatus"]["message"]
+    assert status_message.startswith("Config validation error:")
+    assert "abcd1234" not in status_message
+    assert "****" in status_message
+
+
+@freezegun.freeze_time("1970-01-01T00:00:00.001Z")
+@pytest.mark.parametrize("config_mock", [{"password": "secretpw"}], indirect=True)
+def test_check_masks_secrets_in_a_config_error_raised_by_the_connector(
+    entrypoint: AirbyteEntrypoint, mocker, config_mock, reset_secret_filter
+):
+    spec = ConnectorSpecification(
+        connectionSpecification={
+            "type": "object",
+            "properties": {"password": {"type": "string", "airbyte_secret": True}},
+        }
+    )
+    mocker.patch.object(MockSource, "spec", return_value=spec)
+    exception = AirbyteTracedException(
+        message="Login failed for secretpw",
+        internal_message="401 for secretpw",
+        failure_type=FailureType.config_error,
+    )
+    mocker.patch.object(MockSource, "check", side_effect=exception)
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert "secretpw" not in "".join(messages)
+    assert orjson.loads(messages[-1])["connectionStatus"]["message"] == "Login failed for ****"
+
 
 def test_run_discover_without_config_when_supported(mocker):
     """Test that discover works without config when check_config_during_discover is False."""

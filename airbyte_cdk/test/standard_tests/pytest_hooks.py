@@ -17,11 +17,25 @@ from typing import Literal, cast
 
 import pytest
 
+from airbyte_cdk.test.models.scenario import ConnectorTestScenario
+
 
 @pytest.fixture
 def connector_image_override(request: pytest.FixtureRequest) -> str | None:
     """Return the value of --connector-image, or None if not set."""
     return cast(str | None, request.config.getoption("--connector-image"))
+
+
+@pytest.fixture
+def connector_base_image_override(request: pytest.FixtureRequest) -> str | None:
+    """Return the value of --connector-base-image, or None if not set.
+
+    When set, the connector image is built `FROM` this base image instead of the
+    `baseImage` declared in metadata.yaml. This lets the image tests exercise a
+    locally-built `source-declarative-manifest` image (e.g. one built from the current
+    CDK branch) rather than the published base image's CDK.
+    """
+    return cast(str | None, request.config.getoption("--connector-base-image"))
 
 
 @pytest.fixture
@@ -117,6 +131,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Use this pre-built connector Docker image instead of building one.",
     )
     parser.addoption(
+        "--connector-base-image",
+        action="store",
+        default=None,
+        help=(
+            "Build the connector image `FROM` this base image instead of the `baseImage` "
+            "declared in metadata.yaml. Useful for testing against a locally-built "
+            "`source-declarative-manifest` image built from the current CDK branch. "
+            "The image must be visible to your default buildx builder; locally-built images "
+            "are only resolved by the default `docker` driver, not `docker-container` builders."
+        ),
+    )
+    parser.addoption(
         "--read-from-streams",
         action="store",
         default=None,
@@ -185,5 +211,24 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         metafunc.parametrize(
             "scenario",
             parametrized_scenarios,
-            ids=[str(scenario) for scenario in scenarios],
+            ids=_scenario_test_ids(scenarios),
         )
+
+
+def _scenario_test_ids(scenarios: list[ConnectorTestScenario]) -> list[str]:
+    """Return unique, human-readable pytest IDs for the given scenarios.
+
+    Scenario IDs are derived from the config file stem, so configs in different directories
+    (e.g. `integration_tests/config.json` and `secrets/config.json`) collide. Where they do,
+    we qualify the ID with the config's parent directory so failures name the config that
+    failed. Note this only affects the displayed test ID, not `ConnectorTestScenario.id`,
+    which scenario selection (`--read-scenarios`) matches against.
+    """
+    labels = [str(scenario) for scenario in scenarios]
+    duplicated = {label for label in labels if labels.count(label) > 1}
+    return [
+        f"{scenario.config_path.parent.name}/{label}"
+        if label in duplicated and scenario.config_path is not None
+        else label
+        for scenario, label in zip(scenarios, labels)
+    ]

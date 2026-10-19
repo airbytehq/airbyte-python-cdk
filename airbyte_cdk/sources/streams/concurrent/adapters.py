@@ -25,7 +25,7 @@ from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 from airbyte_cdk.sources.streams.concurrent.helpers import (
@@ -97,7 +97,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                 namespace=stream.namespace,
                 json_schema=stream.get_json_schema(),
                 primary_key=pk,
-                cursor_field=cursor_field,
+                cursor_field=CursorField(cursor_field_key=cursor_field) if cursor_field else None,
                 logger=logger,
                 cursor=cursor,
             ),
@@ -195,6 +195,11 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     @property
     def cursor(self) -> Optional[Cursor]:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
         return self._cursor
+
+    @property
+    def block_simultaneous_read(self) -> str:
+        """Returns the blocking group name from the underlying stream"""
+        return self._abstract_stream.block_simultaneous_read
 
     # FIXME the lru_cache seems to be mostly there because of typing issue
     @lru_cache(maxsize=None)

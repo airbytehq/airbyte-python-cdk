@@ -84,6 +84,9 @@ def create_source(
         migrate_manifest=should_migrate_manifest(config),
         normalize_manifest=should_normalize_manifest(config),
         limits=limits,
+        # The manifest is supplied by the Connector Builder caller rather than bundled in a
+        # connector image, so any custom components it references are untrusted code.
+        custom_components_trusted=False,
     )
 
 

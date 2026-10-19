@@ -15,6 +15,23 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     This migration is responsible for migrating the `request_body_json` and `request_body_data` keys
     to a unified `request_body` key in the HttpRequester component.
     The migration will copy the value of either original key to `request_body` and remove the original key.
+
+    **String-valued `request_body_json` is intentionally left unmigrated.**
+
+    When `request_body_json` is a string (e.g. a Jinja template like
+    `'{"nested": {"key": "{{ config.option }}"}}'`), it is NOT converted to a
+    `RequestBodyPlainText` or any other typed `request_body` object. This is because:
+
+    1. The `InterpolatedRequestOptionsProvider` already handles string `request_body_json`
+       natively via `InterpolatedNestedRequestInputProvider`, which interpolates the
+       template and parses the result into a dict using `ast.literal_eval`, then sends
+       it as a JSON body.
+    2. Converting it to `RequestBodyPlainText` would route it to `request_body_data`
+       (raw string body) instead of `request_body_json` (JSON body), breaking connectors
+       that rely on the body being sent as JSON with the correct Content-Type header.
+    3. We cannot convert it to `RequestBodyJsonObject` because migrations run before
+       interpolation, so Jinja templates have not been resolved yet and the string
+       cannot be parsed into a dict at migration time.
     """
 
     component_type = "HttpRequester"
@@ -26,9 +43,14 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     replacement_key = "request_body"
 
     def should_migrate(self, manifest: ManifestType) -> bool:
-        return manifest[TYPE_TAG] == self.component_type and any(
-            key in list(manifest.keys()) for key in self.original_keys
-        )
+        if manifest[TYPE_TAG] != self.component_type:
+            return False
+        for key in self.original_keys:
+            if key in manifest:
+                if key == self.body_json_key and isinstance(manifest[key], str):
+                    continue
+                return True
+        return False
 
     def migrate(self, manifest: ManifestType) -> None:
         for key in self.original_keys:
@@ -38,21 +60,33 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
                 self._migrate_body_data(manifest, key)
 
     def validate(self, manifest: ManifestType) -> bool:
-        return self.replacement_key in manifest and all(
-            key not in manifest for key in self.original_keys
+        has_replacement = self.replacement_key in manifest
+        has_unmigrated = any(
+            key in manifest
+            for key in self.original_keys
+            if not (key == self.body_json_key and isinstance(manifest.get(key), str))
         )
+        has_string_json = self.body_json_key in manifest and isinstance(
+            manifest[self.body_json_key], str
+        )
+        if has_string_json:
+            return not has_unmigrated
+        return has_replacement and not has_unmigrated
 
     def _migrate_body_json(self, manifest: ManifestType, key: str) -> None:
         """
         Migrate the value of the request_body_json.
+
+        String values are left as-is (not migrated) because they are Jinja templates
+        that will be interpolated and parsed into dicts at runtime by
+        InterpolatedNestedRequestInputProvider. See class docstring for details.
         """
         query_key = "query"
-        text_type = "RequestBodyPlainText"
         graph_ql_type = "RequestBodyGraphQL"
         json_object_type = "RequestBodyJsonObject"
 
         if isinstance(manifest[key], str):
-            self._migrate_value(manifest, key, text_type)
+            return
         elif isinstance(manifest[key], dict):
             if isinstance(manifest[key].get(query_key), str):
                 self._migrate_value(manifest, key, graph_ql_type)

@@ -1,12 +1,14 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.models import (
+    CustomPartitionRouter,
     DatetimeBasedCursor,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig
 
@@ -34,7 +36,9 @@ class LegacyToPerPartitionStateMigration(StateMigration):
 
     def __init__(
         self,
-        partition_router: SubstreamPartitionRouter,
+        partition_router: Union[
+            SubstreamPartitionRouter, UnionPartitionRouter, CustomPartitionRouter
+        ],
         cursor: DatetimeBasedCursor,
         config: Mapping[str, Any],
         parameters: Mapping[str, Any],
@@ -44,14 +48,22 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         self._config = config
         self._parameters = parameters
         self._partition_key_field = InterpolatedString.create(
-            self._get_partition_field(self._partition_router), parameters=self._parameters
+            self._get_partition_field(partition_router), parameters=self._parameters
         ).eval(self._config)
         self._cursor_field = InterpolatedString.create(
             self._cursor.cursor_field, parameters=self._parameters
         ).eval(self._config)
 
-    def _get_partition_field(self, partition_router: SubstreamPartitionRouter) -> str:
-        parent_stream_config = partition_router.parent_stream_configs[0]
+    def _get_partition_field(
+        self,
+        partition_router: Union[
+            SubstreamPartitionRouter, UnionPartitionRouter, CustomPartitionRouter
+        ],
+    ) -> str:
+        if isinstance(partition_router, UnionPartitionRouter):
+            return partition_router.partition_field
+
+        parent_stream_config = partition_router.parent_stream_configs[0]  # type: ignore # custom partition routers are expected to expose parent_stream_configs
 
         # Retrieve the partition field with a condition, as properties are returned as a dictionary for custom components.
         partition_field = (
@@ -66,11 +78,14 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         if _is_already_migrated(stream_state):
             return False
 
-        # There is exactly one parent stream
-        number_of_parent_streams = len(self._partition_router.parent_stream_configs)  # type: ignore # custom partition will introduce this attribute if needed
-        if number_of_parent_streams != 1:
-            # There should be exactly one parent stream
-            return False
+        # UnionPartitionRouter has no parent_stream_configs; its partitions are already
+        # normalized to a single partition field so the parent stream check does not apply.
+        if not isinstance(self._partition_router, UnionPartitionRouter):
+            # There is exactly one parent stream
+            number_of_parent_streams = len(self._partition_router.parent_stream_configs)  # type: ignore # custom partition will introduce this attribute if needed
+            if number_of_parent_streams != 1:
+                # There should be exactly one parent stream
+                return False
         """
         The expected state format is
         "<parent_key_id>" : {

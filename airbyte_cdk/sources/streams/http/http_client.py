@@ -4,6 +4,7 @@
 
 import logging
 import os
+import threading
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -42,6 +43,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -50,6 +54,18 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitRequiredException,
+)
+
+# Imported from the leaf module rather than the package: `protocols` pulls in nothing from the
+# CDK, so this import cannot cycle no matter what else lands in `requests_native_auth` -- an
+# authenticator there needing `HttpClient` (as the declarative one does) stays safe.
+from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
+    ResponseAwareAuthenticator,
+    TokenRotatingAuthenticator,
+)
+from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -58,51 +74,79 @@ from airbyte_cdk.utils.stream_status_utils import (
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+# Backward-compatible deprecated alias. This class was removed in PR #927 but is still
+# imported by connectors in the airbyte monorepo. Keep as a simple alias to
+# AirbyteTracedException until all downstream usages have been migrated.
+MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
+
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
     """
-    con.execute can lead to `sqlite3.InterfaceError: bad parameter or other API misuse`. There was a fix implemented
-    [here](https://github.com/requests-cache/requests-cache/commit/5ca6b9cdcb2797dd2fed485872110ccd72aee55d#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaL330-R332)
-    but there is still no official releases of requests_cache that this is part of. Hence, we will monkeypatch it for now.
+    requests_cache shares one sqlite3 connection between threads but only takes `self._lock` for
+    writes. A read that races another thread on that connection can return an empty value
+    (`EOFError: Ran out of input`), raise that thread's result code (`sqlite3.DatabaseError: no more
+    rows available`) or, when SQLite is not built in serialized mode, crash the interpreter. Reads
+    take the lock too, until requests_cache locks them itself.
     """
-    with self.connection() as con:
+    with self._lock, self.connection() as con:
         # Using placeholders here with python 3.12+ and concurrency results in the error:
         # sqlite3.InterfaceError: bad parameter or other API misuse
         cur = con.execute(f"SELECT value FROM {self.table_name} WHERE key='{key}'")
         row = cur.fetchone()
         cur.close()
-        if not row:
-            raise KeyError(key)
+    if not row:
+        raise KeyError(key)
 
-        return self.deserialize(key, row[0])
+    return self.deserialize(key, row[0])
 
 
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
 
+# Every cache backend HttpClient creates uses this lock. Without REQUEST_CACHE_PATH they all share
+# one in-memory database, where a connection using a table another one is writing fails with
+# `database table is locked` instead of waiting.
+# ponytail: one lock per process, use one lock per sqlite path if contention ever shows
+_SQLITE_CACHE_LOCK = threading.RLock()
 
-class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
-    """
-    Before the migration to the HttpClient in low-code, the exception raised was
-    [ReadException](https://github.com/airbytehq/airbyte/blob/8fdd9818ec16e653ba3dd2b167a74b7c07459861/airbyte-cdk/python/airbyte_cdk/sources/declarative/requesters/http_requester.py#L566).
-    This has been moved to a AirbyteTracedException. The printing on this is questionable (AirbyteTracedException string representation
-    shows the internal_message and not the message). We have already discussed moving the AirbyteTracedException string representation to
-    `message` but the impact is unclear and hard to quantify so we will do it here only for now.
-    """
 
-    def __str__(self) -> str:
-        if self.message:
-            return self.message
-        elif self.internal_message:
-            return self.internal_message
-        return ""
+def _as_auxiliary_request_log(
+    log_message: Any, title: Optional[str] = None, description: Optional[str] = None
+) -> Any:
+    """
+    Flag an already-formatted request/response log as an auxiliary request.
+
+    The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
+    pages, so a request that will not produce a page has to be marked here or it inflates that count. The
+    Builder also labels its side panel from the log's `title` and `description`, which the formatter filled
+    with the wording of an ordinary page, so a caller that knows why the request is auxiliary passes its own
+    and the panel does not read as a successful page fetch. The log formatter is connector-supplied and only
+    the CDK's own one is guaranteed to have an `http` object, hence the defensive check.
+    """
+    if isinstance(log_message, dict):
+        http = log_message.get("http")
+        if isinstance(http, dict):
+            http["is_auxiliary"] = True
+            if title is not None:
+                http["title"] = title
+            if description is not None:
+                http["description"] = description
+    return log_message
 
 
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
-    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED}
+    # Backoff used in place of a rate-limit wait when another credential can serve the retry.
+    # Kept non-zero so a misreporting authenticator degrades to a slow retry, not a hot loop
+    # (the retry handler adds a second on top of whatever is returned).
+    TOKEN_ROTATION_BACKOFF: float = 0.1
+    _ACTIONS_TO_RETRY_ON = {
+        ResponseAction.RETRY,
+        ResponseAction.RATE_LIMITED,
+        ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+    }
 
     def __init__(
         self,
@@ -117,6 +161,8 @@ class HttpClient:
         error_message_parser: Optional[ErrorMessageParser] = None,
         disable_retries: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        request_timeout: Optional[Union[float, Tuple[Optional[float], Optional[float]]]] = None,
+        use_tcp_keepalive: bool = False,
     ):
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
@@ -125,12 +171,21 @@ class HttpClient:
         else:
             self._use_cache = use_cache
             self._session = self._request_session()
-            self._session.mount(
-                "https://",
-                requests.adapters.HTTPAdapter(
-                    pool_connections=MAX_CONNECTION_POOL_SIZE, pool_maxsize=MAX_CONNECTION_POOL_SIZE
-                ),
-            )
+            if use_tcp_keepalive:
+                tcp_keepalive_adapter = TcpKeepaliveHTTPAdapter(
+                    pool_connections=MAX_CONNECTION_POOL_SIZE,
+                    pool_maxsize=MAX_CONNECTION_POOL_SIZE,
+                )
+                self._session.mount("https://", tcp_keepalive_adapter)
+                self._session.mount("http://", tcp_keepalive_adapter)
+            else:
+                self._session.mount(
+                    "https://",
+                    requests.adapters.HTTPAdapter(
+                        pool_connections=MAX_CONNECTION_POOL_SIZE,
+                        pool_maxsize=MAX_CONNECTION_POOL_SIZE,
+                    ),
+                )
         if isinstance(authenticator, AuthBase):
             self._session.auth = authenticator
         self._logger = logger
@@ -144,8 +199,11 @@ class HttpClient:
             self._backoff_strategies = [DefaultBackoffStrategy()]
         self._error_message_parser = error_message_parser or JsonErrorMessageParser()
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
+        self._token_refresh_outcomes: Dict[requests.PreparedRequest, bool] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
+        self._authenticator_update_failed = False
+        self._request_timeout = request_timeout
 
     @property
     def cache_filename(self) -> str:
@@ -177,7 +235,10 @@ class HttpClient:
             # * https://github.com/requests-cache/requests-cache/commit/7fa89ffda300331c37d8fad7f773348a3b5b0236#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaR238
             # * https://github.com/requests-cache/requests-cache/commit/7fa89ffda300331c37d8fad7f773348a3b5b0236#diff-2e7f95b7d7be270ff1a8118f817ea3e6663cdad273592e536a116c24e6d23c18R164-R168
             # * `If the application running SQLite crashes, the data will be safe, but the database [might become corrupted](https://www.sqlite.org/howtocorrupt.html#cfgerr) if the operating system crashes or the computer loses power before that data has been written to the disk surface.` in [this description](https://www.sqlite.org/pragma.html#pragma_synchronous).
-            backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
+            # The backend creates its tables when built, so build it under the lock too
+            with _SQLITE_CACHE_LOCK:
+                backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
+                backend.responses._lock = backend.redirects._lock = _SQLITE_CACHE_LOCK
             return CachedLimiterSession(
                 cache_name=sqlite_path,
                 backend=backend,
@@ -306,14 +367,82 @@ class HttpClient:
 
             return response
         except BaseBackoffException as e:
-            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
-            raise MessageRepresentationAirbyteTracedErrors(
+            self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
+
+            is_rate_limited = (
+                isinstance(e.response, requests.Response)
+                and e.response.status_code == requests.codes.too_many_requests
+            )
+
+            if is_rate_limited:
+                raise AirbyteTracedException(
+                    internal_message=f"Rate limit retry budget exhausted. Last exception: {e}",
+                    message="API rate limit exceeded.",
+                    failure_type=FailureType.transient_error,
+                    exception=e,
+                    stream_descriptor=StreamDescriptor(name=self._name),
+                )
+
+            raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
                 message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
                 failure_type=e.failure_type or FailureType.system_error,
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),
             )
+
+    def _can_retry_on_another_token(self, request: requests.PreparedRequest) -> bool:
+        """Whether the authenticator can serve this request from a different credential now.
+
+        Opted into by implementing `TokenRotatingAuthenticator`.
+        """
+        authenticator = getattr(self._session, "auth", None)
+        if not isinstance(authenticator, TokenRotatingAuthenticator):
+            return False
+        try:
+            return bool(authenticator.has_alternative_token(request))
+        except Exception:
+            # Falling back to the computed wait is always safe, so never fail a retry over this.
+            self._logger.debug(
+                "Authenticator failed to report credential availability", exc_info=True
+            )
+            return False
+
+    def _update_authenticator_from_response(
+        self, request: requests.PreparedRequest, response: requests.Response
+    ) -> None:
+        """Let a quota-tracking authenticator reconcile its state against the server.
+
+        Authenticators only ever see requests, so an authenticator that tracks per-token quota
+        has no way to learn that the server disagrees with its local bookkeeping. This is the
+        feedback channel, mirroring what `LimiterMixin.send` does for the API budget.
+
+        Opted into by implementing `ResponseAwareAuthenticator`.
+        """
+        authenticator = getattr(self._session, "auth", None)
+        if not isinstance(authenticator, ResponseAwareAuthenticator):
+            return
+        if getattr(response, "from_cache", False):
+            # A replayed cached response carries the rate-limit headers from whenever it was
+            # first fetched and consumed no quota of its own.
+            return
+        try:
+            authenticator.update_from_response(request, response)
+        except Exception:
+            # Quota bookkeeping must never turn an otherwise fine response into a failure. Warn
+            # once so a persistently broken update -- which silently degrades the connector back
+            # to single-token behaviour -- is at least diagnosable from default-level logs.
+            if not self._authenticator_update_failed:
+                self._authenticator_update_failed = True
+                self._logger.warning(
+                    "Authenticator failed to update quota state from a response; token rotation "
+                    "may fall back to local counters only. Further occurrences log at debug.",
+                    exc_info=True,
+                )
+            else:
+                self._logger.debug(
+                    "Authenticator failed to update quota state from response", exc_info=True
+                )
 
     def _send(
         self,
@@ -337,10 +466,16 @@ class HttpClient:
         response: Optional[requests.Response] = None
         exc: Optional[requests.RequestException] = None
 
+        if self._request_timeout is not None and "timeout" not in request_kwargs:
+            request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
+
         try:
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
             exc = e
+
+        if response is not None:
+            self._update_authenticator_from_response(request, response)
 
         error_resolution: ErrorResolution = self._error_handler.interpret_response(
             response if response is not None else exc
@@ -371,9 +506,40 @@ class HttpClient:
             and self._message_repository is not None
         ):
             formatter = log_formatter
+            # A response resolving to REDUCE_PAGE_SIZE or SPLIT_REQUEST_WINDOW is not a page of the stream:
+            # the retriever discards it and re-issues the request with a smaller page size or a narrower
+            # window. Logging it as an auxiliary request keeps it visible in the Connector Builder while
+            # keeping it out of the per-slice page count, which would otherwise report "limit reached" on a
+            # read that only retried.
+            log_as_auxiliary = error_resolution.response_action in (
+                ResponseAction.REDUCE_PAGE_SIZE,
+                ResponseAction.SPLIT_REQUEST_WINDOW,
+            )
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: formatter(response),
+                lambda: _as_auxiliary_request_log(
+                    formatter(response),
+                    title=(
+                        f"Stream '{self._name}' page rejected, retrying with a smaller page size"
+                        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+                        else f"Stream '{self._name}' request window rejected, retrying with a smaller window"
+                    ),
+                    description=(
+                        (
+                            f"Request for stream '{self._name}' whose response asked for a smaller page. The "
+                            f"same page is requested again with a reduced page size, so this request produced "
+                            f"no records."
+                        )
+                        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+                        else (
+                            f"Request for stream '{self._name}' whose response asked for a smaller request "
+                            f"window. The window is split and re-read as smaller children, so this request "
+                            f"produced no records."
+                        )
+                    ),
+                )
+                if log_as_auxiliary
+                else formatter(response),
             )
 
         self._handle_error_resolution(
@@ -419,6 +585,26 @@ class HttpClient:
         """
         if prepared_request in self._request_attempt_count:
             del self._request_attempt_count[prepared_request]
+        self._token_refresh_outcomes.pop(prepared_request, None)
+
+    def _auth_header_changed_since(self, request: requests.PreparedRequest) -> bool:
+        """Whether the authenticator's current Authorization header differs from the one the request was sent with."""
+        # request.headers is None on an unprepared request
+        sent = request.headers.get("Authorization") if request.headers else None
+        if not sent or not hasattr(self._session.auth, "get_auth_header"):
+            return False
+        current = self._session.auth.get_auth_header().get("Authorization")  # type: ignore[union-attr]
+        return current is not None and current != sent
+
+    @staticmethod
+    def _is_token_endpoint_rejection(error: requests.exceptions.RequestException) -> bool:
+        """Whether the token endpoint answered with a 4xx other than 429, i.e. it rejected the credentials rather than failing transiently."""
+        response = error.response
+        return (
+            response is not None
+            and 400 <= response.status_code < 500
+            and response.status_code != 429
+        )
 
     def _handle_error_resolution(
         self,
@@ -433,6 +619,18 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
+            raise PageSizeReductionRequiredException(
+                stream_name=self._name, error_message=error_resolution.error_message
+            )
+
+        if error_resolution.response_action == ResponseAction.SPLIT_REQUEST_WINDOW:
+            raise RequestWindowSplitRequiredException(
+                stream_name=self._name,
+                error_message=error_resolution.error_message,
+                failure_type=error_resolution.failure_type,
+            )
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
@@ -452,6 +650,92 @@ class HttpClient:
             # backoff retry loop. Adding `\n` to the message and ignore 'end' ensure that few messages are printed at the same time.
             print(f"{message}\n", end="", flush=True)
 
+        # Handle REFRESH_TOKEN_THEN_RETRY: force refresh the OAuth token before retrying,
+        # at most once per request. A config error from the refresh (e.g. bad credentials,
+        # including a 4xx rejection from the token endpoint) or a request rejected again
+        # after a refresh attempt fails fast instead of refreshing in a loop; the failure
+        # type reflects whether the refresh succeeded. Transient refresh failures (network
+        # errors, 5xx, 429) keep the retry transient. Non-OAuth auth types (e.g.,
+        # BearerAuthenticator) fall through to normal retry.
+        if error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY:
+            status = (
+                f"status code '{response.status_code}'"
+                if response is not None
+                else f"exception '{exc}'"
+            )
+            if request in self._token_refresh_outcomes:
+                refreshed = self._token_refresh_outcomes[request]
+                self._evict_key(request)
+                if refreshed:
+                    internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} again after the OAuth token was refreshed; not refreshing again."
+                    failure_type = FailureType.config_error
+                    message = "Refreshed OAuth access token is rejected by the API."
+                else:
+                    internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token could not be refreshed; not refreshing again."
+                    failure_type = FailureType.transient_error
+                    message = (
+                        "API rejects the current OAuth access token and the token refresh failed."
+                    )
+                if error_resolution.error_message:
+                    internal_message += (
+                        f" Error handler message: '{error_resolution.error_message}'"
+                    )
+                self._logger.error(internal_message)
+                raise AirbyteTracedException(
+                    internal_message=internal_message,
+                    message=message,
+                    failure_type=failure_type,
+                )
+            if (
+                hasattr(self._session, "auth")
+                and self._session.auth is not None
+                and hasattr(self._session.auth, "refresh_and_set_access_token")
+            ):
+                self._token_refresh_outcomes[request] = False
+                try:
+                    if self._auth_header_changed_since(request):
+                        self._logger.info(
+                            "OAuth token was already replaced since this request was sent; retrying with the current token without refreshing again."
+                        )
+                    else:
+                        self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
+                        self._logger.info(
+                            "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                        )
+                    self._token_refresh_outcomes[request] = True
+                except AirbyteTracedException as refresh_error:
+                    if refresh_error.failure_type == FailureType.config_error:
+                        self._evict_key(request)
+                        raise
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
+                    )
+                except requests.exceptions.RequestException as refresh_error:
+                    if self._is_token_endpoint_rejection(refresh_error):
+                        self._evict_key(request)
+                        internal_message = (
+                            f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token endpoint "
+                            f"rejected the refresh request: {refresh_error}"
+                        )
+                        self._logger.error(internal_message)
+                        raise AirbyteTracedException(
+                            internal_message=internal_message,
+                            message="OAuth token refresh request is rejected by the token endpoint.",
+                            failure_type=FailureType.config_error,
+                        ) from refresh_error
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
+                    )
+                except Exception as refresh_error:
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
+                    )
+            else:
+                self._logger.warning(
+                    "REFRESH_TOKEN_THEN_RETRY action received but authenticator does not support token refresh. "
+                    "Proceeding with normal retry."
+                )
+
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
                 filtered_response_message = filter_secrets(
@@ -466,7 +750,7 @@ class HttpClient:
             # ensure the exception message is emitted before raised
             self._logger.error(error_message)
 
-            raise MessageRepresentationAirbyteTracedErrors(
+            raise AirbyteTracedException(
                 internal_message=error_message,
                 message=error_resolution.error_message or error_message,
                 failure_type=error_resolution.failure_type,
@@ -481,19 +765,55 @@ class HttpClient:
             self._logger.info(error_resolution.error_message or log_message)
 
         # TODO: Consider dynamic retry count depending on subsequent error codes
-        elif (
-            error_resolution.response_action == ResponseAction.RETRY
-            or error_resolution.response_action == ResponseAction.RATE_LIMITED
+        elif error_resolution.response_action in (
+            ResponseAction.RETRY,
+            ResponseAction.RATE_LIMITED,
+            ResponseAction.REFRESH_TOKEN_THEN_RETRY,
         ):
             user_defined_backoff_time = None
-            for backoff_strategy in self._backoff_strategies:
-                backoff_time = backoff_strategy.backoff_time(
-                    response_or_exception=response if response is not None else exc,
-                    attempt_count=self._request_attempt_count[request],
+            # Asked before the strategies, not after. The backoff they compute describes the
+            # credential the server just rejected, so when another credential can serve the
+            # retry that wait is irrelevant -- and a strategy is allowed to refuse a wait by
+            # raising (`max_waiting_time_in_seconds`), which would otherwise end the stream
+            # before rotation was ever considered. Rotating is strictly the better outcome
+            # there: it is the same retry, seconds from now, on a credential with quota.
+            #
+            # Two consequences of not calling the strategies, both deliberate. A rate limit
+            # that yields no backoff at all now rotates too, rather than falling through to
+            # the default exponential retry -- on a rotating credential that is the better
+            # behaviour, and `has_alternative_token` only answers True when the retry will
+            # rotate -- the CDK's own authenticator narrows that further, to a sending credential
+            # that is tracked and spent. And a `max_waiting_time_in_seconds` the manifest got
+            # wrong -- one that cannot be evaluated -- is not reported from here, since that
+            # error is raised from inside the strategy. Both capped strategies therefore resolve
+            # the field once in `__post_init__` too, so a manifest mistake fails at startup
+            # rather than waiting for a rate limit that finds no spare credential.
+            rotate_instead_of_waiting = (
+                error_resolution.response_action == ResponseAction.RATE_LIMITED
+                and self._can_retry_on_another_token(request)
+            )
+
+            if rotate_instead_of_waiting:
+                # Says that a wait was skipped without the number, which is no longer computed,
+                # and names the cap explicitly: a connector that configured one gets no other
+                # signal that the retry went ahead without consulting it.
+                self._logger.info(
+                    "Rate limited on the current credential; retrying in "
+                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting for the "
+                    "rate limit to reset. Any configured backoff, including a wait cap, is not "
+                    "evaluated for this retry."
                 )
-                if backoff_time:
-                    user_defined_backoff_time = backoff_time
-                    break
+                user_defined_backoff_time = self.TOKEN_ROTATION_BACKOFF
+            else:
+                for backoff_strategy in self._backoff_strategies:
+                    backoff_time = backoff_strategy.backoff_time(
+                        response_or_exception=response if response is not None else exc,
+                        attempt_count=self._request_attempt_count[request],
+                    )
+                    if backoff_time:
+                        user_defined_backoff_time = backoff_time
+                        break
+
             error_message = (
                 error_resolution.error_message
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."

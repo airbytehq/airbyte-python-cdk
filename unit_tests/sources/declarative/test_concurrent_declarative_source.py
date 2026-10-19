@@ -57,10 +57,14 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
+from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
+    HttpComponentsResolver,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
 )
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
@@ -1405,6 +1409,186 @@ def test_concurrent_declarative_source_runs_state_migrations_provided_in_manifes
 
 
 @freezegun.freeze_time(_NOW)
+def test_read_resumes_from_legacy_state_with_union_partition_router():
+    """
+    Round-trip test: a legacy (pre-per-partition) state is migrated through
+    LegacyToPerPartitionStateMigration for a stream partitioned by a UnionPartitionRouter,
+    and the runtime per-partition state keys produced during the read match the migrated keys.
+    """
+
+    def _parent_stream(name: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "primary_key": "full_name",
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.example.com",
+                    "path": f"/{name}",
+                    "http_method": "GET",
+                    # Explicitly disabled to avoid SQLite-backed request caching in tests.
+                    "use_cache": False,
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+        }
+
+    def _substream_router(parent_stream: dict) -> dict:
+        return {
+            "type": "SubstreamPartitionRouter",
+            "parent_stream_configs": [
+                {
+                    "type": "ParentStreamConfig",
+                    "parent_key": "full_name",
+                    "partition_field": "repository",
+                    "stream": parent_stream,
+                }
+            ],
+        }
+
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {},
+        "streams": [
+            _parent_stream("repositories"),
+            _parent_stream("starred"),
+            {
+                "type": "DeclarativeStream",
+                "name": "issues",
+                "primary_key": "id",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.example.com",
+                        "path": "/issues/{{ stream_partition['repository'] }}",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "partition_router": {
+                        "type": "UnionPartitionRouter",
+                        "partition_field": "repository",
+                        "partition_routers": [
+                            _substream_router(_parent_stream("repositories")),
+                            _substream_router(_parent_stream("starred")),
+                        ],
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d"],
+                    "cursor_field": "updated_at",
+                },
+                "state_migrations": [{"type": "LegacyToPerPartitionStateMigration"}],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object", "properties": {}},
+                },
+            },
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["repositories"]},
+    }
+
+    # Legacy (pre-per-partition) state format: {partition_value: {cursor_field: cursor_value}}
+    legacy_state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="issues", namespace=None),
+                stream_state=AirbyteStateBlob(
+                    **{
+                        "org/repo-a": {"updated_at": "2024-08-21"},
+                        "org/repo-b": {"updated_at": "2024-08-22"},
+                    }
+                ),
+            ),
+        ),
+    ]
+
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="issues", json_schema={}, supported_sync_modes=[SyncMode.incremental]
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.append,
+            ),
+        ]
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=catalog, state=legacy_state
+    )
+
+    # The migrated state keys are exactly `{partition_field: partition_value}`.
+    streams_by_name = {stream.name: stream for stream in source.streams(_CONFIG)}
+    migrated_states = streams_by_name["issues"].cursor.state.get("states")
+    assert {json.dumps(state["partition"], sort_keys=True) for state in migrated_states} == {
+        '{"repository": "org/repo-a"}',
+        '{"repository": "org/repo-b"}',
+    }
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://api.example.com/repositories"),
+            HttpResponse(
+                json.dumps([{"full_name": "org/repo-a"}, {"full_name": "org/repo-b"}]), 200
+            ),
+        )
+        http_mocker.get(
+            HttpRequest("https://api.example.com/starred"),
+            HttpResponse(
+                json.dumps([{"full_name": "org/repo-b"}, {"full_name": "org/repo-c"}]), 200
+            ),
+        )
+        for repository in ("org/repo-a", "org/repo-b", "org/repo-c"):
+            http_mocker.get(
+                HttpRequest(f"https://api.example.com/issues/{repository}"),
+                HttpResponse(
+                    json.dumps([{"id": f"{repository}-1", "updated_at": "2024-09-01"}]), 200
+                ),
+            )
+
+        messages = list(
+            source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=legacy_state)
+        )
+
+    # Deduplicated union: org/repo-b appears in both parents but is only read once.
+    issues_records = get_records_for_stream("issues", messages)
+    assert len(issues_records) == 3
+
+    # The runtime per-partition state keys match the migrated legacy keys exactly.
+    final_state = get_states_for_stream(stream_name="issues", messages=messages)[-1]
+    runtime_partitions = {
+        json.dumps(state["partition"], sort_keys=True)
+        for state in final_state.stream.stream_state.__dict__["states"]
+    }
+    assert runtime_partitions == {
+        '{"repository": "org/repo-a"}',
+        '{"repository": "org/repo-b"}',
+        '{"repository": "org/repo-c"}',
+    }
+
+
+@freezegun.freeze_time(_NOW)
 @patch(
     "airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter.AbstractStreamStateConverter.__init__",
     mocked_init,
@@ -1611,6 +1795,42 @@ def test_concurrency_level_initial_number_partitions_to_generate_is_always_one_o
         source_config=_MANIFEST, config=config, catalog=catalog, state=[]
     )
     assert source._concurrent_source._initial_number_partitions_to_generate == 1
+
+
+_SET_NUM_WORKERS_TO_4 = {
+    "type": "ConfigAddFields",
+    "fields": [{"type": "AddedFieldDefinition", "path": ["num_workers"], "value": "4"}],
+}
+
+
+@pytest.mark.parametrize(
+    "config_normalization_rules",
+    [
+        pytest.param(
+            {
+                "config_migrations": [
+                    {"type": "ConfigMigration", "transformations": [_SET_NUM_WORKERS_TO_4]}
+                ]
+            },
+            id="config_migrations",
+        ),
+        pytest.param({"transformations": [_SET_NUM_WORKERS_TO_4]}, id="transformations"),
+    ],
+)
+def test_concurrency_level_uses_normalized_config(config_normalization_rules):
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {},
+        "config_normalization_rules": {
+            "type": "ConfigNormalizationRules",
+            **config_normalization_rules,
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(source_config=manifest, config={"num_workers": 1})
+
+    assert source._concurrent_source._threadpool._threadpool._max_workers == 4
 
 
 def test_async_incremental_stream_uses_concurrent_cursor_with_state():
@@ -3290,7 +3510,7 @@ def _create_page(response_body):
             )
             * 10,
             [{"ABC": 0}, {"AED": 1}],
-            [call({}, {}, None)],
+            [call({}, None)],
         ),
         (
             "test_read_manifest_with_added_fields",
@@ -3377,7 +3597,7 @@ def _create_page(response_body):
                 {"ABC": 0, "added_field_key": "added_field_value"},
                 {"AED": 1, "added_field_key": "added_field_value"},
             ],
-            [call({}, {}, None)],
+            [call({}, None)],
         ),
         (
             "test_read_manifest_with_flatten_fields",
@@ -3461,7 +3681,7 @@ def _create_page(response_body):
                 {"ABC": 0, "id": 1},
                 {"AED": 1, "id": 2},
             ],
-            [call({}, {}, None)],
+            [call({}, None)],
         ),
         (
             "test_read_with_pagination_no_partitions",
@@ -3548,8 +3768,8 @@ def _create_page(response_body):
             * 10,
             [{"ABC": 0}, {"AED": 1}, {"USD": 2}],
             [
-                call({}, {}, None),
-                call({}, {}, {"next_page_token": "next"}),
+                call({}, None),
+                call({}, {"next_page_token": "next"}),
             ],
         ),
         (
@@ -3635,8 +3855,8 @@ def _create_page(response_body):
             ),
             [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
             [
-                call({}, {"partition": "0"}, None),
-                call({}, {"partition": "1"}, None),
+                call({"partition": "0"}, None),
+                call({"partition": "1"}, None),
             ],
         ),
         (
@@ -3739,9 +3959,9 @@ def _create_page(response_body):
                 {"ABC": 2, "partition": 1},
             ],
             [
-                call({}, {"partition": "0"}, None),
-                call({}, {"partition": "0"}, {"next_page_token": "next"}),
-                call({}, {"partition": "1"}, None),
+                call({"partition": "0"}, None),
+                call({"partition": "0"}, {"next_page_token": "next"}),
+                call({"partition": "1"}, None),
             ],
         ),
     ],
@@ -3929,6 +4149,122 @@ def test_only_parent_streams_use_cache():
     assert (
         not stream_2._stream_partition_generator._partition_factory._retriever.requester.use_cache
     )
+
+
+def test_parent_stream_respects_explicit_use_cache_false():
+    """Test that explicit use_cache: false is respected for parent streams.
+
+    This is important for APIs that use scroll-based pagination (like Intercom's /companies/scroll
+    endpoint), where caching must be disabled because the same scroll_param is returned in
+    pagination responses, causing duplicate records and infinite pagination loops.
+    """
+    # Parent stream with explicit use_cache: false
+    companies_stream = {
+        "type": "DeclarativeStream",
+        "$parameters": {
+            "name": "companies",
+            "primary_key": "id",
+            "url_base": "https://api.intercom.io/",
+        },
+        "schema_loader": {
+            "name": "{{ parameters.stream_name }}",
+            "file_path": "./source_intercom/schemas/{{ parameters.name }}.yaml",
+        },
+        "retriever": {
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_token_option": {"type": "RequestPath"},
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": "{{ response.get('scroll_param') }}",
+                    "page_size": 100,
+                },
+            },
+            "requester": {
+                "path": "companies/scroll",
+                "use_cache": False,  # Explicitly disabled for scroll-based pagination
+                "authenticator": {
+                    "type": "BearerAuthenticator",
+                    "api_token": "{{ config['api_key'] }}",
+                },
+            },
+            "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": ["data"]}},
+        },
+    }
+
+    manifest = {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [
+            deepcopy(companies_stream),
+            {
+                "type": "DeclarativeStream",
+                "$parameters": {
+                    "name": "company_segments",
+                    "primary_key": "id",
+                    "url_base": "https://api.intercom.io/",
+                },
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_intercom/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {"type": "NoPagination"},
+                    "requester": {
+                        "path": "companies/{{ stream_partition.parent_id }}/segments",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "extractor": {"type": "DpathExtractor", "field_path": ["data"]}
+                    },
+                    "partition_router": {
+                        "parent_stream_configs": [
+                            {
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                                "stream": deepcopy(companies_stream),
+                            }
+                        ],
+                        "type": "SubstreamPartitionRouter",
+                    },
+                },
+            },
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["companies"]},
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+    streams = source.streams({})
+    assert len(streams) == 2
+
+    # Main stream with explicit use_cache: false should remain false (parent for substream)
+    stream_0 = streams[0]
+    assert stream_0.name == "companies"
+    assert isinstance(stream_0, DefaultStream)
+    # use_cache should remain False because it was explicitly set to False
+    assert (
+        not stream_0._stream_partition_generator._partition_factory._retriever.requester.use_cache
+    )
+
+    # Substream
+    stream_1 = streams[1]
+    assert stream_1.name == "company_segments"
+    assert isinstance(stream_1, DefaultStream)
+
+    # Parent stream created for substream should also respect use_cache: false
+    assert (
+        stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream.name
+        == "companies"
+    )
+    # The parent stream in the substream config should also have use_cache: false
+    assert not stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[
+        0
+    ].stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
 
 
 def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
@@ -4681,6 +5017,548 @@ def test_given_response_action_is_pagination_reset_when_read_then_reset_paginati
     assert len(list(filter(lambda message: message.type == Type.RECORD, messages)))
 
 
+def _page_size_reduction_manifest(pagination_strategy, page_token_option=None):
+    paginator = {
+        "type": "DefaultPaginator",
+        "pagination_strategy": pagination_strategy,
+        "page_size_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "first",
+        },
+    }
+    if page_token_option:
+        paginator["page_token_option"] = page_token_option
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "page_size_reduction": {"type": "PageSizeReduction"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [502],
+                                    # no `failure_type`: HttpResponseFilter only applies it to the FAIL
+                                    # action, and the failure the user sees comes from PageSizeReducer
+                                    "action": "REDUCE_PAGE_SIZE",
+                                },
+                            ],
+                        },
+                    },
+                    "paginator": paginator,
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_page_size_reduction_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    # the reducer waits before each reduction retry; taking those waits for real adds seconds to every CI run
+    with patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep"):
+        yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_reduce_page_size_action_when_read_then_retry_page_with_smaller_page_size():
+    """
+    The call counts are asserted explicitly: the context-manager form of `HttpMocker` does not validate that
+    every matcher was called, so without them the test would also pass if the connector had started at the
+    reduced page size and never requested the configured one.
+    """
+    manifest = _page_size_reduction_manifest(
+        {
+            "type": "CursorPagination",
+            "page_size": 100,
+            "cursor_value": "{{ response.next }}",
+            "stop_condition": "{{ not response.next }}",
+        }
+    )
+    full_page_request = HttpRequest("https://example.org/test", query_params={"first": "100"})
+    reduced_page_request = HttpRequest("https://example.org/test", query_params={"first": "50"})
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_page_request, HttpResponse("", 502))
+        http_mocker.get(reduced_page_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+
+        messages = list(_read_page_size_reduction_source(manifest))
+
+        http_mocker.assert_number_of_calls(full_page_request, 1)
+        http_mocker.assert_number_of_calls(reduced_page_request, 1)
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [1]
+
+
+def test_given_offset_increment_and_reduce_page_size_action_when_read_then_keep_paginating():
+    """
+    `OffsetIncrement` is the only strategy whose stop condition depends on the page size. A page that is full
+    for the reduced size is smaller than the configured size, so comparing against the configured size would
+    end the pagination there and silently drop the tail of the partition.
+    """
+    manifest = _page_size_reduction_manifest(
+        {"type": "OffsetIncrement", "page_size": 100},
+        page_token_option={
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "offset",
+        },
+    )
+    full_page_request = HttpRequest("https://example.org/test", query_params={"first": "100"})
+    first_reduced_page_request = HttpRequest(
+        "https://example.org/test", query_params={"first": "50"}
+    )
+    second_reduced_page_request = HttpRequest(
+        "https://example.org/test", query_params={"first": "50", "offset": "50"}
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_page_request, HttpResponse("", 502))
+        http_mocker.get(
+            first_reduced_page_request,
+            HttpResponse(json.dumps({"items": [{"id": index} for index in range(50)]}), 200),
+        )
+        http_mocker.get(
+            second_reduced_page_request,
+            HttpResponse(json.dumps({"items": [{"id": 50 + index} for index in range(20)]}), 200),
+        )
+
+        messages = list(_read_page_size_reduction_source(manifest))
+
+        http_mocker.assert_number_of_calls(full_page_request, 1)
+        http_mocker.assert_number_of_calls(first_reduced_page_request, 1)
+        http_mocker.assert_number_of_calls(second_reduced_page_request, 1)
+
+    assert [
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ] == list(range(70))
+
+
+def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
+    """
+    The failure type decides whether the platform retries the whole job, and an endpoint that refuses every
+    page size is the case the reduction budget exists for.
+    """
+    manifest = _page_size_reduction_manifest(
+        {
+            "type": "CursorPagination",
+            "page_size": 100,
+            "cursor_value": "{{ response.next }}",
+            "stop_condition": "{{ not response.next }}",
+        }
+    )
+    manifest["streams"][0]["retriever"]["page_size_reduction"]["max_attempts"] = 2
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        for page_size in ("100", "50", "25"):
+            http_mocker.get(
+                HttpRequest("https://example.org/test", query_params={"first": page_size}),
+                HttpResponse("", 502),
+            )
+
+        # the read fails, which is the point: the messages emitted before it are what the platform sees
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_page_size_reduction_source(manifest))
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors
+    assert all(error.failure_type == FailureType.transient_error for error in errors)
+    assert any(
+        "keeps rejecting pages of stream" in error.message and "records per page" in error.message
+        for error in errors
+    )
+    # the filter defines no `error_message`, so the default mapping's text for 502 is the rejection reported
+    assert "HTTP Status Code: 502" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
+
+
+def _request_window_splitting_manifest():
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": "2024-01-01T00:00:00Z",
+                    "end_datetime": "2024-01-01T23:59:59Z",
+                    "step": "P1D",
+                    "cursor_field": "updated_at",
+                    "cursor_granularity": "PT1S",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "start",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "end",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "request_window_splitting": {"type": "RequestWindowSplitting"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                },
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_request_window_splitting_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_split_request_window_action_when_read_then_split_and_read_both_halves():
+    """
+    Mirrors the real PayPal `RESULTSET_TOO_LARGE` incident this feature exists to generalize: a request for
+    the full day is rejected outright, and the connector reads it back as two half-day requests instead, with
+    a complete, gap-free, non-duplicated record set.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(first_half_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+        http_mocker.get(second_half_request, HttpResponse(json.dumps({"items": [{"id": 2}]}), 200))
+
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
+
+        http_mocker.assert_number_of_calls(full_window_request, 1)
+        http_mocker.assert_number_of_calls(first_half_request, 1)
+        http_mocker.assert_number_of_calls(second_half_request, 1)
+
+    assert sorted(
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ) == [1, 2]
+
+
+def test_given_split_request_window_action_when_read_then_final_state_reflects_full_original_window():
+    """
+    Regression coverage for a bug where records read from a split child window carried the child's own slice
+    as `Record.associated_slice`, which `ConcurrentCursor.observe()` keys its bookkeeping by - a key
+    `close_partition()` (which always looks up by the *original* partition's slice) could never find. Left
+    unfixed, `_get_latest_complete_time`'s `first_interval.get("most_recent_cursor_value") or
+    first_interval[START_KEY]` fallback would silently commit the window's *start* boundary as the emitted
+    state instead of the actual highest cursor value observed across the two split children - reverting the
+    cursor all the way back to the beginning of the (already fully synced) day on the very next sync, rather
+    than a merely imprecise-but-safe value.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(
+            first_half_request,
+            HttpResponse(
+                json.dumps({"items": [{"id": 1, "updated_at": "2024-01-01T05:00:00Z"}]}), 200
+            ),
+        )
+        http_mocker.get(
+            second_half_request,
+            # the higher cursor value lives in the *second* half, so a fallback to the slice's end boundary
+            # instead of the true observed maximum would be easy to miss if it happened to match by accident
+            HttpResponse(
+                json.dumps({"items": [{"id": 2, "updated_at": "2024-01-01T20:00:00Z"}]}), 200
+            ),
+        )
+
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
+
+    states = get_states_for_stream(stream_name="Test", messages=messages)
+    assert states
+    # the declarative DatetimeBasedCursor emits sequential-format state (a flat {cursor_field: value} dict) by
+    # default; every emitted state must show the true observed maximum, never the window's start boundary
+    assert all(
+        state.stream.stream_state.__dict__ == {"updated_at": "2024-01-01T20:00:00Z"}
+        for state in states
+    )
+
+
+_ACCOUNT_PARTITION_ROUTER = {
+    "type": "ListPartitionRouter",
+    "values": ["a", "b"],
+    "cursor_field": "account",
+}
+
+
+def _partitioned_request_window_splitting_manifest():
+    """Two accounts, each read as one 14-day window and checkpointed with its own cursor."""
+    manifest = _request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    stream["incremental_sync"].update(
+        {
+            "start_datetime": "2024-01-01",
+            "end_datetime": "2024-01-14",
+            "step": "P14D",
+            "cursor_granularity": "P1D",
+            "datetime_format": "%Y-%m-%d",
+        }
+    )
+    stream["retriever"]["partition_router"] = {
+        **_ACCOUNT_PARTITION_ROUTER,
+        "request_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "account",
+        },
+    }
+    return manifest
+
+
+def _partitioned_request_window_splitting_manifest_with_interpolated_window():
+    """
+    A list-form partition router, which the factory wraps in a `CartesianProductStreamSlicer`, and request
+    parameters that read the window from `stream_interval` rather than injecting it through
+    `start_time_option`/`end_time_option`.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    del stream["incremental_sync"]["start_time_option"]
+    del stream["incremental_sync"]["end_time_option"]
+    stream["retriever"]["partition_router"] = [dict(_ACCOUNT_PARTITION_ROUTER)]
+    stream["retriever"]["requester"]["request_parameters"] = {
+        "account": "{{ stream_partition.account }}",
+        "start": "{{ stream_interval.start_time }}",
+        "end": "{{ stream_interval.end_time }}",
+    }
+    return manifest
+
+
+def _account_window_request(account: str, start: str, end: str) -> HttpRequest:
+    return HttpRequest(
+        "https://example.org/test",
+        query_params={"account": account, "start": start, "end": end},
+    )
+
+
+def _items_response(*updated_at: str) -> HttpResponse:
+    return HttpResponse(json.dumps({"items": [{"updated_at": value} for value in updated_at]}), 200)
+
+
+def _mock_only_account_b_rejected(http_mocker: HttpMocker) -> List[HttpRequest]:
+    """Account b's 14-day window is rejected and its two halves succeed; account a's window succeeds."""
+    responses = [
+        (_account_window_request("a", "2024-01-01", "2024-01-14"), _items_response("2024-01-10")),
+        (_account_window_request("b", "2024-01-01", "2024-01-14"), HttpResponse("", 400)),
+        (_account_window_request("b", "2024-01-01", "2024-01-07"), _items_response("2024-01-03")),
+        (_account_window_request("b", "2024-01-08", "2024-01-14"), _items_response("2024-01-12")),
+    ]
+    for request, response in responses:
+        http_mocker.get(request, response)
+    return [request for request, _ in responses]
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        pytest.param(_partitioned_request_window_splitting_manifest(), id="request_options"),
+        pytest.param(
+            _partitioned_request_window_splitting_manifest_with_interpolated_window(),
+            id="interpolated_window",
+        ),
+    ],
+)
+def test_given_partitioned_stream_when_one_partition_window_is_rejected_then_split_only_that_partition(
+    manifest,
+):
+    """
+    The Google Ads and TikTok case: only one account's window is too large. That account's window is read as
+    two halves, the other account is read once, and each account is checkpointed with its own cursor.
+    """
+    with HttpMocker() as http_mocker:
+        requests = _mock_only_account_b_rejected(http_mocker)
+
+        messages = list(_read_request_window_splitting_source(manifest))
+
+        for request in requests:
+            http_mocker.assert_number_of_calls(request, 1)
+
+    assert sorted(
+        message.record.data["updated_at"] for message in messages if message.type == Type.RECORD
+    ) == ["2024-01-03", "2024-01-10", "2024-01-12"]
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is False
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-12"}},
+    ]
+
+
+def test_given_partitioned_stream_over_switch_to_global_limit_when_window_is_rejected_then_split():
+    """
+    Past `SWITCH_TO_GLOBAL_LIMIT` partitions, the stream keeps a single global cursor instead of one per
+    partition. Splitting does not depend on the per-partition cursors, so it works the same way.
+    """
+    from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+
+    with HttpMocker() as http_mocker:
+        requests = _mock_only_account_b_rejected(http_mocker)
+
+        with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 0):
+            messages = list(
+                _read_request_window_splitting_source(
+                    _partitioned_request_window_splitting_manifest()
+                )
+            )
+
+        for request in requests:
+            http_mocker.assert_number_of_calls(request, 1)
+
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is True
+    assert final_state["state"] == {"updated_at": "2024-01-12"}
+
+
+def test_given_split_window_still_rejected_when_read_then_partition_is_not_checkpointed():
+    """
+    Account b's first half is read, but its second half is rejected again and is already at
+    `min_split_window`, so the stream fails with a `transient_error`. Account b's cursor must stay at its start
+    instead of moving to the record read from the first half, so the next sync re-reads the whole window,
+    while account a is still checkpointed.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    manifest["streams"][0]["retriever"]["request_window_splitting"]["min_split_window"] = "P7D"
+    account_b_request = _account_window_request("b", "2024-01-01", "2024-01-14")
+    account_b_first_half_request = _account_window_request("b", "2024-01-01", "2024-01-07")
+    account_b_second_half_request = _account_window_request("b", "2024-01-08", "2024-01-14")
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            _account_window_request("a", "2024-01-01", "2024-01-14"), _items_response("2024-01-10")
+        )
+        http_mocker.get(account_b_request, HttpResponse("", 400))
+        http_mocker.get(account_b_first_half_request, _items_response("2024-01-03"))
+        http_mocker.get(account_b_second_half_request, HttpResponse("", 400))
+
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_request_window_splitting_source(manifest))
+
+        http_mocker.assert_number_of_calls(account_b_request, 1)
+        http_mocker.assert_number_of_calls(account_b_first_half_request, 1)
+        http_mocker.assert_number_of_calls(account_b_second_half_request, 1)
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors[0].failure_type == FailureType.transient_error
+    assert "could not split its request window" in errors[0].internal_message
+    # the filter defines no `error_message`, so the default mapping's text for 400 is the rejection reported
+    assert "HTTP Status Code: 400" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-01"}},
+    ]
+    assert "state" not in final_state
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {
@@ -5034,3 +5912,1055 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
 
     with pytest.raises(ValueError):
         list(source.read(logger=source.logger, config=input_config, catalog=catalog, state=[]))
+
+
+@pytest.mark.parametrize(
+    "auth_type, expected_headers, expected_login_calls",
+    [
+        pytest.param("session", {"X-Session": "a_session_token"}, 1, id="test_session_selected"),
+        pytest.param("token", {"X-Key": "a_key"}, 0, id="test_token_selected"),
+    ],
+)
+def test_given_selective_authenticator_nesting_session_token_authenticator_when_read_then_authenticate(
+    auth_type, expected_headers, expected_login_calls
+):
+    input_config = {"auth_type": auth_type, "username": "a_user", "api_key": "a_key"}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {
+                            "type": "SelectiveAuthenticator",
+                            "authenticator_selection_path": ["auth_type"],
+                            "authenticators": {
+                                "session": {
+                                    "type": "SessionTokenAuthenticator",
+                                    "login_requester": {
+                                        "type": "HttpRequester",
+                                        "url_base": "https://example.org",
+                                        "path": "/login",
+                                        "http_method": "POST",
+                                        "request_body_json": {
+                                            "username": "{{ config['username'] }}"
+                                        },
+                                    },
+                                    "session_token_path": ["token"],
+                                    "expiration_duration": "PT1H",
+                                    "request_authentication": {
+                                        "type": "ApiKey",
+                                        "inject_into": {
+                                            "type": "RequestOption",
+                                            "inject_into": "header",
+                                            "field_name": "X-Session",
+                                        },
+                                    },
+                                },
+                                "token": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "X-Key",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+    login_request = HttpRequest(
+        "https://example.org/login", body=json.dumps({"username": "a_user"})
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(login_request, HttpResponse(json.dumps({"token": "a_session_token"})))
+        http_mocker.get(
+            HttpRequest("https://example.org/test", headers=expected_headers),
+            HttpResponse(json.dumps([{"id": 1}])),
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+        http_mocker.assert_number_of_calls(login_request, expected_login_calls)
+
+    assert [message.record.data for message in messages if message.type == Type.RECORD] == [
+        {"id": 1}
+    ]
+
+
+def _make_default_stream(name: str) -> DefaultStream:
+    """Create a minimal DefaultStream instance for testing."""
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+
+    cursor = FinalStateCursor(
+        stream_name=name, stream_namespace=None, message_repository=InMemoryMessageRepository()
+    )
+    return DefaultStream(
+        partition_generator=Mock(),
+        name=name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{name}"),
+        cursor=cursor,
+    )
+
+
+def _make_child_stream_with_parent(child_name: str, parent_stream: DefaultStream) -> DefaultStream:
+    """Create a DefaultStream that has a SubstreamPartitionRouter pointing to parent_stream."""
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentCursorFactory,
+        ConcurrentPerPartitionCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        ParentStreamConfig,
+        SubstreamPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+        DeclarativePartitionFactory,
+        StreamSlicerPartitionGenerator,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        EpochValueConcurrentStreamStateConverter,
+    )
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=parent_stream,
+                parent_key="id",
+                partition_field="parent_id",
+                config={},
+                parameters={},
+            )
+        ],
+        config={},
+        parameters={},
+    )
+
+    cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
+    message_repository = InMemoryMessageRepository()
+    state_converter = EpochValueConcurrentStreamStateConverter()
+
+    per_partition_cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=partition_router,
+        stream_name=child_name,
+        stream_namespace=None,
+        stream_state={},
+        message_repository=message_repository,
+        connector_state_manager=Mock(),
+        connector_state_converter=state_converter,
+        cursor_field=Mock(cursor_field_key="updated_at"),
+    )
+
+    partition_factory = Mock(spec=DeclarativePartitionFactory)
+    partition_generator = StreamSlicerPartitionGenerator(
+        partition_factory=partition_factory,
+        stream_slicer=per_partition_cursor,
+    )
+
+    cursor = FinalStateCursor(
+        stream_name=child_name, stream_namespace=None, message_repository=message_repository
+    )
+    return DefaultStream(
+        partition_generator=partition_generator,
+        name=child_name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{child_name}"),
+        cursor=cursor,
+    )
+
+
+@pytest.mark.parametrize(
+    "source_config,stream_names,expected_groups",
+    [
+        pytest.param(
+            {},
+            ["my_stream"],
+            {"my_stream": ""},
+            id="no_stream_groups",
+        ),
+        pytest.param(
+            {"stream_groups": {}},
+            ["my_stream"],
+            {"my_stream": ""},
+            id="empty_stream_groups",
+        ),
+        pytest.param(
+            {
+                "stream_groups": {
+                    "crm_objects": {
+                        "streams": [
+                            {"name": "deals", "type": "DeclarativeStream"},
+                            {"name": "companies", "type": "DeclarativeStream"},
+                        ],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    }
+                }
+            },
+            ["deals", "companies", "no_group"],
+            {"deals": "crm_objects", "companies": "crm_objects", "no_group": ""},
+            id="single_group_with_unmatched_stream",
+        ),
+        pytest.param(
+            {
+                "stream_groups": {
+                    "group_a": {
+                        "streams": [{"name": "stream1", "type": "DeclarativeStream"}],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    },
+                    "group_b": {
+                        "streams": [
+                            {"name": "stream2", "type": "DeclarativeStream"},
+                            {"name": "stream3", "type": "DeclarativeStream"},
+                        ],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    },
+                }
+            },
+            ["stream1", "stream2", "stream3"],
+            {"stream1": "group_a", "stream2": "group_b", "stream3": "group_b"},
+            id="multiple_groups",
+        ),
+    ],
+)
+def test_apply_stream_groups(source_config, stream_names, expected_groups):
+    """Test _apply_stream_groups sets block_simultaneous_read on matching stream instances."""
+    streams = [_make_default_stream(name) for name in stream_names]
+
+    source = Mock()
+    source._source_config = source_config
+
+    ConcurrentDeclarativeSource._apply_stream_groups(source, streams)
+
+    for stream in streams:
+        assert stream.block_simultaneous_read == expected_groups[stream.name]
+
+
+def test_apply_stream_groups_raises_on_parent_child_in_same_group():
+    """Test _apply_stream_groups raises ValueError when a child and its parent are in the same group."""
+    parent = _make_default_stream("parent_stream")
+    child = _make_child_stream_with_parent("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": "parent_stream", "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+
+def test_apply_stream_groups_allows_parent_child_in_different_groups():
+    """Test _apply_stream_groups allows a child and its parent in different groups."""
+    parent = _make_default_stream("parent_stream")
+    child = _make_child_stream_with_parent("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "group_a": {
+                "streams": [{"name": "parent_stream", "type": "DeclarativeStream"}],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+            "group_b": {
+                "streams": [{"name": "child_stream", "type": "DeclarativeStream"}],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+        }
+    }
+
+    ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+    assert parent.block_simultaneous_read == "group_a"
+    assert child.block_simultaneous_read == "group_b"
+
+
+def _make_child_stream_with_grouping_router(
+    child_name: str, parent_stream: DefaultStream
+) -> DefaultStream:
+    """Create a DefaultStream with GroupingPartitionRouter wrapping SubstreamPartitionRouter."""
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentCursorFactory,
+        ConcurrentPerPartitionCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+        GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        ParentStreamConfig,
+        SubstreamPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+        DeclarativePartitionFactory,
+        StreamSlicerPartitionGenerator,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        EpochValueConcurrentStreamStateConverter,
+    )
+
+    substream_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=parent_stream,
+                parent_key="id",
+                partition_field="parent_id",
+                config={},
+                parameters={},
+            )
+        ],
+        config={},
+        parameters={},
+    )
+
+    grouping_router = GroupingPartitionRouter(
+        group_size=10,
+        underlying_partition_router=substream_router,
+        config={},
+    )
+
+    cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
+    message_repository = InMemoryMessageRepository()
+    state_converter = EpochValueConcurrentStreamStateConverter()
+
+    per_partition_cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=grouping_router,
+        stream_name=child_name,
+        stream_namespace=None,
+        stream_state={},
+        message_repository=message_repository,
+        connector_state_manager=Mock(),
+        connector_state_converter=state_converter,
+        cursor_field=Mock(cursor_field_key="updated_at"),
+    )
+
+    partition_factory = Mock(spec=DeclarativePartitionFactory)
+    partition_generator = StreamSlicerPartitionGenerator(
+        partition_factory=partition_factory,
+        stream_slicer=per_partition_cursor,
+    )
+
+    cursor = FinalStateCursor(
+        stream_name=child_name, stream_namespace=None, message_repository=message_repository
+    )
+    return DefaultStream(
+        partition_generator=partition_generator,
+        name=child_name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{child_name}"),
+        cursor=cursor,
+    )
+
+
+def test_apply_stream_groups_raises_on_grandparent_child_in_same_group():
+    """Test _apply_stream_groups detects deadlock when a grandchild and grandparent share a group."""
+    grandparent = _make_default_stream("grandparent_stream")
+    parent = _make_child_stream_with_parent("parent_stream", grandparent)
+    child = _make_child_stream_with_parent("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": "grandparent_stream", "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [grandparent, parent, child])
+
+
+def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_grouping_router():
+    """Test _apply_stream_groups detects deadlock when GroupingPartitionRouter wraps SubstreamPartitionRouter."""
+    parent = _make_default_stream("parent_stream")
+    child = _make_child_stream_with_grouping_router("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": "parent_stream", "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+
+def _make_child_stream_with_union_router(
+    child_name: str,
+    parent_streams: list[DefaultStream],
+    wrapper: str | None = None,
+) -> DefaultStream:
+    """Create a DefaultStream with a UnionPartitionRouter over SubstreamPartitionRouters."""
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentCursorFactory,
+        ConcurrentPerPartitionCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+        CartesianProductStreamSlicer,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+        GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.list_partition_router import (
+        ListPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        ParentStreamConfig,
+        SubstreamPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+        UnionPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+        DeclarativePartitionFactory,
+        StreamSlicerPartitionGenerator,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        EpochValueConcurrentStreamStateConverter,
+    )
+
+    substream_routers = [
+        SubstreamPartitionRouter(
+            parent_stream_configs=[
+                ParentStreamConfig(
+                    stream=parent_stream,
+                    parent_key="id",
+                    partition_field="parent_id",
+                    config={},
+                    parameters={},
+                )
+            ],
+            config={},
+            parameters={},
+        )
+        for parent_stream in parent_streams
+    ]
+
+    union_router = UnionPartitionRouter(
+        partition_routers=substream_routers,
+        partition_field="parent_id",
+        parameters={},
+    )
+
+    if wrapper == "grouping":
+        stream_slicer_router = GroupingPartitionRouter(
+            group_size=10,
+            underlying_partition_router=union_router,
+            config={},
+        )
+    elif wrapper == "cartesian":
+        # A manifest declaring `partition_router` as a list builds a CartesianProductStreamSlicer;
+        # ancestor collection must descend into it to find the union's parents.
+        stream_slicer_router = CartesianProductStreamSlicer(
+            stream_slicers=[
+                union_router,
+                ListPartitionRouter(
+                    values=["main"], cursor_field="branch", config={}, parameters={}
+                ),
+            ],
+            parameters={},
+        )
+    else:
+        stream_slicer_router = union_router
+
+    cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
+    message_repository = InMemoryMessageRepository()
+    state_converter = EpochValueConcurrentStreamStateConverter()
+
+    per_partition_cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=stream_slicer_router,
+        stream_name=child_name,
+        stream_namespace=None,
+        stream_state={},
+        message_repository=message_repository,
+        connector_state_manager=Mock(),
+        connector_state_converter=state_converter,
+        cursor_field=Mock(cursor_field_key="updated_at"),
+    )
+
+    partition_factory = Mock(spec=DeclarativePartitionFactory)
+    partition_generator = StreamSlicerPartitionGenerator(
+        partition_factory=partition_factory,
+        stream_slicer=per_partition_cursor,
+    )
+
+    cursor = FinalStateCursor(
+        stream_name=child_name, stream_namespace=None, message_repository=message_repository
+    )
+    return DefaultStream(
+        partition_generator=partition_generator,
+        name=child_name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{child_name}"),
+        cursor=cursor,
+    )
+
+
+@pytest.mark.parametrize(
+    "grouped_parent,wrapper",
+    [
+        pytest.param("parent_a", None, id="first_union_child_parent"),
+        pytest.param("parent_b", None, id="second_union_child_parent"),
+        pytest.param("parent_a", "grouping", id="union_nested_in_grouping"),
+        pytest.param("parent_a", "cartesian", id="union_nested_in_cartesian_product_slicer"),
+        pytest.param("parent_b", "cartesian", id="second_parent_through_cartesian"),
+    ],
+)
+def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_union_router(
+    grouped_parent, wrapper
+):
+    """Test _apply_stream_groups detects deadlock through a UnionPartitionRouter's children."""
+    parent_a = _make_default_stream("parent_a")
+    parent_b = _make_default_stream("parent_b")
+    child = _make_child_stream_with_union_router(
+        "child_stream", [parent_a, parent_b], wrapper=wrapper
+    )
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": grouped_parent, "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [parent_a, parent_b, child])
+
+
+def test_union_partition_router_parent_streams_use_cache():
+    """Parents referenced through a UnionPartitionRouter get use_cache force-enabled."""
+
+    def _stream_config(name: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "$parameters": {
+                "name": name,
+                "primary_key": "id",
+                "url_base": "https://api.example.com/v1/",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "path": name,
+                },
+                "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+            },
+        }
+
+    child_stream = _stream_config("repository_stats")
+    child_stream["retriever"]["partition_router"] = {
+        "type": "UnionPartitionRouter",
+        "partition_field": "repository",
+        "partition_routers": [
+            {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "full_name",
+                        "partition_field": "repository",
+                        "stream": _stream_config("repositories"),
+                    }
+                ],
+            },
+            {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "full_name",
+                        "partition_field": "repository",
+                        "stream": _stream_config("starred_repositories"),
+                    }
+                ],
+            },
+        ],
+    }
+
+    manifest = {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [
+            _stream_config("repositories"),
+            _stream_config("starred_repositories"),
+            child_stream,
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["repositories"]},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("repositories"), state=None
+    )
+
+    streams = source.streams({})
+    streams_by_name = {stream.name: stream for stream in streams}
+    assert set(streams_by_name) == {"repositories", "starred_repositories", "repository_stats"}
+
+    def _use_cache(stream) -> bool:
+        return stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
+
+    # Both parents referenced through the union get caching enabled; the child does not.
+    assert _use_cache(streams_by_name["repositories"])
+    assert _use_cache(streams_by_name["starred_repositories"])
+    assert not _use_cache(streams_by_name["repository_stats"])
+
+    # The parent stream instances nested inside the union's substream routers are also cached.
+    union_router = streams_by_name["repository_stats"]._stream_partition_generator._stream_slicer
+    nested_parents = [
+        parent_config.stream
+        for child_router in union_router.partition_routers
+        for parent_config in child_router.parent_stream_configs
+    ]
+    assert {parent.name for parent in nested_parents} == {
+        "repositories",
+        "starred_repositories",
+    }
+    for parent in nested_parents:
+        assert _use_cache(parent)
+
+
+@pytest.mark.parametrize(
+    "stream_factory,expected_type",
+    [
+        pytest.param(
+            lambda: _make_default_stream("plain_stream"),
+            type(None),
+            id="no_partition_router_returns_none",
+        ),
+        pytest.param(
+            lambda: _make_child_stream_with_parent("child", _make_default_stream("parent")),
+            "SubstreamPartitionRouter",
+            id="substream_returns_substream_router",
+        ),
+        pytest.param(
+            lambda: _make_child_stream_with_grouping_router(
+                "child", _make_default_stream("parent")
+            ),
+            "GroupingPartitionRouter",
+            id="grouping_returns_grouping_router",
+        ),
+    ],
+)
+def test_get_partition_router(stream_factory, expected_type):
+    """Test DefaultStream.get_partition_router returns the correct router type."""
+    from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+        GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        SubstreamPartitionRouter,
+    )
+
+    stream = stream_factory()
+    router = stream.get_partition_router()
+
+    if expected_type is type(None):
+        assert router is None
+    elif expected_type == "SubstreamPartitionRouter":
+        assert isinstance(router, SubstreamPartitionRouter)
+    elif expected_type == "GroupingPartitionRouter":
+        assert isinstance(router, GroupingPartitionRouter)
+
+
+def test_api_budget_is_set_before_dynamic_streams_evaluated():
+    """Verify that set_api_budget is called before dynamic_streams is accessed in streams().
+
+    This is a regression test for https://github.com/airbytehq/oncall/issues/11954
+    where dynamic stream discovery HTTP requests bypassed the configured rate limiter
+    because set_api_budget was called after self.dynamic_streams was evaluated.
+    """
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+    )
+
+    call_order: list[str] = []
+    original_set_api_budget = source._constructor.set_api_budget
+
+    def tracking_set_api_budget(*args, **kwargs):
+        call_order.append("set_api_budget")
+        return original_set_api_budget(*args, **kwargs)
+
+    original_dynamic_stream_configs = source._dynamic_stream_configs
+
+    def tracking_dynamic_stream_configs(*args, **kwargs):
+        call_order.append("dynamic_stream_configs")
+        return original_dynamic_stream_configs(*args, **kwargs)
+
+    # Add an api_budget to the source config so set_api_budget is actually called
+    source._source_config["api_budget"] = {
+        "type": "HTTPAPIBudget",
+        "policies": [
+            {
+                "type": "MovingWindowCallRatePolicy",
+                "rates": [{"type": "Rate", "limit": 5, "interval": "PT1S"}],
+                "matchers": [],
+            }
+        ],
+    }
+
+    with (
+        patch.object(source._constructor, "set_api_budget", side_effect=tracking_set_api_budget),
+        patch.object(
+            source, "_dynamic_stream_configs", side_effect=tracking_dynamic_stream_configs
+        ),
+    ):
+        source.streams(config=_CONFIG)
+
+    assert "set_api_budget" in call_order, "set_api_budget was never called"
+    assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
+    assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
+        f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
+    )
+
+
+def test_dynamic_stream_discovery_http_requests_use_api_budget():
+    """Verify that HttpComponentsResolver's requester receives the configured api_budget.
+
+    Regression test for https://github.com/airbytehq/oncall/issues/11954
+    The discovery HTTP requests made by HttpComponentsResolver must be rate-limited
+    by the api_budget configured in the manifest.
+    """
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {
+            "selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "http_method": "GET",
+                "authenticator": {"type": "NoAuth"},
+            },
+        },
+        "dynamic_streams": [
+            {
+                "type": "DynamicDeclarativeStream",
+                "stream_template": {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "dynamic_items",
+                        "primary_key": "id",
+                        "url_base": "https://api.test.com",
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "https://json-schema.org/draft-07/schema#",
+                            "type": "object",
+                            "properties": {"id": {"type": "string"}},
+                        },
+                    },
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "record_selector": {"$ref": "#/definitions/selector"},
+                        "paginator": {"type": "NoPagination"},
+                        "requester": {
+                            "$ref": "#/definitions/requester",
+                            "path": "/items",
+                        },
+                    },
+                },
+                "components_resolver": {
+                    "type": "HttpComponentsResolver",
+                    "$parameters": {
+                        "name": "resolver",
+                        "primary_key": "id",
+                        "url_base": "https://api.test.com",
+                    },
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "record_selector": {"$ref": "#/definitions/selector"},
+                        "paginator": {"type": "NoPagination"},
+                        "requester": {
+                            "$ref": "#/definitions/requester",
+                            "path": "/components",
+                        },
+                    },
+                    "components_mapping": [
+                        {
+                            "type": "ComponentMappingDefinition",
+                            "field_path": ["name"],
+                            "value": "{{ components_values.name }}",
+                        }
+                    ],
+                },
+            }
+        ],
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [{"type": "Rate", "limit": 5, "interval": "PT1S"}],
+                    "matchers": [],
+                }
+            ],
+        },
+        "check": {"type": "CheckStream", "stream_names": []},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={"api_key": "test"}, catalog=None, state=None
+    )
+
+    captured_resolvers: list[Any] = []
+
+    def capturing_resolve(resolver_self, *args, **kwargs):
+        captured_resolvers.append(resolver_self)
+        return iter([])
+
+    with patch.object(HttpComponentsResolver, "resolve_components", capturing_resolve):
+        source.streams(config={"api_key": "test"})
+
+    assert len(captured_resolvers) == 1, (
+        f"Expected exactly one HttpComponentsResolver, got {len(captured_resolvers)}"
+    )
+    resolver = captured_resolvers[0]
+    requester = resolver.retriever.requester
+    assert requester.api_budget is not None, (
+        "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
+        "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
+    )
+
+
+def _validation_messages(error: ValidationError) -> Iterable[str]:
+    """Flattens a jsonschema error tree; the top-level message of an `anyOf` miss carries no detail."""
+    yield error.message
+    for sub_error in error.context or []:
+        yield from _validation_messages(sub_error)
+
+
+def _combined_extractor_manifest(extractor: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "version": "6.0.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "lists",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/lists",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {"type": "RecordSelector", "extractor": extractor},
+                },
+            }
+        ],
+    }
+
+
+def test_combined_extractor_manifest_passes_schema_validation():
+    """Covers the CombinedExtractor JSON-Schema definition, which the factory tests never reach."""
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["rows", "*", "dimensions"]},
+                {
+                    "type": "CombinedExtractor",
+                    "extractors": [
+                        {"type": "DpathExtractor", "field_path": ["rows", "*", "metrics"]}
+                    ],
+                },
+            ],
+        }
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+    assert len(source.streams(config={})) == 1
+
+
+def test_combined_extractor_with_an_unknown_mode_fails_schema_validation():
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "concatenate",
+            "extractors": [{"type": "DpathExtractor", "field_path": ["rows"]}],
+        }
+    )
+
+    with pytest.raises(ValidationError):
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+
+def test_combined_extractor_with_an_empty_extractors_list_fails_schema_validation():
+    """`minItems: 1` turns what used to be a runtime `ValueError` into a field-level schema error."""
+    manifest = _combined_extractor_manifest({"type": "CombinedExtractor", "extractors": []})
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+    # `_validate_source` re-raises a generic message; the field-level error is in the cause tree.
+    assert any(
+        "should be non-empty" in message
+        for message in _validation_messages(exc_info.value.__cause__)
+    )
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy, page_token_field, page_tokens",
+    [
+        pytest.param(
+            {"type": "OffsetIncrement", "page_size": 3}, "offset", ["3", "6"], id="offset_increment"
+        ),
+        pytest.param(
+            {"type": "PageIncrement", "page_size": 3, "start_from_page": 0},
+            "page",
+            ["1", "2"],
+            id="page_increment",
+        ),
+    ],
+)
+def test_combined_extractor_skipping_empty_records_reads_every_page(
+    pagination_strategy, page_token_field, page_tokens
+):
+    """A null on a full page used to make the page look short, so the later pages were never read."""
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "skip_empty_records": True,
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["data", "items"]},
+                {"type": "DpathExtractor", "field_path": ["data", "fallback"]},
+            ],
+        }
+    )
+    manifest["streams"][0]["retriever"]["paginator"] = {
+        "type": "DefaultPaginator",
+        "pagination_strategy": pagination_strategy,
+        "page_token_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": page_token_field,
+        },
+    }
+    catalog = create_catalog("lists")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=catalog, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://api.test.com/lists"),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 1}, None, {"id": 3}]}})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://api.test.com/lists", query_params={page_token_field: page_tokens[0]}
+            ),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 4}, {"id": 5}, {"id": 6}]}})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://api.test.com/lists", query_params={page_token_field: page_tokens[1]}
+            ),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 7}]}})),
+        )
+        messages = list(source.read(logger=source.logger, config={}, catalog=catalog, state=[]))
+
+    assert [record.data["id"] for record in get_records_for_stream("lists", messages)] == [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+    ]

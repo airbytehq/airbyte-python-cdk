@@ -20,6 +20,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     ParentStreamConfig,
     SubstreamPartitionRouter,
+    iterate_with_last_flag,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -611,7 +612,8 @@ def test_request_option(
             ),
             {
                 "first_stream": {
-                    "lookback_window": 0,
+                    "lookback_window": 1,
+                    "state": {"cursor": "2022-01-01"},
                     "states": [
                         {"cursor": {"cursor": "2021-01-02"}, "partition": {"slice": "first"}},
                         {"cursor": {"cursor": "2022-01-01"}, "partition": {"slice": "second"}},
@@ -1079,3 +1081,241 @@ def test_cartesian_product_stream_slicer_warning_log_message(
         assert warning_message in logged_warnings
     else:
         assert warning_message not in logged_warnings
+
+
+@pytest.mark.parametrize(
+    "input_iterable,expected_output",
+    [
+        pytest.param([], [(None, True)], id="empty_generator_yields_none_sentinel"),
+        pytest.param([1], [(1, True)], id="single_item"),
+        pytest.param([1, 2], [(1, False), (2, True)], id="two_items"),
+        pytest.param([1, 2, 3], [(1, False), (2, False), (3, True)], id="three_items"),
+        pytest.param(["a", "b"], [("a", False), ("b", True)], id="string_items"),
+    ],
+)
+def test_iterate_with_last_flag(input_iterable, expected_output):
+    result = list(iterate_with_last_flag(input_iterable))
+    assert result == expected_output
+
+
+def test_substream_partition_router_no_cursor_update_when_partition_has_no_records():
+    """
+    Test that when a partition has no records, the cursor is still properly closed
+    but no slices are yielded for that partition.
+    This tests the fix for SubstreamPartitionRouter updating cursor value when no records
+    were read in partition.
+    """
+    mock_slices = [
+        StreamSlice(partition={"slice": "first"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "second"}, cursor_slice={}),
+    ]
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=MockStream(
+                    [
+                        InMemoryPartition(
+                            "partition_1",
+                            "first_stream",
+                            mock_slices[0],
+                            _build_records_for_slice(
+                                [{"id": "record_1"}, {"id": "record_2"}], mock_slices[0]
+                            ),
+                        ),
+                        InMemoryPartition(
+                            "partition_2",
+                            "first_stream",
+                            mock_slices[1],
+                            [],
+                        ),
+                    ],
+                    "first_stream",
+                ),
+                parent_key="id",
+                partition_field="partition_field",
+                parameters={},
+                config={},
+            )
+        ],
+        parameters={},
+        config={},
+    )
+
+    slices = list(partition_router.stream_slices())
+    assert slices == [
+        {"partition_field": "record_1", "parent_slice": {"slice": "first"}},
+        {"partition_field": "record_2", "parent_slice": {"slice": "first"}},
+    ]
+
+
+def test_substream_partition_router_handles_empty_parent_partitions():
+    """
+    Test that when a parent stream generates no partitions (empty generator),
+    the stream_slices method returns early without errors.
+    """
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=MockStream(
+                    [],
+                    "first_stream",
+                ),
+                parent_key="id",
+                partition_field="partition_field",
+                parameters={},
+                config={},
+            )
+        ],
+        parameters={},
+        config={},
+    )
+
+    slices = list(partition_router.stream_slices())
+    assert slices == []
+
+
+def test_substream_partition_router_closes_all_partitions_even_when_no_records():
+    """
+    Test that cursor.close_partition() is called for all parent stream partitions,
+    even when a partition produces no parent records.
+    This validates that partition lifecycle is properly managed regardless of record count.
+    """
+    mock_slices = [
+        StreamSlice(partition={"slice": "first"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "second"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "third"}, cursor_slice={}),
+    ]
+
+    partition_1 = InMemoryPartition(
+        "partition_1",
+        "first_stream",
+        mock_slices[0],
+        _build_records_for_slice([{"id": "record_1"}], mock_slices[0]),
+    )
+    partition_2 = InMemoryPartition(
+        "partition_2",
+        "first_stream",
+        mock_slices[1],
+        [],
+    )
+    partition_3 = InMemoryPartition(
+        "partition_3",
+        "first_stream",
+        mock_slices[2],
+        _build_records_for_slice([{"id": "record_3"}], mock_slices[2]),
+    )
+
+    mock_cursor = Mock()
+    mock_cursor.stream_slices.return_value = []
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=MockStream(
+                    [partition_1, partition_2, partition_3],
+                    "first_stream",
+                    cursor=mock_cursor,
+                ),
+                parent_key="id",
+                partition_field="partition_field",
+                parameters={},
+                config={},
+            )
+        ],
+        parameters={},
+        config={},
+    )
+
+    slices = list(partition_router.stream_slices())
+
+    assert slices == [
+        {"partition_field": "record_1", "parent_slice": {"slice": "first"}},
+        {"partition_field": "record_3", "parent_slice": {"slice": "third"}},
+    ]
+
+    assert mock_cursor.close_partition.call_count == 3
+
+    close_partition_calls = mock_cursor.close_partition.call_args_list
+    assert close_partition_calls[0][0][0] == partition_1
+    assert close_partition_calls[1][0][0] == partition_2
+    assert close_partition_calls[2][0][0] == partition_3
+
+
+@pytest.mark.parametrize(
+    "parent_key, valid_record, skipped_record, expected_value",
+    [
+        pytest.param(
+            "id", {"id": "record_1"}, {"other_field": "value"}, "record_1", id="missing_key"
+        ),
+        pytest.param("id", {"id": 0}, {"id": None}, 0, id="null_value"),
+        pytest.param(
+            "a/id",
+            {"a": {"id": "record_1"}},
+            {"a": {"id": None}},
+            "record_1",
+            id="nested_null_value",
+        ),
+        pytest.param(
+            "a/id", {"a": {"id": "record_1"}}, {"a": None}, "record_1", id="null_intermediate"
+        ),
+    ],
+)
+def test_substream_partition_router_skips_parent_record_without_partition_value(
+    parent_key, valid_record, skipped_record, expected_value
+):
+    """
+    A parent record whose parent_key is missing or null produces no slice, but the parent
+    cursor still observes it and closes its partition so parent state keeps progressing.
+    """
+    mock_slices = [
+        StreamSlice(partition={"slice": "first"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "second"}, cursor_slice={}),
+    ]
+
+    partition_1 = InMemoryPartition(
+        "partition_1",
+        "first_stream",
+        mock_slices[0],
+        _build_records_for_slice([valid_record], mock_slices[0]),
+    )
+    partition_2 = InMemoryPartition(
+        "partition_2",
+        "first_stream",
+        mock_slices[1],
+        _build_records_for_slice([skipped_record], mock_slices[1]),
+    )
+
+    mock_cursor = Mock()
+    mock_cursor.stream_slices.return_value = []
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=MockStream(
+                    [partition_1, partition_2],
+                    "first_stream",
+                    cursor=mock_cursor,
+                ),
+                parent_key=parent_key,
+                partition_field="partition_field",
+                parameters={},
+                config={},
+            )
+        ],
+        parameters={},
+        config={},
+    )
+
+    slices = list(partition_router.stream_slices())
+
+    assert slices == [
+        {"partition_field": expected_value, "parent_slice": {"slice": "first"}},
+    ]
+
+    assert mock_cursor.observe.call_count == 2
+    assert mock_cursor.close_partition.call_count == 2
+
+    close_partition_calls = mock_cursor.close_partition.call_args_list
+    assert close_partition_calls[0][0][0] == partition_1
+    assert close_partition_calls[1][0][0] == partition_2

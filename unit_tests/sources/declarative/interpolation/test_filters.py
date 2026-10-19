@@ -108,6 +108,36 @@ def test_regex_search_no_match() -> None:
     assert val is None
 
 
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        pytest.param(
+            "{{ 'hello world' | regex_replace('world', 'there') }}",
+            "hello there",
+            id="basic_replacement",
+        ),
+        pytest.param(
+            "{{ 'abc123def456' | regex_replace('[0-9]+', '') }}",
+            "abcdef",
+            id="regex_pattern_strip_digits",
+        ),
+        pytest.param(
+            "{{ 'hello world' | regex_replace('xyz', 'replaced') }}",
+            "hello world",
+            id="no_match_returns_original",
+        ),
+        pytest.param(
+            "{{ 'aaa bbb aaa' | regex_replace('aaa', 'ccc') }}",
+            "ccc bbb ccc",
+            id="multiple_occurrences",
+        ),
+    ],
+)
+def test_regex_replace(expression: str, expected: str) -> None:
+    val = interpolation.eval(expression, {})
+    assert val == expected
+
+
 def test_hmac_sha256_default() -> None:
     message = "test_message"
     secret_key = "test_secret_key"

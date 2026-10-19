@@ -39,12 +39,13 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T, bool]]:
+def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T | None, bool]]:
     iterator = iter(generator)
 
     try:
         current = next(iterator)
     except StopIteration:
+        yield None, True
         return  # Return an empty iterator
 
     for next_item in iterator:
@@ -206,60 +207,68 @@ class SubstreamPartitionRouter(PartitionRouter):
                 for partition, is_last_slice in iterate_with_last_flag(
                     parent_stream.generate_partitions()
                 ):
+                    if partition is None:
+                        break
                     for parent_record, is_last_record_in_slice in iterate_with_last_flag(
                         partition.read()
                     ):
-                        # In the previous CDK implementation, state management was done internally by the stream.
-                        # However, this could cause issues when doing availability check for example as the availability
-                        # check would progress the state so state management was moved outside of the read method.
-                        # Hence, we need to call the cursor here.
-                        # Note that we call observe and close_partition before emitting the associated record as the
-                        # ConcurrentPerPartitionCursor will associate a record with the state of the stream after the
-                        # record was consumed.
-                        parent_stream.cursor.observe(parent_record)
-                        parent_partition = (
-                            parent_record.associated_slice.partition
-                            if parent_record.associated_slice
-                            else {}
-                        )
-                        record_data = parent_record.data
+                        emit_slice = parent_record is not None
+                        if parent_record is not None:
+                            # In the previous CDK implementation, state management was done internally by the stream.
+                            # However, this could cause issues when doing availability check for example as the availability
+                            # check would progress the state so state management was moved outside of the read method.
+                            # Hence, we need to call the cursor here.
+                            # Note that we call observe and close_partition before emitting the associated record as the
+                            # ConcurrentPerPartitionCursor will associate a record with the state of the stream after the
+                            # record was consumed.
+                            parent_stream.cursor.observe(parent_record)
+                            parent_partition = (
+                                parent_record.associated_slice.partition
+                                if parent_record.associated_slice
+                                else {}
+                            )
+                            record_data = parent_record.data
 
-                        try:
                             partition_value = dpath.get(
                                 record_data,  # type: ignore [arg-type]
                                 parent_field,
+                                default=None,
                             )
-                        except KeyError:
-                            # FIXME a log here would go a long way for debugging
-                            continue
+                            if partition_value is None:
+                                self.logger.debug(
+                                    f"Skipping {parent_stream.name} record with missing or null parent key '{parent_field}'"
+                                )
+                                emit_slice = False
 
-                        # Add extra fields
-                        extracted_extra_fields = self._extract_extra_fields(
-                            record_data, extra_fields
-                        )
+                            if emit_slice:
+                                # Add extra fields
+                                extracted_extra_fields = self._extract_extra_fields(
+                                    record_data, extra_fields
+                                )
 
-                        if parent_stream_config.lazy_read_pointer:
-                            extracted_extra_fields = {
-                                "child_response": self._extract_child_response(
-                                    record_data,
-                                    parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
-                                ),
-                                **extracted_extra_fields,
-                            }
+                                if parent_stream_config.lazy_read_pointer:
+                                    extracted_extra_fields = {
+                                        "child_response": self._extract_child_response(
+                                            record_data,
+                                            parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
+                                        ),
+                                        **extracted_extra_fields,
+                                    }
 
                         if is_last_record_in_slice:
                             parent_stream.cursor.close_partition(partition)
                             if is_last_slice:
                                 parent_stream.cursor.ensure_at_least_one_state_emitted()
 
-                        yield StreamSlice(
-                            partition={
-                                partition_field: partition_value,
-                                "parent_slice": parent_partition or {},
-                            },
-                            cursor_slice={},
-                            extra_fields=extracted_extra_fields,
-                        )
+                        if emit_slice:
+                            yield StreamSlice(
+                                partition={
+                                    partition_field: partition_value,
+                                    "parent_slice": parent_partition or {},
+                                },
+                                cursor_slice={},
+                                extra_fields=extracted_extra_fields,
+                            )
 
                 yield from []
 
@@ -310,68 +319,6 @@ class SubstreamPartitionRouter(PartitionRouter):
                     extra_field_value = None
                 extracted_extra_fields[".".join(extra_field_path)] = extra_field_value
         return extracted_extra_fields
-
-    def _migrate_child_state_to_parent_state(self, stream_state: StreamState) -> StreamState:
-        """
-        Migrate the child or global stream state into the parent stream's state format.
-
-        This method converts the child stream state—or, if present, the global state—into a format that is
-        compatible with parent streams that use incremental synchronization. The migration occurs only for
-        parent streams with incremental dependencies. It filters out per-partition states and retains only the
-        global state in the form {cursor_field: cursor_value}.
-
-        The method supports multiple input formats:
-          - A simple global state, e.g.:
-                {"updated_at": "2023-05-27T00:00:00Z"}
-          - A state object that contains a "state" key (which is assumed to hold the global state), e.g.:
-                {"state": {"updated_at": "2023-05-27T00:00:00Z"}, ...}
-            In this case, the migration uses the first value from the "state" dictionary.
-          - Any per-partition state formats or other non-simple structures are ignored during migration.
-
-        Args:
-            stream_state (StreamState): The state to migrate. Expected formats include:
-                - {"updated_at": "2023-05-27T00:00:00Z"}
-                - {"state": {"updated_at": "2023-05-27T00:00:00Z"}, ...}
-                  (In this format, only the first global state value is used, and per-partition states are ignored.)
-
-        Returns:
-            StreamState: A migrated state for parent streams in the format:
-                {
-                    "parent_stream_name": {"parent_stream_cursor": "2023-05-27T00:00:00Z"}
-                }
-            where each parent stream with an incremental dependency is assigned its corresponding cursor value.
-
-        Example:
-            Input: {"updated_at": "2023-05-27T00:00:00Z"}
-            Output: {
-                "parent_stream_name": {"parent_stream_cursor": "2023-05-27T00:00:00Z"}
-            }
-        """
-        substream_state_values = list(stream_state.values())
-        substream_state = substream_state_values[0] if substream_state_values else {}
-
-        # Ignore per-partition states or invalid formats.
-        if isinstance(substream_state, (list, dict)) or len(substream_state_values) != 1:
-            # If a global state is present under the key "state", use its first value.
-            if (
-                "state" in stream_state
-                and isinstance(stream_state["state"], dict)
-                and stream_state["state"] != {}
-            ):
-                substream_state = list(stream_state["state"].values())[0]
-            else:
-                return {}
-
-        # Build the parent state for all parent streams with incremental dependencies.
-        parent_state = {}
-        if substream_state:
-            for parent_config in self.parent_stream_configs:
-                if parent_config.incremental_dependency:
-                    parent_state[parent_config.stream.name] = {
-                        parent_config.stream.cursor_field: substream_state
-                    }
-
-        return parent_state
 
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """

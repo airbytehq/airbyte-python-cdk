@@ -49,6 +49,14 @@ class AirbyteTracedException(Exception):
         self._stream_descriptor = stream_descriptor
         super().__init__(internal_message)
 
+    def __str__(self) -> str:
+        """Return the user-facing message, falling back to internal_message."""
+        if self.message is not None:
+            return self.message
+        if self.internal_message is not None:
+            return self.internal_message
+        return ""
+
     def as_airbyte_message(
         self, stream_descriptor: Optional[StreamDescriptor] = None
     ) -> AirbyteMessage:
@@ -81,11 +89,17 @@ class AirbyteTracedException(Exception):
         return AirbyteMessage(type=MessageType.TRACE, trace=trace_message)
 
     def as_connection_status_message(self) -> Optional[AirbyteMessage]:
+        """Build a failed CONNECTION_STATUS from a config error, with secrets masked.
+
+        The message can quote config values, as a config validation error does, so it goes
+        through the same secret filter as logs and traces.
+        """
         if self.failure_type == FailureType.config_error:
             return AirbyteMessage(
                 type=MessageType.CONNECTION_STATUS,
                 connectionStatus=AirbyteConnectionStatus(
-                    status=Status.FAILED, message=self.message
+                    status=Status.FAILED,
+                    message=filter_secrets(self.message) if self.message else self.message,
                 ),
             )
         return None
@@ -112,8 +126,15 @@ class AirbyteTracedException(Exception):
         :param exc: the exception that caused the error
         :param stream_descriptor: describe the stream from which the exception comes from
         """
+        if isinstance(exc, AirbyteTracedException):
+            internal_message = exc.internal_message
+            # Preserve the original user-facing message if the caller didn't provide one
+            if "message" not in kwargs:
+                kwargs["message"] = exc.message
+        else:
+            internal_message = str(exc)
         return cls(
-            internal_message=str(exc),
+            internal_message=internal_message,
             exception=exc,
             stream_descriptor=stream_descriptor,
             *args,

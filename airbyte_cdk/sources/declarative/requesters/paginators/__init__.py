@@ -12,6 +12,8 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination
     PaginationStrategy,
 )
 
+# `page_size_override_kwargs` is deliberately not re-exported here: it is a CDK-internal helper, every call
+# site is inside the CDK, and it imports from `paginators.paginator` directly.
 __all__ = [
     "DefaultPaginator",
     "NoPagination",

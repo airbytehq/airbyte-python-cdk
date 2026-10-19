@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import gzip
+import io
 import json
+import logging
 from copy import deepcopy
 
 # mypy: ignore-errors
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Union
+from typing import Any, Dict, Iterable, Mapping, Optional, Union
 
 import freezegun
 import pytest
@@ -21,6 +24,7 @@ from airbyte_protocol_dataclasses.models.airbyte_protocol import (
 )
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
+from urllib3 import HTTPResponse
 
 from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
@@ -42,12 +46,25 @@ from airbyte_cdk.sources.declarative.auth.token import (
     BearerAuthenticator,
     LegacySessionTokenAuthenticator,
 )
-from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProvider
+from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedSessionTokenProvider,
+    SessionTokenProvider,
+)
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+    CompositeRawDecoder,
+    JsonParser,
+)
+from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
+    DpathExtractor,
+    RecordFilter,
+    RecordSelector,
+)
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -60,6 +77,7 @@ from airbyte_cdk.sources.declarative.models import (
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models import ConcurrencyLevel as ConcurrencyLevelModel
+from airbyte_cdk.sources.declarative.models import CustomAuthenticator as CustomAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import CustomErrorHandler as CustomErrorHandlerModel
 from airbyte_cdk.sources.declarative.models import (
     CustomPartitionRouter as CustomPartitionRouterModel,
@@ -73,6 +91,10 @@ from airbyte_cdk.sources.declarative.models import DeclarativeStream as Declarat
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
 from airbyte_cdk.sources.declarative.models import DpathExtractor as DpathExtractorModel
 from airbyte_cdk.sources.declarative.models import (
+    DynamicSchemaLoader as DynamicSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models import FileUploader as FileUploaderModel
+from airbyte_cdk.sources.declarative.models import (
     GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models import HttpRequester as HttpRequesterModel
@@ -81,10 +103,46 @@ from airbyte_cdk.sources.declarative.models import ListPartitionRouter as ListPa
 from airbyte_cdk.sources.declarative.models import OAuthAuthenticator as OAuthAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import PropertyChunking as PropertyChunkingModel
 from airbyte_cdk.sources.declarative.models import RecordSelector as RecordSelectorModel
+from airbyte_cdk.sources.declarative.models import (
+    SessionTokenAuthenticator as SessionTokenAuthenticatorModel,
+)
 from airbyte_cdk.sources.declarative.models import SimpleRetriever as SimpleRetrieverModel
 from airbyte_cdk.sources.declarative.models import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models import (
+    UnionPartitionRouter as UnionPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CsvDecoder as CsvDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FileUploader as FileUploaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GzipDecoder as GzipDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IterableDecoder as IterableDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonDecoder as JsonDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
@@ -94,6 +152,14 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    XmlDecoder as XmlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
@@ -111,6 +177,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     ListPartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
 from airbyte_cdk.sources.declarative.requesters.error_handlers import (
@@ -125,12 +192,18 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
-from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
+from airbyte_cdk.sources.declarative.requesters.paginators import (
+    DefaultPaginator,
+    PaginatorTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     OffsetIncrement,
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
+)
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
@@ -155,8 +228,23 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
-from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.retrievers import (
+    AsyncRetriever,
+    LazySimpleRetriever,
+    SimpleRetriever,
+)
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
+)
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
+from airbyte_cdk.sources.declarative.schema import (
+    DynamicSchemaLoader,
+    InlineSchemaLoader,
+    JsonFileSchemaLoader,
+)
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
     CachingSchemaLoaderDecorator,
 )
@@ -170,7 +258,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.call_rate import HttpAPIBudget, MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
@@ -186,10 +274,12 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Resp
 from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
+    TestingCustomRetriever,
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
 )
@@ -233,6 +323,71 @@ def test_create_check_stream():
 
     assert isinstance(check, CheckStream)
     assert check.stream_names == ["list_stream"]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Content-Type": "application/gzip"},
+        {"Content-Type": "application/x-gzip"},
+        {"Content-Type": "text/csv"},
+        {"Content-Type": "binary/octet-stream"},
+        {"Content-Encoding": "gzip"},
+    ],
+)
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_compressed_response(
+    headers: Mapping[str, str], emit_connector_builder_messages: bool
+):
+    csv_data = b"date,units\n2026-08-01,42\n"
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(csv_data)),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=CsvDecoderModel(type="CsvDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
+
+
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_transport_and_content_gzip(
+    emit_connector_builder_messages: bool,
+):
+    csv_data = b"date,units\n2026-08-01,42\n"
+    headers = {"Content-Encoding": "gzip", "Content-Type": "application/gzip"}
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(gzip.compress(csv_data))),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=CsvDecoderModel(type="CsvDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
 
 
 def test_create_component_type_mismatch():
@@ -636,9 +791,9 @@ def test_single_use_oauth_branch():
     # default values
     assert authenticator._access_token_config_path == ["credentials", "access_token"]
     assert authenticator._token_expiry_date_config_path == ["credentials", "token_expiry_date"]
-    assert authenticator._refresh_token_error_status_codes == [400]
+    assert authenticator._refresh_token_error_status_codes == (400,)
     assert authenticator._refresh_token_error_key == "error"
-    assert authenticator._refresh_token_error_values == ["invalid_grant"]
+    assert authenticator._refresh_token_error_values == ("invalid_grant",)
 
 
 def test_list_based_stream_slicer_with_values_refd():
@@ -744,7 +899,26 @@ def test_create_substream_partition_router():
         "", resolved_manifest["partition_router"], {}
     )
 
-    partition_router = factory.create_component(
+    model_to_component_factory = ModelToComponentFactory()
+    model_to_component_factory.set_api_budget(
+        {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 1,
+                            "interval": "PT60S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        input_config,
+    )
+    partition_router = model_to_component_factory.create_component(
         model_type=SubstreamPartitionRouterModel,
         component_definition=partition_router_manifest,
         config=input_config,
@@ -756,6 +930,14 @@ def test_create_substream_partition_router():
     assert len(parent_stream_configs) == 2
     assert isinstance(parent_stream_configs[0].stream, DefaultStream)
     assert isinstance(parent_stream_configs[1].stream, DefaultStream)
+
+    # ensure api budget
+    assert get_retriever(
+        parent_stream_configs[0].stream
+    ).requester._http_client._api_budget._policies
+    assert get_retriever(
+        parent_stream_configs[1].stream
+    ).requester._http_client._api_budget._policies
 
     assert partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
     assert partition_router.parent_stream_configs[0].partition_field.eval({}) == "repository_id"
@@ -773,76 +955,6 @@ def test_create_substream_partition_router():
     assert partition_router.parent_stream_configs[1].parent_key.eval({}) == "someid"
     assert partition_router.parent_stream_configs[1].partition_field.eval({}) == "word_id"
     assert partition_router.parent_stream_configs[1].request_option is None
-
-
-# todo: delete this class once we deprecate SimpleRetriever.cursor and SimpleRetriever.state methods
-def test_datetime_based_cursor():
-    content = """
-    incremental:
-        type: DatetimeBasedCursor
-        $parameters:
-          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
-        start_datetime:
-          type: MinMaxDatetime
-          datetime: "{{ config['start_time'] }}"
-          min_datetime: "{{ config['start_time'] + day_delta(2) }}"
-        end_datetime: "{{ config['end_time'] }}"
-        step: "P10D"
-        cursor_field: "created"
-        cursor_granularity: "PT0.000001S"
-        lookback_window: "P5D"
-        start_time_option:
-          type: RequestOption
-          inject_into: request_parameter
-          field_name: "since_{{ config['cursor_field'] }}"
-        end_time_option:
-          type: RequestOption
-          inject_into: body_json
-          field_path: ["before_{{ parameters['cursor_field'] }}"]
-        partition_field_start: star
-        partition_field_end: en
-    """
-    parsed_manifest = YamlDeclarativeSource._parse(content)
-    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
-    slicer_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["incremental"], {"cursor_field": "created_at"}
-    )
-
-    stream_slicer = factory.create_component(
-        model_type=DatetimeBasedCursorModel,
-        component_definition=slicer_manifest,
-        config=input_config,
-    )
-
-    assert isinstance(stream_slicer, DatetimeBasedCursor)
-    assert stream_slicer._step == timedelta(days=10)
-    assert stream_slicer.cursor_field.string == "created"
-    assert stream_slicer.cursor_granularity == "PT0.000001S"
-    assert stream_slicer._lookback_window.string == "P5D"
-    assert stream_slicer.start_time_option.inject_into == RequestOptionType.request_parameter
-    assert (
-        stream_slicer.start_time_option.field_name.eval(
-            config=input_config | {"cursor_field": "updated_at"}
-        )
-        == "since_updated_at"
-    )
-    assert stream_slicer.end_time_option.inject_into == RequestOptionType.body_json
-    assert [field.eval({}) for field in stream_slicer.end_time_option.field_path] == [
-        "before_created_at"
-    ]
-    assert stream_slicer._partition_field_start.eval({}) == "star"
-    assert stream_slicer._partition_field_end.eval({}) == "en"
-
-    assert isinstance(stream_slicer._start_datetime, MinMaxDatetime)
-    assert stream_slicer.start_datetime._datetime_format == "%Y-%m-%dT%H:%M:%S.%f%z"
-    assert stream_slicer.start_datetime.datetime.string == "{{ config['start_time'] }}"
-    assert (
-        stream_slicer.start_datetime.min_datetime.string
-        == "{{ config['start_time'] + day_delta(2) }}"
-    )
-
-    assert isinstance(stream_slicer._end_datetime, MinMaxDatetime)
-    assert stream_slicer._end_datetime.datetime.string == "{{ config['end_time'] }}"
 
 
 def test_stream_with_incremental_and_retriever_with_partition_router():
@@ -1458,10 +1570,303 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    retriever = get_retriever(stream)
     assert isinstance(
-        get_retriever(stream).paginator.pagination_strategy,
+        retriever.paginator.pagination_strategy,
         StopConditionPaginationStrategyDecorator,
     )
+    # the stop condition only prevents the next page from being requested; the already-synced records
+    # of the last page are dropped by the retriever
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+
+
+@pytest.mark.parametrize(
+    "is_client_side_incremental",
+    [
+        pytest.param(False, id="test_data_feed_only"),
+        pytest.param(True, id="test_data_feed_with_client_side_incremental"),
+    ],
+)
+def test_incremental_data_feed_filters_already_synced_records_in_the_retriever(
+    is_client_side_incremental,
+):
+    content = f"""
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{{{ parameters['name'] }}}}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{{{ config['start_time'] }}}}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: {str(is_client_side_incremental).lower()}
+  retriever:
+    type: SimpleRetriever
+    name: "{{{{ parameters['name'] }}}}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{{{ response._metadata.next }}}}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+    # the `record_filter` condition stays in the record selector, so the post-pagination filter must not evaluate it
+    assert retriever.post_pagination_filter.condition is None
+    # filtering in the record selector would hide the already-synced records from the paginator and
+    # therefore silently disable the stop condition
+    assert not isinstance(
+        retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+    )
+
+
+def test_given_data_feed_and_record_filter_then_condition_stays_in_the_record_selector():
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['id'] > 1 }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    # the condition must keep running upstream of the paginator, otherwise the records it rejects would start counting
+    # towards the page size and could become the record the stop condition is evaluated on
+    assert retriever.record_selector.record_filter.condition == "{{ record['id'] > 1 }}"
+    assert retriever.post_pagination_filter.condition is None
+    # a data feed that is not client-side incremental keeps the `transform_before_filtering` default it had before the
+    # cursor filtering moved to the retriever
+    assert retriever.record_selector.transform_before_filtering is False
+
+
+def test_given_data_feed_and_client_side_incremental_then_transform_before_filtering():
+    """
+    Moving the cursor filtering to the retriever must not change when the `record_filter` condition runs: a
+    client-side incremental stream evaluates it after the transformations, otherwise a condition reading a
+    transformation-produced field silently rejects every record.
+    """
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['keep'] == 'yes' }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  transformations:
+    - type: AddFields
+      fields:
+        - path: ["keep"]
+          value: "yes"
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    assert retriever.record_selector.transform_before_filtering is True
+
+
+def test_given_data_feed_and_lazy_read_then_lazy_retriever_filters_already_synced_records():
+    """
+    `LazySimpleRetriever` inherits `read_records`, so it only drops the already-synced records of the boundary page
+    if the factory passes it the filter too.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "incremental_sync": {
+            "type": "DatetimeBasedCursor",
+            "datetime_format": "%Y-%m-%dT%H:%M:%S.%f%z",
+            "start_datetime": "{{ config['start_time'] }}",
+            "cursor_field": "created",
+            "is_data_feed": True,
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": '{{ response["data"][-1]["id"] }}',
+                },
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_definition,
+        config=input_config,
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever, LazySimpleRetriever)
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
 
 
 def test_given_data_feed_and_incremental_then_raise_error():
@@ -1636,34 +2041,534 @@ list_stream:
     )
 
 
-def test_given_data_feed_and_client_side_incremental_then_raise_error():
+def test_create_record_expander_with_parent_fields():
+    """The source-github `reviews` shape: children stamped with a field from the parent node."""
     content = """
-incremental_sync:
-  type: DatetimeBasedCursor
-  $parameters:
-    datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
-  start_datetime: "{{ config['start_time'] }}"
-  cursor_field: "created"
-  is_data_feed: true
-  is_client_side_incremental: true
-  """
-
-    parsed_incremental_sync = YamlDeclarativeSource._parse(content)
-    resolved_incremental_sync = resolver.preprocess_manifest(parsed_incremental_sync)
-    datetime_based_cursor_definition = transformer.propagate_types_and_parameters(
-        "", resolved_incremental_sync["incremental_sync"], {}
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data", "repository", "pullRequests", "nodes"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["reviews", "nodes"]
+          parent_fields:
+            - type: ParentFieldPath
+              parent_path: ["url"]
+              record_path: ["pull_request_url"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
     )
 
-    with pytest.raises(ValueError) as e:
-        factory.create_component(
-            model_type=DatetimeBasedCursorModel,
-            component_definition=datetime_based_cursor_definition,
-            config=input_config,
-        )
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.remain_original_record is False
+    assert len(expander.parent_fields) == 1
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "nodes": [
+                            {
+                                "url": "https://github.com/airbytehq/airbyte/pull/7",
+                                "reviews": {"nodes": [{"id": "PRR_1"}, {"id": "PRR_2"}]},
+                            },
+                            {
+                                "url": "https://github.com/airbytehq/airbyte/pull/8",
+                                "reviews": {"nodes": [{"id": "PRR_3"}]},
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"id": "PRR_1", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+        {"id": "PRR_2", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+        {"id": "PRR_3", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/8"},
+    ]
+
+
+def test_create_record_expander_with_parent_fields_without_explicit_type():
+    """`type: ParentFieldPath` is optional: the transformer fills it in, as it does for AddFields."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["nodes"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["reviews", "nodes"]
+          parent_fields:
+            - parent_path: ["url"]
+              record_path: ["pull_request_url"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
     assert (
-        e.value.args[0]
-        == "`Client side incremental` cannot be applied with `data feed`. Choose only 1 from them."
+        selector_manifest["extractor"]["record_expander"]["parent_fields"][0]["type"]
+        == "ParentFieldPath"
     )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "nodes": [
+                {
+                    "url": "https://github.com/airbytehq/airbyte/pull/7",
+                    "reviews": {"nodes": [{"id": "PRR_1"}]},
+                }
+            ]
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"id": "PRR_1", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+    ]
+
+
+def test_create_record_expander_propagates_parameters_into_parent_fields():
+    content = """
+    selector:
+      type: RecordSelector
+      $parameters:
+        parent_key: "url"
+        child_key: "pull_request_url"
+      extractor:
+        type: DpathExtractor
+        field_path: ["nodes"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["reviews", "nodes"]
+          parent_fields:
+            - parent_path: ["{{ parameters['parent_key'] }}"]
+              record_path: ["{{ parameters['child_key'] }}"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "nodes": [
+                {
+                    "url": "https://github.com/airbytehq/airbyte/pull/7",
+                    "reviews": {"nodes": [{"id": "PRR_1"}]},
+                }
+            ]
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"id": "PRR_1", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+    ]
+
+
+def test_create_record_expander_without_parent_fields_leaves_them_unset():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["items"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.record_expander.parent_fields is None
+
+
+def test_create_record_expander_with_merge_parent():
+    """The source-mailchimp `email_activity` shape: the parent flattened into each activity item."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["emails"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["activity"]
+          merge_parent: true
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.merge_parent is True
+    assert expander.remain_original_record is False
+    assert expander.parent_fields is None
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "emails": [
+                {
+                    "email_id": "e1",
+                    "list_id": "l1",
+                    "activity": [
+                        {"action": "open", "timestamp": "t1"},
+                        {"action": "click", "timestamp": "t2"},
+                    ],
+                },
+                {"email_id": "e2", "list_id": "l1", "activity": [{"action": "bounce"}]},
+            ]
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"email_id": "e1", "list_id": "l1", "action": "open", "timestamp": "t1"},
+        {"email_id": "e1", "list_id": "l1", "action": "click", "timestamp": "t2"},
+        {"email_id": "e2", "list_id": "l1", "action": "bounce"},
+    ]
+
+
+def test_create_record_expander_without_merge_parent_defaults_to_false():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["items"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.record_expander.merge_parent is False
+
+
+def test_create_record_expander_with_truncated_list_retriever():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["data", "object", "lines", "data"]
+          remain_original_record: true
+          truncation_indicator_path: ["data", "object", "lines", "has_more"]
+          truncated_list_retriever:
+            type: SimpleRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.stripe.com/v1/"
+              path: "invoices/{{ stream_slice['parent_record']['data']['object']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.truncation_indicator_path == ["data", "object", "lines", "has_more"]
+    assert isinstance(expander.truncated_list_retriever, SimpleRetriever)
+    assert expander.truncated_list_retriever.name == "record_expander_truncated_list"
+    assert expander.message_repository is factory._message_repository
+    assert expander.suppress_incomplete_fetch_warning is False
+
+
+# `$parameters.url_base` is how a `CustomRetriever` shares the requester's `url_base` with a nested paginator.
+_CURSOR_PAGINATOR_YAML = """
+            paginator:
+              type: DefaultPaginator
+              $parameters:
+                url_base: "https://api.test.com/"
+              page_token_option:
+                type: RequestOption
+                inject_into: request_parameter
+                field_name: starting_after
+              pagination_strategy:
+                type: CursorPagination
+                cursor_value: "{{ last_record['id'] }}"
+                stop_condition: "{{ not response['has_more'] }}"
+"""
+
+
+@pytest.mark.parametrize(
+    "paginator_yaml, expected_suppressed",
+    [
+        pytest.param(
+            _CURSOR_PAGINATOR_YAML, True, id="capped_default_paginator_suppresses_warning"
+        ),
+        pytest.param("", False, id="no_pagination_is_not_capped_so_warning_stays"),
+    ],
+)
+@pytest.mark.parametrize(
+    "retriever_type",
+    [
+        "type: SimpleRetriever",
+        "type: CustomRetriever\n            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+    ],
+    ids=["simple_retriever", "custom_retriever"],
+)
+def test_create_record_expander_suppresses_incomplete_fetch_warning_only_for_capped_paginator(
+    retriever_type, paginator_yaml, expected_suppressed
+):
+    content = _record_expander_selector(
+        f"""
+            {retriever_type}
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "invoices/{{{{ stream_slice['parent_record']['id'] }}}}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+            {paginator_yaml}
+        """
+    )
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    test_read_factory = ModelToComponentFactory(limit_pages_fetched_per_slice=2)
+
+    selector = test_read_factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander.suppress_incomplete_fetch_warning is expected_suppressed
+    assert (
+        isinstance(expander.truncated_list_retriever.paginator, PaginatorTestReadDecorator)
+        is expected_suppressed
+    )
+
+
+def _record_expander_selector(retriever_yaml: str) -> str:
+    return f"""
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["lines", "data"]
+          truncation_indicator_path: ["lines", "has_more"]
+          truncated_list_retriever:
+{retriever_yaml}
+    """
+
+
+def _create_record_expander(content: str):
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+    return selector.extractor.record_expander
+
+
+def test_create_record_expander_with_custom_truncated_list_retriever():
+    expander = _create_record_expander(
+        _record_expander_selector(
+            """
+            type: CustomRetriever
+            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "invoices/{{ stream_slice['parent_record']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+            """
+        )
+    )
+    retriever = expander.truncated_list_retriever
+    assert isinstance(retriever, TestingCustomRetriever)
+    assert retriever.name == "record_expander_truncated_list"
+    assert isinstance(retriever.requester, HttpRequester)
+    assert isinstance(retriever.record_selector, RecordSelector)
+    assert expander.suppress_incomplete_fetch_warning is False
+
+    request = requests.PreparedRequest()
+    request.headers = {}
+    request.url = "https://api.test.com/invoices/in_1/lines"
+    response = requests.Response()
+    response.request = request
+    response.status_code = 200
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response)["http"]["is_auxiliary"] is True
+
+
+@pytest.mark.parametrize(
+    "unsupported_option",
+    [
+        pytest.param(
+            """
+            partition_router:
+              type: ListPartitionRouter
+              values: ["a", "b"]
+              cursor_field: "partition"
+            """,
+            id="partition_router",
+        ),
+        pytest.param(
+            """
+            pagination_reset:
+              type: PaginationReset
+              action: RESET
+            """,
+            id="pagination_reset",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "retriever_type",
+    [
+        "type: SimpleRetriever",
+        "type: CustomRetriever\n            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+    ],
+    ids=["simple_retriever", "custom_retriever"],
+)
+def test_create_record_expander_rejects_unsupported_retriever_options(
+    unsupported_option, retriever_type
+):
+    content = _record_expander_selector(
+        f"""
+            {retriever_type}
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+        """
+        + unsupported_option
+    )
+    with pytest.raises(ValueError, match="not supported on `truncated_list_retriever`"):
+        _create_record_expander(content)
 
 
 @pytest.mark.parametrize(
@@ -1821,6 +2726,123 @@ requester:
     )
 
 
+@pytest.mark.parametrize(
+    "backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range",
+    [
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ConstantBackoffStrategy"
+        backoff_time_in_seconds: 60
+        jitter_range_in_seconds: 7
+            """,
+            ConstantBackoffStrategy,
+            7,
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ExponentialBackoffStrategy"
+        factor: 5
+        jitter_range_in_seconds: 15
+            """,
+            ExponentialBackoffStrategy,
+            15,
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_requester_with_backoff_jitter(
+    backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range
+):
+    content = f"""
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  url_base: "https://api.sendgrid.com"
+  {backoff_strategy_yaml}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester.error_handler, DefaultErrorHandler)
+    assert len(requester.error_handler.backoff_strategies) == 1
+    backoff_strategy = requester.error_handler.backoff_strategies[0]
+    assert isinstance(backoff_strategy, expected_backoff_strategy_type)
+    assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model, backoff_strategy_arguments",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel,
+            {
+                "type": "ConstantBackoffStrategy",
+                "backoff_time_in_seconds": 60,
+            },
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel,
+            {
+                "type": "ExponentialBackoffStrategy",
+                "factor": 5,
+            },
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_backoff_jitter_schema_validation(backoff_strategy_model, backoff_strategy_arguments):
+    backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=0)
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(
+            **backoff_strategy_arguments,
+            jitter_range_in_seconds="{{ config['backoff_jitter'] }}",
+        )
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=-1)
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel(
+                type="ConstantBackoffStrategy", backoff_time_in_seconds=60
+            ),
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel(type="ExponentialBackoffStrategy", factor=5),
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_backoff_strategy_with_negative_jitter_raises_error(backoff_strategy_model):
+    # Verify factory validation catches negative jitter even if Pydantic validation is bypassed.
+    backoff_strategy_model.__dict__["jitter_range_in_seconds"] = -1
+
+    with pytest.raises(ValueError, match="jitter_range_in_seconds"):
+        factory._create_component_from_model(backoff_strategy_model, config=input_config)
+
+
 def test_create_request_with_legacy_session_authenticator():
     content = """
 requester:
@@ -1914,18 +2936,76 @@ requester:
     )
 
     assert isinstance(selector.authenticator, ApiKeyAuthenticator)
-    assert isinstance(selector.authenticator.token_provider, SessionTokenProvider)
-    assert selector.authenticator.token_provider.session_token_path == ["id"]
-    assert isinstance(selector.authenticator.token_provider.login_requester, HttpRequester)
-    assert selector.authenticator.token_provider.session_token_path == ["id"]
+    # Default behavior wraps with InterpolatedSessionTokenProvider using "{{ session_token }}"
+    assert isinstance(selector.authenticator.token_provider, InterpolatedSessionTokenProvider)
+    assert selector.authenticator.token_provider.api_token == "{{ session_token }}"
+    session_token_provider = selector.authenticator.token_provider.session_token_provider
+    assert isinstance(session_token_provider, SessionTokenProvider)
+    assert session_token_provider.session_token_path == ["id"]
+    assert isinstance(session_token_provider.login_requester, HttpRequester)
     assert (
-        selector.authenticator.token_provider.login_requester._url_base.eval(input_config)
+        session_token_provider.login_requester._url_base.eval(input_config)
         == "https://api.sendgrid.com"
     )
-    assert selector.authenticator.token_provider.login_requester.get_request_body_json() == {
+    assert session_token_provider.login_requester.get_request_body_json() == {
         "username": "lists",
         "password": "verysecrettoken",
     }
+
+
+def test_create_request_with_session_authenticator_with_api_token_template():
+    """Test that api_token wraps the token provider with InterpolatedSessionTokenProvider."""
+    content = """
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  $parameters:
+    name: 'lists'
+  url_base: "https://api.sendgrid.com"
+  authenticator:
+    type: SessionTokenAuthenticator
+    decoder:
+      type: JsonDecoder
+    expiration_duration: P10D
+    login_requester:
+      path: /session
+      type: HttpRequester
+      url_base: 'https://api.sendgrid.com'
+      http_method: POST
+      request_body_json:
+        password: '{{ config.apikey }}'
+        username: '{{ parameters.name }}'
+    session_token_path:
+      - id
+    request_authentication:
+      type: ApiKey
+      inject_into:
+        type: RequestOption
+        field_name: Authorization
+        inject_into: header
+      api_token: "Token {{ session_token }}"
+    """
+    name = "name"
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name=name,
+        decoder=None,
+    )
+
+    assert isinstance(selector.authenticator, ApiKeyAuthenticator)
+    assert isinstance(selector.authenticator.token_provider, InterpolatedSessionTokenProvider)
+    assert selector.authenticator.token_provider.api_token == "Token {{ session_token }}"
+    assert isinstance(
+        selector.authenticator.token_provider.session_token_provider, SessionTokenProvider
+    )
 
 
 def test_given_composite_error_handler_does_not_match_response_then_fallback_on_default_error_handler(
@@ -2019,6 +3099,193 @@ authenticator:
     )
 
     assert isinstance(authenticator, expected_authenticator_class)
+
+
+_SESSION_TOKEN_AUTHENTICATOR = {
+    "type": "SessionTokenAuthenticator",
+    "login_requester": {
+        "type": "HttpRequester",
+        "url_base": "https://api.sendgrid.com",
+        "path": "/session",
+        "http_method": "POST",
+    },
+    "session_token_path": ["id"],
+    "request_authentication": {
+        "type": "ApiKey",
+        "inject_into": {
+            "type": "RequestOption",
+            "inject_into": "header",
+            "field_name": "X-Session",
+        },
+    },
+}
+
+_LEGACY_SESSION_TOKEN_AUTHENTICATOR = {
+    "type": "LegacySessionTokenAuthenticator",
+    "header": "token",
+    "login_url": "login",
+    "session_token_response_key": "session",
+    "validate_session_url": "validate",
+}
+
+
+def _create_requester_with_authenticator(authenticator, config):
+    return factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition={
+            "type": "HttpRequester",
+            "url_base": "https://api.sendgrid.com",
+            "path": "/v3/marketing/lists",
+            "authenticator": authenticator,
+        },
+        config=config,
+        name="lists",
+        decoder=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "auth_type, expected_authenticator_class",
+    [
+        pytest.param("session", ApiKeyAuthenticator, id="test_session_token_selected"),
+        pytest.param("legacy", LegacySessionTokenAuthenticator, id="test_legacy_session_selected"),
+        pytest.param("token", ApiKeyAuthenticator, id="test_token_selected"),
+        pytest.param("oauth", DeclarativeOauth2Authenticator, id="test_oauth_selected"),
+    ],
+)
+def test_create_requester_with_selective_authenticator_nesting_session_authenticators(
+    auth_type, expected_authenticator_class
+):
+    requester = _create_requester_with_authenticator(
+        {
+            "type": "SelectiveAuthenticator",
+            "authenticator_selection_path": ["auth", "type"],
+            "authenticators": {
+                "session": _SESSION_TOKEN_AUTHENTICATOR,
+                "legacy": _LEGACY_SESSION_TOKEN_AUTHENTICATOR,
+                "token": {"type": "ApiKeyAuthenticator", "header": "X-Key", "api_token": "key"},
+                "oauth": {
+                    "type": "OAuthAuthenticator",
+                    "token_refresh_endpoint": "https://api.url.com",
+                    "client_id": "some_id",
+                    "client_secret": "some_secret",
+                    "refresh_token": "some_token",
+                },
+            },
+        },
+        {**input_config, "auth": {"type": auth_type}},
+    )
+
+    assert isinstance(requester.authenticator, expected_authenticator_class)
+    if auth_type == "legacy":
+        assert requester.authenticator._api_url.eval(input_config) == "https://api.sendgrid.com"
+
+
+def test_create_requester_with_selective_authenticator_passes_stream_name_to_session_token_authenticator():
+    requester = _create_requester_with_authenticator(
+        {
+            "type": "SelectiveAuthenticator",
+            "authenticator_selection_path": ["auth", "type"],
+            "authenticators": {"session": _SESSION_TOKEN_AUTHENTICATOR},
+        },
+        {**input_config, "auth": {"type": "session"}},
+    )
+
+    session_token_provider = requester.authenticator.token_provider.session_token_provider
+    # the stream name, not the selector key, like a SessionTokenAuthenticator set on the requester directly
+    assert session_token_provider.login_requester.name == "lists_login_requester"
+
+
+def test_create_requester_with_custom_authenticator_nesting_session_token_authenticator():
+    requester = _create_requester_with_authenticator(
+        {
+            "type": "CustomAuthenticator",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingCustomAuthenticator",
+            "inner": _SESSION_TOKEN_AUTHENTICATOR,
+        },
+        input_config,
+    )
+
+    session_token_provider = requester.authenticator.inner.token_provider.session_token_provider
+    assert session_token_provider.login_requester.name == "lists_login_requester"
+
+
+def test_create_custom_authenticator_nesting_session_token_authenticator_with_name_in_parameters():
+    authenticator = factory.create_component(
+        model_type=CustomAuthenticatorModel,
+        component_definition={
+            "type": "CustomAuthenticator",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingCustomAuthenticator",
+            "inner": {**_SESSION_TOKEN_AUTHENTICATOR, "$parameters": {"name": "explicit"}},
+        },
+        config=input_config,
+    )
+
+    session_token_provider = authenticator.inner.token_provider.session_token_provider
+    assert session_token_provider.login_requester.name == "explicit_login_requester"
+
+
+def test_create_requester_with_selective_authenticator_nesting_custom_authenticator():
+    requester = _create_requester_with_authenticator(
+        {
+            "type": "SelectiveAuthenticator",
+            "authenticator_selection_path": ["auth", "type"],
+            "authenticators": {
+                "custom": {
+                    "type": "CustomAuthenticator",
+                    "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingCustomAuthenticator",
+                    "inner": _SESSION_TOKEN_AUTHENTICATOR,
+                },
+            },
+        },
+        {**input_config, "auth": {"type": "custom"}},
+    )
+
+    session_token_provider = requester.authenticator.inner.token_provider.session_token_provider
+    assert session_token_provider.login_requester.name == "lists_login_requester"
+
+
+def _create_custom_requester_with_selective_authenticator(authenticator, parameters=None):
+    return factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition={
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+            "url_base": "https://api.sendgrid.com",
+            "path": "/v3/marketing/lists",
+            "authenticator": {
+                "type": "SelectiveAuthenticator",
+                "authenticator_selection_path": ["auth", "type"],
+                "authenticators": {"selected": authenticator},
+                "$parameters": parameters or {},
+            },
+        },
+        config={**input_config, "auth": {"type": "selected"}},
+        name="lists",
+    )
+
+
+def test_create_custom_requester_with_selective_authenticator_passes_stream_name_to_session_token_authenticator():
+    requester = _create_custom_requester_with_selective_authenticator(_SESSION_TOKEN_AUTHENTICATOR)
+
+    session_token_provider = requester.authenticator.token_provider.session_token_provider
+    assert session_token_provider.login_requester.name == "lists_login_requester"
+
+
+def test_create_custom_requester_with_selective_authenticator_passes_url_base_parameter_to_legacy_session_token_authenticator():
+    requester = _create_custom_requester_with_selective_authenticator(
+        _LEGACY_SESSION_TOKEN_AUTHENTICATOR, {"url_base": "https://api.legacy.com"}
+    )
+
+    assert isinstance(requester.authenticator, LegacySessionTokenAuthenticator)
+    assert requester.authenticator._api_url.eval(input_config) == "https://api.legacy.com"
+
+
+def test_create_custom_requester_with_selective_authenticator_without_url_base_for_legacy_session_token_authenticator_raises():
+    with pytest.raises(
+        ValueError, match=r"Please provide SelectiveAuthenticator\.\$parameters\.url_base$"
+    ):
+        _create_custom_requester_with_selective_authenticator(_LEGACY_SESSION_TOKEN_AUTHENTICATOR)
 
 
 def test_create_composite_error_handler():
@@ -2395,6 +3662,98 @@ def test_create_custom_components(manifest, field_name, expected_value, expected
         assert getattr(custom_component, field_name) == expected_value
 
 
+@pytest.mark.parametrize(
+    "class_name",
+    [
+        pytest.param(
+            "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+            id="bundled_custom_component_class",
+        ),
+        pytest.param(
+            "os.getcwd",
+            id="arbitrary_importable_callable",
+        ),
+    ],
+)
+def test_create_custom_component_requires_custom_code_enabled(class_name, monkeypatch):
+    """A `Custom*` component declared by a config-injected manifest must not be instantiated
+    unless custom code execution is explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
+
+    A manifest provided through the config is untrusted input, and resolving its
+    `class_name` executes arbitrary importable code, so it must honor the same gate as
+    injected `components.py` code. The gate must fire regardless of whether `class_name`
+    points at a bundled custom component or at an arbitrary importable callable, and it
+    must fire before the referenced module is imported.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": class_name,
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        factory.create_component(
+            CustomErrorHandlerModel,
+            manifest,
+            {**input_config, INJECTED_MANIFEST: {"type": "DeclarativeSource"}},
+        )
+
+
+def test_create_custom_component_permitted_for_bundled_manifest(monkeypatch):
+    """A manifest bundled in a connector image may use its bundled custom components.
+
+    Published manifest-only connectors ship their own `manifest.yaml` and `components.py`
+    inside a trusted image, so their `Custom*` components must keep working in environments
+    that do not set `AIRBYTE_ENABLE_UNSAFE_CODE`, such as Airbyte Cloud.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    component = factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+    assert isinstance(component, TestingSomeComponent)
+
+
+def test_create_custom_component_requires_custom_code_enabled_when_untrusted(monkeypatch):
+    """A caller-supplied manifest must honor the gate even when it never passes through the config.
+
+    The manifest server receives the manifest as a request payload rather than through the
+    config, so its untrusted provenance is signalled by `custom_components_trusted=False`.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    untrusted_factory = ModelToComponentFactory(custom_components_trusted=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(
+        untrusted_factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved
+    )
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        untrusted_factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+
 def test_custom_components_do_not_contain_extra_fields():
     custom_substream_partition_router_manifest = {
         "type": "CustomPartitionRouter",
@@ -2472,12 +3831,32 @@ def test_custom_components_do_not_contain_extra_fields():
     assert custom_substream_partition_router.custom_pagination_strategy.page_size == 100
 
 
-def test_parse_custom_component_fields_if_subcomponent():
+@pytest.mark.parametrize(
+    "custom_pagination_strategy, expected_strategy_class",
+    [
+        pytest.param(
+            {"type": "PageIncrement", "page_size": 100}, PageIncrement, id="test_page_increment"
+        ),
+        pytest.param(
+            {"type": "CursorPagination", "cursor_value": "{{ response.next }}", "page_size": 100},
+            CursorPaginationStrategy,
+            id="test_cursor_pagination_without_decoder",
+        ),
+        pytest.param(
+            {"type": "OffsetIncrement", "page_size": 100},
+            OffsetIncrement,
+            id="test_offset_increment_without_decoder",
+        ),
+    ],
+)
+def test_parse_custom_component_fields_if_subcomponent(
+    custom_pagination_strategy, expected_strategy_class
+):
     custom_substream_partition_router_manifest = {
         "type": "CustomPartitionRouter",
         "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingCustomSubstreamPartitionRouter",
         "custom_field": "here",
-        "custom_pagination_strategy": {"type": "PageIncrement", "page_size": 100},
+        "custom_pagination_strategy": custom_pagination_strategy,
         "parent_stream_configs": [
             {
                 "type": "ParentStreamConfig",
@@ -2539,8 +3918,11 @@ def test_parse_custom_component_fields_if_subcomponent():
         == "repository_id"
     )
 
-    assert isinstance(custom_substream_partition_router.custom_pagination_strategy, PageIncrement)
-    assert custom_substream_partition_router.custom_pagination_strategy.page_size == 100
+    strategy = custom_substream_partition_router.custom_pagination_strategy
+    assert isinstance(strategy, expected_strategy_class)
+    assert strategy.get_page_size() == 100
+    if expected_strategy_class is not PageIncrement:
+        assert isinstance(strategy.decoder.decoder, JsonDecoder)
 
 
 class TestCreateTransformations:
@@ -3046,15 +4428,12 @@ def test_create_offset_increment():
         inject_on_first_request=True,
     )
 
-    expected_extractor = DpathExtractor(field_path=["results"], config=input_config, parameters={})
-    extractor_model = DpathExtractorModel(
-        type="DpathExtractor", field_path=expected_extractor.field_path
-    )
+    extractor_model = DpathExtractorModel(type="DpathExtractor", field_path=["results"])
 
     expected_strategy = OffsetIncrement(
         page_size=10,
         inject_on_first_request=True,
-        extractor=expected_extractor,
+        extractor=None,
         parameters={},
         config=input_config,
     )
@@ -3067,8 +4446,7 @@ def test_create_offset_increment():
     assert strategy.inject_on_first_request == expected_strategy.inject_on_first_request
     assert strategy.config == input_config
 
-    assert isinstance(strategy.extractor, DpathExtractor)
-    assert strategy.extractor.field_path == expected_extractor.field_path
+    assert strategy.extractor is None
 
 
 class MyCustomSchemaLoader(SchemaLoader):
@@ -3809,6 +5187,167 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
     )
 
 
+@pytest.mark.parametrize(
+    "child_state, cursor_datetime_formats, expected_parent_cursor_value",
+    [
+        pytest.param(
+            {"__ab_no_cursor_state_message": True},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="full_refresh_sentinel",
+        ),
+        pytest.param(
+            {"__ab_full_refresh_sync_complete": True},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="resumable_full_refresh_sentinel",
+        ),
+        pytest.param(
+            {
+                "states": [
+                    {
+                        "partition": {"id": "1", "parent_slice": {}},
+                        "cursor": {"updated_at": "2024-02-01T00:00:00.000000+0000"},
+                    }
+                ]
+            },
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="legacy_per_partition_state_without_parent_state",
+        ),
+        pytest.param(
+            {"updated_at": "2024-02-01T00:00:00.000000+0000"},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-02-01T00:00:00.000000+0000",
+            id="legacy_string_cursor_value",
+        ),
+        pytest.param(
+            {"updated_at": 1706745600},
+            ["%Y-%m-%dT%H:%M:%S.%f%z", "%s"],
+            "2024-02-01T00:00:00.000000+0000",
+            id="legacy_epoch_cursor_value",
+        ),
+        pytest.param(
+            {"updated_at": 1706745600.0},
+            ["%Y-%m-%dT%H:%M:%S.%f%z", "%s"],
+            "2024-02-01T00:00:00.000000+0000",
+            id="legacy_float_epoch_cursor_value",
+        ),
+        pytest.param(
+            {"updated_at": "2024-02-01T00:00:00.000000+0000", "lookback_window": 0},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="multiple_values_are_not_a_legacy_cursor",
+        ),
+    ],
+)
+def test_create_concurrent_cursor_from_perpartition_cursor_seeds_parent_only_from_a_cursor_value(
+    child_state, cursor_datetime_formats, expected_parent_cursor_value
+):
+    """
+    Without `parent_state`, a legacy child state with a single cursor value seeds the parent cursor. A child
+    stream can also carry state that is not a cursor value: the full refresh sentinels, or a legacy
+    per-partition state. If a later connector version adds an `incremental_dependency` parent, that value
+    must not be re-keyed under the parent's cursor field - doing so crashed cursor initialization with
+    `ValueError: No format in [...] matching True`.
+    """
+    content = f"""
+    type: DeclarativeStream
+    primary_key: "id"
+    name: test
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type: object
+        properties:
+          id:
+            type: string
+    incremental_sync:
+      type: "DatetimeBasedCursor"
+      cursor_field: "updated_at"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+      cursor_datetime_formats: {cursor_datetime_formats}
+      start_datetime: "{{{{ config['start_time'] }}}}"
+    retriever:
+      type: SimpleRetriever
+      name: test
+      requester:
+        type: HttpRequester
+        name: "test"
+        url_base: "https://api.test.com/v3/"
+        http_method: "GET"
+        authenticator:
+          type: NoAuth
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            parent_key: id
+            partition_field: id
+            incremental_dependency: true
+            stream:
+              type: DeclarativeStream
+              primary_key: id
+              name: parent_stream
+              schema_loader:
+                type: InlineSchemaLoader
+                schema:
+                  $schema: "http://json-schema.org/draft-07/schema"
+                  type: object
+                  properties:
+                    id:
+                      type: string
+              incremental_sync:
+                type: "DatetimeBasedCursor"
+                cursor_field: "updated_at"
+                datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+                cursor_datetime_formats: {cursor_datetime_formats}
+                start_datetime: "{{{{ config['start_time'] }}}}"
+              retriever:
+                type: SimpleRetriever
+                requester:
+                  type: HttpRequester
+                  url_base: "https://api.test.com/v3/parent"
+                  http_method: "GET"
+                record_selector:
+                  type: RecordSelector
+                  extractor:
+                    type: DpathExtractor
+                    field_path: []
+      """
+
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="test"),
+                    stream_state=AirbyteStateBlob(child_state),
+                ),
+            )
+        ]
+    )
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
+    )
+
+    parent_cursor_state = stream.cursor._partition_router.parent_stream_configs[
+        0
+    ].stream.cursor.state
+    assert parent_cursor_state == {"updated_at": expected_parent_cursor_value}
+
+
 def test_incrementing_count_cursor_with_partition_router_raises_error():
     content = """
     type: DeclarativeStream
@@ -3859,6 +5398,41 @@ def test_incrementing_count_cursor_with_partition_router_raises_error():
             component_definition=YamlDeclarativeSource._parse(content),
             config=input_config,
         )
+
+
+@pytest.mark.parametrize(
+    "is_compare_strictly, expected_slices",
+    [
+        pytest.param(
+            False, [{"start_time": "2024-09-01", "end_time": "2024-09-01"}], id="reads_the_one_day"
+        ),
+        pytest.param(True, [], id="skipped_when_compare_strictly"),
+    ],
+)
+def test_create_concurrent_cursor_from_datetime_based_cursor_given_start_equals_end(
+    is_compare_strictly, expected_slices
+):
+    concurrent_cursor = (
+        ModelToComponentFactory().create_concurrent_cursor_from_datetime_based_cursor(
+            model_type=DatetimeBasedCursorModel,
+            component_definition={
+                "type": "DatetimeBasedCursor",
+                "cursor_field": "updated_at",
+                "datetime_format": "%Y-%m-%d",
+                "start_datetime": "2024-09-01",
+                "end_datetime": "2024-09-01",
+                "step": "P30D",
+                "cursor_granularity": "P1D",
+                "is_compare_strictly": is_compare_strictly,
+            },
+            stream_name="test",
+            stream_namespace=None,
+            stream_state={},
+            config={},
+        )
+    )
+
+    assert list(concurrent_cursor.stream_slices()) == expected_slices
 
 
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
@@ -4172,6 +5746,137 @@ def test_create_async_retriever():
     assert download_retriever_record_selector.schema_normalization._config.name == "NoTransform"
 
 
+def test_dynamic_schema_loader_with_async_retriever():
+    """
+    Verifies that DynamicSchemaLoader can be created with an AsyncRetriever without raising
+    TypeError due to missing stream_slicer kwarg.
+    Regression test for https://github.com/airbytehq/airbyte-python-cdk/issues/766
+    """
+    content = """
+stream_with_dynamic_schema:
+  type: DeclarativeStream
+  name: test_stream
+  schema_loader:
+    type: DynamicSchemaLoader
+    retriever:
+      type: AsyncRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: ["data"]
+      status_mapping:
+        failed:
+          - Error
+        running:
+          - Pending
+        completed:
+          - Success
+        timeout: []
+      status_extractor:
+        type: DpathExtractor
+        field_path:
+          - status
+      download_target_extractor:
+        type: DpathExtractor
+        field_path:
+          - download_url
+      creation_requester:
+        type: HttpRequester
+        url_base: https://api.test.com
+        path: /reports/create
+        http_method: POST
+      polling_requester:
+        type: HttpRequester
+        url_base: https://api.test.com
+        path: /reports/status
+        http_method: GET
+      download_requester:
+        type: HttpRequester
+        url_base: "{{download_target}}"
+        http_method: GET
+    schema_type_identifier:
+      type: SchemaTypeIdentifier
+      key_pointer:
+        - name
+      type_pointer:
+        - type
+  retriever:
+    type: SimpleRetriever
+    requester:
+      type: HttpRequester
+      url_base: https://api.test.com
+      path: /data
+      http_method: GET
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: []
+    paginator:
+      type: NoPagination
+  $parameters:
+    name: "test_stream"
+    primary_key: "id"
+"""
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["stream_with_dynamic_schema"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_manifest,
+        config=input_config,
+    )
+
+    assert isinstance(stream, DefaultStream)
+    schema_loader = get_schema_loader(stream)
+    assert isinstance(schema_loader, DynamicSchemaLoader)
+    assert isinstance(schema_loader.retriever, AsyncRetriever)
+
+
+def test_dynamic_schema_loader_keeps_custom_retriever_stream_slicer():
+    content = """
+schema_loader:
+  type: DynamicSchemaLoader
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    stream_slicer:
+      type: ListPartitionRouter
+      cursor_field: p
+      values: ["a"]
+    requester:
+      type: HttpRequester
+      url: https://api.test.com/schema
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: []
+  schema_type_identifier:
+    type: SchemaTypeIdentifier
+    key_pointer:
+      - name
+"""
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    schema_loader_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["schema_loader"], {}
+    )
+
+    schema_loader = factory.create_component(
+        model_type=DynamicSchemaLoaderModel,
+        component_definition=schema_loader_manifest,
+        config=input_config,
+    )
+
+    assert isinstance(schema_loader.retriever, TestingCustomRetriever)
+    assert isinstance(schema_loader.retriever.stream_slicer, ListPartitionRouter)
+
+
 def test_api_budget():
     manifest = {
         "type": "DeclarativeSource",
@@ -4249,6 +5954,90 @@ def test_api_budget():
     # The 0.1s from 'PT0.1S' is stored in ms by PyRateLimiter internally
     # but here just check that the limit and interval exist
     assert policy._bucket.rates[0].interval == 100  # 100 ms
+
+
+def test_api_budget_passed_to_custom_requester():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert isinstance(custom_requester.api_budget, HttpAPIBudget)
+    assert custom_requester._http_client._api_budget is custom_requester.api_budget
+    assert len(custom_requester._http_client._api_budget._policies) == 1
+
+
+def test_api_budget_does_not_override_custom_requester_default_value():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithDefaultBudget",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert custom_requester.api_budget is None
 
 
 def test_api_budget_fixed_window_policy():
@@ -4474,6 +6263,300 @@ def test_create_grouping_partition_router_substream_with_request_option():
     ):
         factory.create_component(
             model_type=GroupingPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+def test_create_union_partition_router():
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repository
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a", "org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+    assert len(partition_router.partition_routers) == 2
+    assert isinstance(partition_router.partition_routers[0], SubstreamPartitionRouter)
+    assert isinstance(partition_router.partition_routers[1], ListPartitionRouter)
+
+    parent_stream_configs = partition_router.partition_routers[0].parent_stream_configs
+    assert len(parent_stream_configs) == 1
+    assert parent_stream_configs[0].parent_key.eval({}) == "full_name"
+    assert parent_stream_configs[0].partition_field.eval({}) == "repository"
+
+
+def test_create_grouping_partition_router_with_union_underlying_router():
+    content = """
+    partition_router:
+      type: GroupingPartitionRouter
+      group_size: 10
+      underlying_partition_router:
+        type: UnionPartitionRouter
+        partition_field: repository
+        partition_routers:
+          - type: ListPartitionRouter
+            cursor_field: repository
+            values: ["org/a"]
+          - type: ListPartitionRouter
+            cursor_field: repository
+            values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=GroupingPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, GroupingPartitionRouter)
+    assert isinstance(partition_router.underlying_partition_router, UnionPartitionRouter)
+
+
+def test_create_union_partition_router_with_interpolated_partition_field():
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: "{{ config['union_partition_field'] }}"
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: "{{ config['union_partition_field'] }}"
+          values: ["org/a"]
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config={**input_config, "union_partition_field": "repository"},
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+
+
+def test_create_union_partition_router_with_single_child():
+    """The schema requires minItems: 2; the factory enforces the same bound for
+    construction paths that bypass JSON-schema validation."""
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match="needs at least 2 child partition routers"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+@pytest.mark.parametrize(
+    "child_router_manifest",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repository
+              request_option:
+                inject_into: request_parameter
+                field_name: "repo"
+""",
+            id="substream_child_with_request_option",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+          request_option:
+            inject_into: request_parameter
+            field_name: "repo"
+""",
+            id="list_child_with_request_option",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_request_option(child_router_manifest):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(
+        ValueError, match="Request options are not supported for UnionPartitionRouter."
+    ):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+@pytest.mark.parametrize(
+    "child_router_manifest, mismatched_field",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repo
+""",
+            "repo",
+            id="substream_child_with_mismatched_partition_field",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repo
+          values: ["org/a"]
+""",
+            "repo",
+            id="list_child_with_mismatched_cursor_field",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_mismatched_partition_field(
+    child_router_manifest, mismatched_field
+):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match=f"emits '{mismatched_field}'"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
             component_definition=partition_router_manifest,
             config=input_config,
             stream_name="child_stream",
@@ -5103,6 +7186,252 @@ def test_create_stream_with_multiple_schema_loaders():
     assert isinstance(schema_loader.schema_loaders[1], InlineSchemaLoader)
 
 
+@pytest.mark.parametrize(
+    "allow_catalog_defined_cursor_field,catalog_cursor_field,expected_cursor_field",
+    [
+        pytest.param(
+            True,
+            "custom_cursor_field",
+            "custom_cursor_field",
+            id="test_catalog_defined_cursor_field",
+        ),
+        pytest.param(
+            True,
+            None,
+            "updated_at",
+            id="test_no_catalog_cursor_field_defaults_to_stream_defined_cursor_field",
+        ),
+        pytest.param(
+            False,
+            "custom_cursor_field",
+            "updated_at",
+            id="test_allow_catalog_defined_cursor_field_false_defaults_to_stream_defined_cursor_field",
+        ),
+        pytest.param(
+            True,
+            "",
+            "updated_at",
+            id="test_empty_string_catalog_cursor_field_defaults_to_stream_defined_cursor_field",
+        ),
+    ],
+)
+def test_catalog_defined_cursor_field(
+    allow_catalog_defined_cursor_field, catalog_cursor_field, expected_cursor_field
+):
+    content = """
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ config.get('start_date', '1970-01-01T00:00:00.0Z') }}"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%fZ"
+    cursor_field: "updated_at"
+    allow_catalog_defined_cursor_field: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="lists",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.incremental, SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+                cursor_field=[catalog_cursor_field] if catalog_cursor_field else None,
+            )
+        ]
+    )
+
+    model_to_component_factory = ModelToComponentFactory(
+        configured_catalog=configured_catalog,
+    )
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream_manifest["incremental_sync"]["allow_catalog_defined_cursor_field"] = (
+        allow_catalog_defined_cursor_field
+    )
+
+    stream: DefaultStream = model_to_component_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert stream.cursor_field == expected_cursor_field
+    assert stream._cursor_field.cursor_field_key == expected_cursor_field
+    assert (
+        stream._cursor_field.supports_catalog_defined_cursor_field
+        == allow_catalog_defined_cursor_field
+    )
+
+
+def test_catalog_defined_cursor_field_stream_missing():
+    content = """
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ config.get('start_date', '1970-01-01T00:00:00.0Z') }}"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%fZ"
+    cursor_field: "updated_at"
+    allow_catalog_defined_cursor_field: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="other_stream",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.incremental, SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+                cursor_field=["custom_cursor_field"],
+            )
+        ]
+    )
+
+    model_to_component_factory = ModelToComponentFactory(
+        configured_catalog=configured_catalog,
+    )
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream: DefaultStream = model_to_component_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert stream.cursor_field == "updated_at"
+    assert stream._cursor_field.cursor_field_key == "updated_at"
+    assert stream._cursor_field.supports_catalog_defined_cursor_field == True
+
+
+def test_block_simultaneous_read_from_stream_groups():
+    """Test that factory-created streams default to empty block_simultaneous_read.
+
+    The factory no longer handles stream_groups — that's done by
+    ConcurrentDeclarativeSource._apply_stream_groups after stream creation.
+    This test verifies the factory creates streams without group info.
+    """
+    content = """
+    definitions:
+      parent_stream:
+        type: DeclarativeStream
+        name: "parent"
+        primary_key: "id"
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: "https://api.example.com"
+            path: "/parent"
+            http_method: "GET"
+            authenticator:
+              type: BearerAuthenticator
+              api_token: "{{ config['api_key'] }}"
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+        schema_loader:
+          type: InlineSchemaLoader
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+    """
+
+    config = {"api_key": "test_key"}
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+
+    factory = ModelToComponentFactory()
+
+    parent_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["definitions"]["parent_stream"], {}
+    )
+    parent_stream: DefaultStream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=parent_manifest, config=config
+    )
+
+    assert isinstance(parent_stream, DefaultStream)
+    assert parent_stream.name == "parent"
+    assert parent_stream.block_simultaneous_read == ""
+
+
 def get_schema_loader(stream: DefaultStream):
     assert isinstance(
         stream._stream_partition_generator._partition_factory._schema_loader,
@@ -5111,9 +7440,2745 @@ def get_schema_loader(stream: DefaultStream):
     return stream._stream_partition_generator._partition_factory._schema_loader._decorated
 
 
+_PAGE_SIZE_REDUCTION_STREAM = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+retriever:
+  type: SimpleRetriever
+  {page_size_reduction}
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/graphql"
+    http_method: POST
+    error_handler:
+      type: DefaultErrorHandler
+      response_filters:
+        - type: HttpResponseFilter
+          http_codes: [502, 504]
+          action: {action}
+  paginator:
+    type: DefaultPaginator
+    pagination_strategy:
+      {pagination_strategy}
+    {page_size_option}
+    {page_token_option}
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+
+_CURSOR_PAGINATION_STRATEGY = (
+    'type: CursorPagination\n      page_size: 100\n      cursor_value: "{{ response.next }}"'
+)
+_PAGE_SIZE_OPTION = """page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: first"""
+
+
+def _page_size_reduction_stream(
+    page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+    action="REDUCE_PAGE_SIZE",
+    pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+    page_size_option=_PAGE_SIZE_OPTION,
+    page_token_option="",
+):
+    content = _PAGE_SIZE_REDUCTION_STREAM.format(
+        page_size_reduction=page_size_reduction,
+        action=action,
+        pagination_strategy=pagination_strategy,
+        page_size_option=page_size_option,
+        page_token_option=page_token_option,
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+    return factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+
+
+def test_given_page_size_reduction_then_create_retriever_with_defaults():
+    retriever = get_retriever(_page_size_reduction_stream())
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=2,
+        minimum_page_size=1,
+        max_attempts=5,
+        reset_policy=PageSizeResetPolicy.NEVER,
+    )
+
+
+def test_given_page_size_reduction_values_then_create_retriever_with_those_values():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    reduction_factor: 4\n"
+                "    minimum_page_size: 10\n"
+                "    max_attempts: 2\n"
+                "    reset_policy: AFTER_SUCCESSFUL_PAGE"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=4,
+        minimum_page_size=10,
+        max_attempts=2,
+        reset_policy=PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE,
+    )
+
+
+def test_given_no_page_size_reduction_then_retriever_has_none():
+    retriever = get_retriever(_page_size_reduction_stream(page_size_reduction="", action="RETRY"))
+
+    assert retriever.page_size_reduction is None
+
+
+def test_given_reduce_page_size_action_without_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_size_reduction="")
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+def test_given_page_increment_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(pagination_strategy="type: PageIncrement\n      page_size: 100")
+
+    assert "PageIncrement" in str(exception.value)
+
+
+def test_given_no_page_size_option_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_size_option="")
+
+    assert "page_size_option" in str(exception.value)
+
+
+def test_given_request_path_page_token_option_and_page_size_reduction_then_raise():
+    # The next page is then a URL built by the API which already carries the page size it echoed back, so the
+    # reduced page size would be sent next to the original one and the API picks which one it honors.
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_token_option="page_token_option:\n      type: RequestPath")
+
+    assert "RequestPath" in str(exception.value)
+
+
+def test_given_request_option_page_token_option_and_page_size_reduction_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_token_option=(
+                "page_token_option:\n"
+                "      type: RequestOption\n"
+                "      inject_into: request_parameter\n"
+                "      field_name: after"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_failure_message_then_create_retriever_with_that_message():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    failure_message: Select fewer fields on this stream."
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction.failure_message == "Select fewer fields on this stream."
+
+
+class _StrategyHonoringOverride(PaginationStrategy):
+    """A custom strategy that can be told the reduced page size."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(
+        self,
+        response,
+        last_page_size,
+        last_record,
+        last_page_token_value=None,
+        page_size_override=None,
+    ):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+class _StrategyIgnoringOverride(PaginationStrategy):
+    """A custom strategy predating the feature: it would raise TypeError on the first reduction."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(self, response, last_page_size, last_record, last_page_token_value=None):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+def test_given_custom_pagination_strategy_accepting_the_override_and_page_size_reduction_then_create_retriever():
+    """A custom strategy is written by whoever enables the reduction, so it is allowed as long
+    as it can receive the reduced page size. Rejecting every custom strategy would exclude the
+    GraphQL streams this feature exists for."""
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyHonoringOverride"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_custom_pagination_strategy_ignoring_the_override_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError, match="page_size_override"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyIgnoringOverride"
+            )
+        )
+
+
+class _StrategyAcceptingKwargs(PaginationStrategy):
+    """A custom strategy that swallows the override through `**kwargs` rather than naming it."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(
+        self, response, last_page_size, last_record, last_page_token_value=None, **kwargs
+    ):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+class _StrategySubclassingPageIncrement(PageIncrement):
+    """A custom strategy that inherits `next_page_token` - and therefore its rejection - from PageIncrement."""
+
+
+class _NotAPaginationStrategy:
+    """A class_name that builds but is not a pagination strategy: it defines no `next_page_token`."""
+
+    def __init__(self, **kwargs):
+        pass
+
+    @property
+    def initial_token(self):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+def test_given_custom_pagination_strategy_accepting_kwargs_and_page_size_reduction_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyAcceptingKwargs"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_custom_pagination_strategy_subclassing_page_increment_then_raise():
+    """
+    `PageIncrement.next_page_token` declares `page_size_override` only to reject it, so a subclass that does
+    not override the method satisfies the signature check while being unable to honor a reduction.
+    """
+    with pytest.raises(ValueError, match="PageIncrement"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      page_size: 100\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategySubclassingPageIncrement"
+            )
+        )
+
+
+def test_given_custom_pagination_strategy_without_next_page_token_then_raise_value_error():
+    """Every other config-time failure in the factory is a ValueError; this one used to escape as a bare
+    AttributeError, which is reported as a system error rather than a manifest problem."""
+    with pytest.raises(ValueError, match="next_page_token"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._NotAPaginationStrategy"
+            )
+        )
+
+
+_CURSOR_PAGINATION_WITH_STOP_CONDITION = (
+    'type: CursorPagination\n      page_size: 100\n      cursor_value: "{{{{ response.next }}}}"\n'
+    '      stop_condition: "{condition}"'
+)
+
+
+def test_given_stop_condition_compares_last_page_size_to_a_constant_then_raise():
+    """
+    A full page at the reduced size satisfies `last_page_size < 100`, so the pagination would end early and
+    silently drop the rest of the partition.
+    """
+    with pytest.raises(ValueError, match="last_page_size"):
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                condition="{{ last_page_size < 100 }}"
+            )
+        )
+
+
+def test_given_stop_condition_compares_last_page_size_to_the_requested_page_size_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                condition="{{ last_page_size < page_size }}"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_stop_condition_does_not_mention_last_page_size_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                condition="{{ not response.next }}"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # the three literal forms in the monorepo today: source-discord x3
+        pytest.param("{{ last_page_size < 100 }}", id="literal_100"),
+        pytest.param("{{ last_page_size < 200 }}", id="literal_200"),
+        pytest.param("{{ last_page_size < 1000 }}", id="literal_1000"),
+        # the form the string-matching gate let through: `\bpage_size\b` matches inside `config['page_size']`
+        pytest.param("{{ last_page_size < config['page_size'] }}", id="config_reference"),
+        pytest.param("{{ last_page_size < config.page_size }}", id="config_attribute_reference"),
+        pytest.param("{{ last_page_size < parameters['page_size'] }}", id="parameters_reference"),
+        pytest.param("{{ last_page_size <= 99 }}", id="less_than_or_equal_to_a_literal"),
+        pytest.param("{{ 100 > last_page_size }}", id="reversed_operands"),
+        pytest.param(
+            "{{ last_page_size < 100 or not response.next }}", id="inside_a_larger_expression"
+        ),
+        pytest.param("{{ last_page_size | int < 100 }}", id="through_a_filter"),
+    ],
+)
+def test_given_stop_condition_compares_last_page_size_to_a_value_that_does_not_follow_the_reduction_then_raise(
+    condition,
+):
+    """
+    A full page at the reduced size satisfies each of these, so the pagination would end early and silently
+    drop the rest of the partition. `config['page_size']` is the one the previous string-matching gate
+    accepted: it contains the substring `page_size` but holds the configured size, not the requested one.
+    """
+    with pytest.raises(ValueError, match="last_page_size"):
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(condition=condition)
+        )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # 11 of the 14 `last_page_size` stop conditions in the monorepo, including all 6 in
+        # source-zendesk-support and all 5 in source-trello. A reduction cannot make an empty page non-empty.
+        pytest.param("{{ last_page_size == 0 }}", id="emptiness_test"),
+        pytest.param("{{ 0 == last_page_size }}", id="emptiness_test_reversed"),
+        pytest.param(
+            "{{ last_page_size == 0 or not response.next }}", id="emptiness_test_or_no_cursor"
+        ),
+        # equivalent to emptiness, because `minimum_page_size` defaults to 1
+        pytest.param("{{ last_page_size < 1 }}", id="less_than_the_minimum_page_size"),
+        pytest.param("{{ last_page_size <= 0 }}", id="at_most_zero"),
+        # the sanctioned form, and variations on it that still follow the reduction
+        pytest.param("{{ last_page_size < page_size }}", id="requested_page_size"),
+        pytest.param(
+            "{{ last_page_size < page_size | int }}", id="requested_page_size_through_a_filter"
+        ),
+        pytest.param("{{ page_size > last_page_size }}", id="requested_page_size_reversed"),
+        # a reduction only makes a page smaller, so a lower bound can only stop being satisfied
+        pytest.param("{{ last_page_size > 1000 }}", id="lower_bound"),
+    ],
+)
+def test_given_reduction_safe_stop_condition_then_create_retriever(condition):
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(condition=condition)
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        pytest.param(
+            "{{ last_page_size == config['page_size'] }}", id="equality_against_a_config_value"
+        ),
+        pytest.param("{{ last_page_size is lt(100) }}", id="jinja_test_rather_than_a_comparison"),
+        pytest.param("{{ last_page_size < }}", id="not_a_valid_jinja_expression"),
+    ],
+)
+def test_given_stop_condition_shape_cannot_be_classified_then_warn_and_create_retriever(
+    caplog, condition
+):
+    """
+    The gate runs at stream construction, so rejecting a manifest it merely does not understand would take
+    `check` and `discover` down with `read`. A shape outside the analysis warns instead.
+    """
+    with caplog.at_level(logging.WARNING):
+        retriever = get_retriever(
+            _page_size_reduction_stream(
+                pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                    condition=condition
+                )
+            )
+        )
+
+    assert retriever.page_size_reduction is not None
+    assert "could not be checked against the reduction" in caplog.text
+
+
+def test_given_no_paginator_and_page_size_reduction_then_raise():
+    content = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+retriever:
+  type: SimpleRetriever
+  page_size_reduction:
+    type: PageSizeReduction
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/items"
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "DefaultPaginator" in str(exception.value)
+
+
+_OFFSET_INCREMENT_STRATEGY = "type: OffsetIncrement\n      page_size: 100"
+
+
+def test_given_offset_increment_and_page_size_reduction_then_create_retriever():
+    """
+    `OffsetIncrement` is the only strategy whose stop condition depends on the page size, so a typo in the
+    validator's isinstance tuple would reject every manifest this feature is meant to support.
+    """
+    retriever = get_retriever(
+        _page_size_reduction_stream(pagination_strategy=_OFFSET_INCREMENT_STRATEGY)
+    )
+
+    assert retriever.page_size_reduction == PageSizeReduction()
+
+
+def test_given_no_page_size_on_the_strategy_and_page_size_reduction_then_raise():
+    """
+    Without a `page_size` the paginator injects nothing, so the reduction is a dead end that would only
+    surface on the first failing response, after records have been emitted.
+    """
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(pagination_strategy="type: OffsetIncrement")
+
+    assert "page_size" in str(exception.value)
+
+
+def test_given_minimum_page_size_not_below_the_page_size_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n    type: PageSizeReduction\n    minimum_page_size: 100"
+            )
+        )
+
+    assert "minimum_page_size" in str(exception.value)
+
+
+def test_given_composite_error_handler_with_reduce_page_size_action_then_require_page_size_reduction():
+    """The action can be nested in a CompositeErrorHandler, which the guard has to recurse into."""
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "Test",
+        "primary_key": "id",
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://airbyte.io",
+                "path": "/graphql",
+                "http_method": "POST",
+                "error_handler": {
+                    "type": "CompositeErrorHandler",
+                    "error_handlers": [
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [429],
+                                    "action": "RATE_LIMITED",
+                                }
+                            ],
+                        },
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [502],
+                                    "action": "REDUCE_PAGE_SIZE",
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "first",
+                },
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "page_size": 100,
+                    "cursor_value": "{{ response.next }}",
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+    # and the same manifest with the block present builds
+    stream_definition["retriever"]["page_size_reduction"] = {"type": "PageSizeReduction"}
+    retriever = get_retriever(
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+    )
+    assert retriever.page_size_reduction == PageSizeReduction()
+
+
+def test_given_page_size_reduction_without_reduce_page_size_action_then_warn(caplog):
+    """
+    A `CustomErrorHandler` can resolve to the action without being inspectable, so this cannot raise. It must
+    not stay silent either: the feature would be dead on a stream that only exists because it would fail.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(_page_size_reduction_stream(action="RETRY"))
+
+    assert retriever.page_size_reduction == PageSizeReduction()
+    assert "REDUCE_PAGE_SIZE" in caplog.text
+
+
+def test_given_minimum_page_size_out_of_reach_of_max_attempts_then_warn(caplog):
+    """
+    Each reduction divides the page size by `reduction_factor` and spends one attempt, so the two settings are
+    two bounds and the tighter one wins. A floor the budget cannot reach in one run of failing pages is inert
+    there, and the error branch written for hitting it never fires on that run.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(
+            _page_size_reduction_stream(
+                page_size_reduction=(
+                    "page_size_reduction:\n"
+                    "    type: PageSizeReduction\n"
+                    "    minimum_page_size: 10\n"
+                    "    max_attempts: 2"
+                )
+            )
+        )
+
+    assert retriever.page_size_reduction.minimum_page_size == 10
+    assert "minimum_page_size" in caplog.text
+    assert "25 records per page" in caplog.text
+    assert "`max_attempts` of at least 4" in caplog.text
+
+
+def test_given_minimum_page_size_within_reach_of_max_attempts_then_do_not_warn(caplog):
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        get_retriever(
+            _page_size_reduction_stream(
+                page_size_reduction=(
+                    "page_size_reduction:\n"
+                    "    type: PageSizeReduction\n"
+                    "    minimum_page_size: 10\n"
+                    "    max_attempts: 5"
+                )
+            )
+        )
+
+    assert "minimum_page_size" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "page_size_reduction",
+    [
+        pytest.param("page_size_reduction:\n    type: PageSizeReduction", id="floor_left_default"),
+        pytest.param(
+            "page_size_reduction:\n    type: PageSizeReduction\n    minimum_page_size: 1",
+            id="floor_set_to_the_default_value",
+        ),
+    ],
+)
+def test_given_no_floor_worth_reaching_then_do_not_warn_about_its_reachability(
+    page_size_reduction, caplog
+):
+    # A floor of 1 is out of reach of the default budget on any page size above 32, so warning about it would
+    # fire on nearly every stream that opts in - including one that only spells the default out longhand.
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        get_retriever(_page_size_reduction_stream(page_size_reduction=page_size_reduction))
+
+    assert "minimum_page_size" not in caplog.text
+
+
+def test_given_query_properties_and_page_size_reduction_then_raise():
+    """
+    Records of the earlier property chunks were already emitted when a later chunk asks for a smaller page, so
+    re-issuing the page would emit them twice.
+    """
+    content = _PAGE_SIZE_REDUCTION_STREAM.format(
+        page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+        action="REDUCE_PAGE_SIZE",
+        pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+        page_size_option=_PAGE_SIZE_OPTION,
+        page_token_option="",
+    ).replace(
+        "    http_method: POST\n",
+        "    http_method: POST\n"
+        "    query_properties:\n"
+        "      type: QueryProperties\n"
+        '      property_list: ["a", "b"]\n',
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "query properties" in str(exception.value)
+
+
+def _lazy_read_stream_definition(page_size_reduction, action):
+    return {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            **page_size_reduction,
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+                "error_handler": {
+                    "type": "DefaultErrorHandler",
+                    "response_filters": [
+                        {"type": "HttpResponseFilter", "http_codes": [502], "action": action}
+                    ],
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "first",
+                },
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "page_size": 100,
+                    "cursor_value": '{{ response["data"][-1]["id"] }}',
+                },
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "page_size_reduction, action",
+    [
+        pytest.param(
+            {"page_size_reduction": {"type": "PageSizeReduction"}},
+            "RETRY",
+            id="page_size_reduction_without_the_action",
+        ),
+        pytest.param({}, "REDUCE_PAGE_SIZE", id="action_without_page_size_reduction"),
+        pytest.param(
+            {"page_size_reduction": {"type": "PageSizeReduction"}},
+            "REDUCE_PAGE_SIZE",
+            id="both",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "has_state",
+    [pytest.param(False, id="first_sync"), pytest.param(True, id="resumed_sync")],
+)
+def test_given_lazy_read_pointer_and_page_size_reduction_then_raise(
+    page_size_reduction, action, has_state
+):
+    """
+    `LazySimpleRetriever` paginates the parent's embedded pages, so there is no page of its own to re-issue.
+    The rejection must not depend on the presence of state: gating it on the lazy branch, which only applies
+    while a stream has no state, would accept the same manifest from the second sync onwards.
+    """
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="items"),
+                    stream_state=AirbyteStateBlob({"created": "2025-01-01T00:00:00+0000"}),
+                ),
+            )
+        ]
+        if has_state
+        else []
+    )
+
+    with pytest.raises(ValueError) as exception:
+        ModelToComponentFactory(connector_state_manager=connector_state_manager).create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=_lazy_read_stream_definition(page_size_reduction, action),
+            config=input_config,
+        )
+
+    assert "lazy_read_pointer" in str(exception.value)
+
+
+def test_given_file_uploader_and_page_size_reduction_then_raise():
+    """
+    The file uploader sends one request per record from inside the page's record generator, so a reduction
+    asked for halfway through a page would re-emit the records the generator already yielded.
+    """
+    content = (
+        _PAGE_SIZE_REDUCTION_STREAM.format(
+            page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+            action="REDUCE_PAGE_SIZE",
+            pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+            page_size_option=_PAGE_SIZE_OPTION,
+            page_token_option="",
+        )
+        + """file_uploader:
+  type: FileUploader
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/download"
+  download_target_extractor:
+    type: DpathExtractor
+    field_path: ["url"]
+"""
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "file_uploader" in str(exception.value)
+
+
+_REQUEST_WINDOW_REDUCTION_STREAM = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+{incremental_sync}
+retriever:
+  type: SimpleRetriever
+  {request_window_splitting}
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/items"
+    http_method: GET
+    error_handler:
+      type: DefaultErrorHandler
+      response_filters:
+        - type: HttpResponseFilter
+          http_codes: [400]
+          action: {action}
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+
+_DATETIME_BASED_CURSOR_WITH_GRANULARITY = """incremental_sync:
+  type: DatetimeBasedCursor
+  start_datetime: "2024-01-01T00:00:00Z"
+  end_datetime: "2024-01-31T00:00:00Z"
+  step: "P7D"
+  cursor_field: "updated_at"
+  cursor_granularity: "PT1S"
+  datetime_format: "%Y-%m-%dT%H:%M:%SZ\""""
+
+
+def _request_window_splitting_stream(
+    request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+    action="SPLIT_REQUEST_WINDOW",
+    incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+):
+    content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
+        incremental_sync=incremental_sync,
+        request_window_splitting=request_window_splitting,
+        action=action,
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+    return factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+
+
+def test_given_request_window_splitting_then_create_retriever_with_defaults():
+    retriever = get_retriever(_request_window_splitting_stream())
+
+    assert retriever.request_window_splitting == RequestWindowSplitting(
+        failure_message=None,
+    )
+    assert callable(retriever.request_window_splitter)
+    assert retriever.request_window_splitter.__name__ == "split_request_window"
+
+
+def test_given_request_window_splitting_values_then_create_retriever_with_those_values():
+    retriever = get_retriever(
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n"
+                "    type: RequestWindowSplitting\n"
+                "    failure_message: Lower time_window so that each request covers less data.\n"
+                "    min_split_window: P1D"
+            )
+        )
+    )
+
+    assert retriever.request_window_splitting == RequestWindowSplitting(
+        failure_message="Lower time_window so that each request covers less data.",
+        min_split_window=timedelta(days=1),
+    )
+
+
+def test_given_no_request_window_splitting_then_retriever_has_none():
+    retriever = get_retriever(
+        _request_window_splitting_stream(request_window_splitting="", action="RETRY")
+    )
+
+    assert retriever.request_window_splitting is None
+    assert retriever.request_window_splitter is None
+
+
+def test_given_split_request_window_action_without_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(request_window_splitting="")
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+
+def test_given_request_window_splitting_without_split_request_window_action_then_warn(caplog):
+    """
+    A `CustomErrorHandler` can resolve to the action without being inspectable, and custom code can raise
+    `RequestWindowSplitRequiredException` directly without going through any error handler at all - so this
+    cannot raise. It must not stay silent either: the feature would be dead on a stream that only defines the
+    block because it expects to need it.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(_request_window_splitting_stream(action="RETRY"))
+
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+    assert "SPLIT_REQUEST_WINDOW" in caplog.text
+
+
+def test_given_composite_error_handler_with_split_request_window_action_then_require_request_window_splitting():
+    """The action can be nested in a CompositeErrorHandler, which the guard has to recurse into."""
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "Test",
+        "primary_key": "id",
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+        "incremental_sync": {
+            "type": "DatetimeBasedCursor",
+            "start_datetime": "2024-01-01T00:00:00Z",
+            "end_datetime": "2024-01-31T00:00:00Z",
+            "step": "P7D",
+            "cursor_field": "updated_at",
+            "cursor_granularity": "PT1S",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://airbyte.io",
+                "path": "/items",
+                "http_method": "GET",
+                "error_handler": {
+                    "type": "CompositeErrorHandler",
+                    "error_handlers": [
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [429],
+                                    "action": "RATE_LIMITED",
+                                }
+                            ],
+                        },
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+    # and the same manifest with the block present builds
+    stream_definition["retriever"]["request_window_splitting"] = {"type": "RequestWindowSplitting"}
+    retriever = get_retriever(
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+    )
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+
+
+def test_given_no_incremental_sync_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(incremental_sync="")
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "partition router" not in str(exception.value)
+
+
+def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  datetime_format: "%Y-%m-%dT%H:%M:%SZ"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+
+
+def test_given_zero_length_cursor_granularity_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT0S"\n  datetime_format: "%Y-%m-%dT%H:%M:%SZ"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "zero-length" in str(exception.value)
+
+
+def test_given_datetime_format_coarser_than_cursor_granularity_and_request_window_splitting_then_raise():
+    """
+    `cursor_granularity: PT1S` claims second-level precision, but `%Y-%m-%d` can only render day boundaries: two
+    children split less than a day apart would format to the same date and the retriever would re-request the
+    same (or a reversed) window instead of a smaller one.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01"\n'
+                '  end_datetime: "2024-01-31"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT1S"\n  datetime_format: "%Y-%m-%d"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "datetime_format" in str(exception.value)
+
+
+def test_given_client_side_incremental_and_request_window_splitting_then_raise():
+    """
+    A client-side-incremental cursor filters records after they're read instead of sending the window as
+    request parameters, so every split child would send the exact same request as its parent - splitting would
+    never resolve a SPLIT_REQUEST_WINDOW response.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT1S"\n  datetime_format: "%Y-%m-%dT%H:%M:%SZ"\n'
+                "  is_client_side_incremental: true"
+            )
+        )
+
+    assert "is_client_side_incremental" in str(exception.value)
+
+
+def test_given_month_or_year_min_split_window_and_request_window_splitting_then_raise():
+    """
+    `P1M` parses to an `isodate.Duration`, which has no fixed length to compare a window's span against -
+    `ConcurrentCursor.split_request_window` would raise a `TypeError` mid-sync trying to. This must be rejected
+    at config time instead.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n    type: RequestWindowSplitting\n    min_split_window: P1M"
+            )
+        )
+
+    assert "min_split_window" in str(exception.value)
+
+
+def test_given_negative_min_split_window_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n    type: RequestWindowSplitting\n    min_split_window: -PT1H"
+            )
+        )
+
+    assert "min_split_window" in str(exception.value)
+
+
+def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise():
+    """
+    `IncrementingCountCursor` builds a `ConcurrentCursor` too, but not one carrying the datetime boundary
+    fields, granularity, or formatting `split_request_window` needs, so it must be rejected the same way a
+    stream with no incremental_sync at all is.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                "incremental_sync:\n  type: IncrementingCountCursor\n  cursor_field: id"
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+
+
+def test_given_partition_router_and_request_window_splitting_then_split_with_per_partition_cursor():
+    """
+    A partition router puts one cursor per partition behind a `ConcurrentPerPartitionCursor`, which splits a
+    window the way any of those cursors would, so the stream is accepted and the retriever is bound to it.
+    """
+    content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
+        incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+        request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+        action="SPLIT_REQUEST_WINDOW",
+    ).replace(
+        "  requester:\n",
+        "  partition_router:\n"
+        "    type: ListPartitionRouter\n"
+        '    values: ["a", "b"]\n'
+        "    cursor_field: partition_field\n"
+        "  requester:\n",
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+    retriever = get_retriever(stream)
+
+    assert isinstance(stream.cursor, ConcurrentPerPartitionCursor)
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+    assert retriever.request_window_splitter.__self__ is stream.cursor
+    assert retriever.request_window_splitter.__name__ == "split_request_window"
+
+
+def test_given_query_properties_and_request_window_splitting_then_raise():
+    content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
+        incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+        request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+        action="SPLIT_REQUEST_WINDOW",
+    ).replace(
+        "    http_method: GET\n",
+        "    http_method: GET\n"
+        "    query_properties:\n"
+        "      type: QueryProperties\n"
+        '      property_list: ["a", "b"]\n',
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "query properties" in str(exception.value)
+
+
+def test_given_file_uploader_and_request_window_splitting_then_raise():
+    content = (
+        _REQUEST_WINDOW_REDUCTION_STREAM.format(
+            incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+            request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+            action="SPLIT_REQUEST_WINDOW",
+        )
+        + """file_uploader:
+  type: FileUploader
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/download"
+  download_target_extractor:
+    type: DpathExtractor
+    field_path: ["url"]
+"""
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "file_uploader" in str(exception.value)
+
+
+def test_given_lazy_read_pointer_and_request_window_splitting_then_raise():
+    """
+    A LazySimpleRetriever reads records embedded in the parent's own pages rather than requesting a window of
+    its own, so there is nothing for a reduced child window to be read from.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "request_window_splitting": {"type": "RequestWindowSplitting"},
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+                "error_handler": {
+                    "type": "DefaultErrorHandler",
+                    "response_filters": [
+                        {
+                            "type": "HttpResponseFilter",
+                            "http_codes": [400],
+                            "action": "SPLIT_REQUEST_WINDOW",
+                        }
+                    ],
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "request_window_splitting" in str(exception.value)
+    assert "lazily" in str(exception.value)
+
+
+def test_given_login_requester_with_split_request_window_action_then_raise():
+    """
+    Only the main requester of a SimpleRetriever reads a cursor-sliced window, so the action is rejected on a
+    SessionTokenAuthenticator's login_requester even though it is schema-legal there.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "Test",
+        "primary_key": "id",
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://airbyte.io",
+                "path": "/items",
+                "http_method": "GET",
+                "authenticator": {
+                    "type": "SessionTokenAuthenticator",
+                    "login_requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://airbyte.io",
+                        "path": "/session",
+                        "http_method": "POST",
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                }
+                            ],
+                        },
+                    },
+                    "session_token_path": ["session_token"],
+                    "expiration_duration": "PT1H",
+                    "request_authentication": {
+                        "type": "ApiKey",
+                        "inject_into": {
+                            "type": "RequestOption",
+                            "inject_into": "header",
+                            "field_name": "X-Session-Token",
+                        },
+                    },
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+    assert "login_requester" in str(exception.value)
+
+
+_REDUCE_PAGE_SIZE_ERROR_HANDLER = {
+    "type": "DefaultErrorHandler",
+    "response_filters": [
+        {"type": "HttpResponseFilter", "http_codes": [502], "action": "REDUCE_PAGE_SIZE"}
+    ],
+}
+
+
+def test_given_reduce_page_size_action_on_the_file_uploader_requester_then_raise():
+    """
+    `error_handler` is defined on `HttpRequester`, so the action is manifest-legal on requesters that have no
+    page of their own. Nothing there can honor it, so it is rejected rather than raised mid-sync.
+    """
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=FileUploaderModel,
+            component_definition={
+                "type": "FileUploader",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/download",
+                    "error_handler": _REDUCE_PAGE_SIZE_ERROR_HANDLER,
+                },
+                "download_target_extractor": {
+                    "type": "DpathExtractor",
+                    "field_path": ["url"],
+                },
+            },
+            config={},
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+def test_given_reduce_page_size_action_on_the_login_requester_then_raise():
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=SessionTokenAuthenticatorModel,
+            component_definition={
+                "type": "SessionTokenAuthenticator",
+                "login_requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/login",
+                    "http_method": "POST",
+                    "error_handler": _REDUCE_PAGE_SIZE_ERROR_HANDLER,
+                },
+                "session_token_path": ["token"],
+                "request_authentication": {
+                    "type": "ApiKey",
+                    "inject_into": {
+                        "type": "RequestOption",
+                        "inject_into": "header",
+                        "field_name": "Authorization",
+                    },
+                },
+            },
+            config={},
+            name="a_stream",
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+@pytest.mark.parametrize(
+    "requester_field",
+    [
+        "creation_requester",
+        "polling_requester",
+        "download_requester",
+        "download_target_requester",
+        "abort_requester",
+        "delete_requester",
+    ],
+)
+def test_given_reduce_page_size_action_on_an_async_retriever_requester_then_raise(requester_field):
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "type": "AsyncJobStatusMap",
+            "running": ["running"],
+            "completed": ["ready"],
+            "failed": ["failed"],
+            "timeout": ["timeout"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}/download",
+        },
+    }
+    definition[requester_field] = {
+        "type": "HttpRequester",
+        "url_base": "https://airbyte.io",
+        "path": "/jobs",
+        "error_handler": _REDUCE_PAGE_SIZE_ERROR_HANDLER,
+    }
+    if requester_field == "download_target_requester":
+        # Without it the `download_target_extractor` guard fires first and the assertion below would pass for
+        # the wrong reason.
+        definition["download_target_extractor"] = {
+            "type": "DpathExtractor",
+            "field_path": ["url"],
+        }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=AsyncRetrieverModel,
+            component_definition=definition,
+            config={},
+            name="a_stream",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+_SPLIT_REQUEST_WINDOW_ERROR_HANDLER = {
+    "type": "DefaultErrorHandler",
+    "response_filters": [
+        {"type": "HttpResponseFilter", "http_codes": [400], "action": "SPLIT_REQUEST_WINDOW"}
+    ],
+}
+
+
+def test_given_split_request_window_action_on_the_file_uploader_requester_then_raise():
+    """
+    `error_handler` is defined on `HttpRequester`, so the action is manifest-legal on requesters that have no
+    window of their own. Nothing there can honor it, so it is rejected rather than raised mid-sync.
+    """
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=FileUploaderModel,
+            component_definition={
+                "type": "FileUploader",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/download",
+                    "error_handler": _SPLIT_REQUEST_WINDOW_ERROR_HANDLER,
+                },
+                "download_target_extractor": {
+                    "type": "DpathExtractor",
+                    "field_path": ["url"],
+                },
+            },
+            config={},
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+
+@pytest.mark.parametrize(
+    "requester_field",
+    [
+        "creation_requester",
+        "polling_requester",
+        "download_requester",
+        "download_target_requester",
+        "abort_requester",
+        "delete_requester",
+    ],
+)
+def test_given_split_request_window_action_on_an_async_retriever_requester_then_raise(
+    requester_field,
+):
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "type": "AsyncJobStatusMap",
+            "running": ["running"],
+            "completed": ["ready"],
+            "failed": ["failed"],
+            "timeout": ["timeout"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}/download",
+        },
+    }
+    definition[requester_field] = {
+        "type": "HttpRequester",
+        "url_base": "https://airbyte.io",
+        "path": "/jobs",
+        "error_handler": _SPLIT_REQUEST_WINDOW_ERROR_HANDLER,
+    }
+    if requester_field == "download_target_requester":
+        # Without it the `download_target_extractor` guard fires first and the assertion below would pass for
+        # the wrong reason.
+        definition["download_target_extractor"] = {
+            "type": "DpathExtractor",
+            "field_path": ["url"],
+        }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=AsyncRetrieverModel,
+            component_definition=definition,
+            config={},
+            name="a_stream",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+
 def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
     return (
         stream.retriever
         if isinstance(stream, DeclarativeStream)
         else stream._stream_partition_generator._partition_factory._retriever
     )
+
+
+def test_create_response_to_file_extractor_preserve_na_values():
+    from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
+    from airbyte_cdk.sources.declarative.models import (
+        ResponseToFileExtractor as ResponseToFileExtractorModel,
+    )
+
+    factory = ModelToComponentFactory()
+
+    default_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor")
+    )
+    assert isinstance(default_component, ResponseToFileExtractor)
+    assert default_component.preserve_na_values is False
+
+    enabled_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
+    )
+    assert enabled_component.preserve_na_values is True
+
+
+def _stream_definition_with_incremental_dependency_parent(
+    child_has_incremental_sync: bool,
+) -> dict:
+    incremental_sync = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "start_datetime": {
+            "type": "MinMaxDatetime",
+            "datetime": "2024-01-01T00:00:00Z",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+    }
+    parent_stream = {
+        "type": "DeclarativeStream",
+        "name": "parents",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+        },
+        "incremental_sync": incremental_sync,
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents/{{ stream_partition.parent_id }}/children",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "stream": parent_stream,
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "incremental_dependency": True,
+                    }
+                ],
+            },
+        },
+    }
+    if child_has_incremental_sync:
+        child_stream["incremental_sync"] = incremental_sync
+    return child_stream
+
+
+@pytest.mark.parametrize(
+    "child_has_incremental_sync, expected_warning",
+    [
+        pytest.param(False, True, id="full_refresh_child_warns"),
+        pytest.param(True, False, id="incremental_child_does_not_warn"),
+    ],
+)
+def test_incremental_dependency_without_incremental_sync_warns(
+    caplog, child_has_incremental_sync, expected_warning
+):
+    stream_definition = _stream_definition_with_incremental_dependency_parent(
+        child_has_incremental_sync
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        stream = factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config=input_config,
+        )
+
+    assert isinstance(stream, DefaultStream)
+    warning_emitted = any(
+        "`incremental_dependency: true`" in record.message and "children" in record.message
+        for record in caplog.records
+    )
+    assert warning_emitted == expected_warning
+
+
+def test_create_combined_extractor_through_the_record_selector():
+    """A manifest-level test: it exercises the schema, the generated model and the factory registration."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items"]
+          - type: CombinedExtractor
+            mode: union
+            extractors:
+              - type: DpathExtractor
+                field_path: ["data", "next_items_page", "items"]
+              - type: DpathExtractor
+                field_path: ["data", "{{ parameters['name'] }}"]
+      $parameters:
+        name: "lists"
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector, RecordSelector)
+    extractor = selector.extractor
+    assert isinstance(extractor, CombinedExtractor)
+    assert extractor.mode == CombineMode.first_match
+    assert len(extractor.extractors) == 2
+    assert isinstance(extractor.extractors[0], DpathExtractor)
+    assert [fp.eval(input_config) for fp in extractor.extractors[0]._field_path] == [
+        "data",
+        "boards",
+        "*",
+        "items_page",
+        "items",
+    ]
+
+    nested = extractor.extractors[1]
+    assert isinstance(nested, CombinedExtractor)
+    assert nested.mode == CombineMode.union
+    assert [fp.eval(input_config) for fp in nested.extractors[1]._field_path] == ["data", "lists"]
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {"data": {"next_items_page": {"items": [{"id": 1}]}, "lists": [{"id": 2}]}}
+    ).encode("utf-8")
+    assert list(extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_create_combined_extractor_defaults_to_union():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+          - type: DpathExtractor
+            field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+    assert selector.extractor.mode == CombineMode.union
+
+    response = requests.Response()
+    response._content = json.dumps({"a": [{"id": 1}], "b": [{"id": 2}]}).encode("utf-8")
+    assert list(selector.extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_create_combined_extractor_defaults_to_not_skipping_empty_records():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.skip_empty_records is False
+
+
+def test_create_combined_extractor_with_skip_empty_records():
+    """The source-monday shape: a page of nulls must fall through to the pagination path."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        skip_empty_records: true
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items", "*"]
+          - type: DpathExtractor
+            field_path: ["data", "next_items_page", "items", "*"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+    assert selector.extractor.skip_empty_records is True
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "data": {
+                "boards": [{"items_page": {"items": [None, None]}}],
+                "next_items_page": {"items": [{"id": "item_1"}]},
+            },
+            "errors": [{"message": "Item not found"}],
+        }
+    ).encode("utf-8")
+    assert list(selector.extractor.extract_records(response)) == [{"id": "item_1"}]
+
+
+def _combined_extractor_selector_definition() -> Mapping[str, Any]:
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+          - type: DpathExtractor
+            field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    return transformer.propagate_types_and_parameters("", resolved_manifest["selector"], {})
+
+
+class _BufferedCompositeRawDecoderSubclass(CompositeRawDecoder):
+    """Stands in for a `CustomDecoder` that subclasses `CompositeRawDecoder` and buffers."""
+
+
+_STREAMING_DECODERS = {
+    "CsvDecoder": (CsvDecoderModel, {"type": "CsvDecoder"}),
+    "JsonlDecoder": (JsonlDecoderModel, {"type": "JsonlDecoder"}),
+    "JsonItemsDecoder": (
+        JsonItemsDecoderModel,
+        {"type": "JsonItemsDecoder", "items_path": "items.item"},
+    ),
+    "GzipDecoder": (
+        GzipDecoderModel,
+        {"type": "GzipDecoder", "decoder": {"type": "JsonlDecoder"}},
+    ),
+    "IterableDecoder": (IterableDecoderModel, {"type": "IterableDecoder"}),
+}
+
+
+@pytest.mark.parametrize("decoder_type", list(_STREAMING_DECODERS))
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_combined_extractor_over_a_streaming_decoder_is_rejected(
+    decoder_type: str, emit_connector_builder_messages: bool
+):
+    """A streaming decoder lets every sub-extractor after the first read a closed response body.
+
+    That loss is silent in production - see
+    `test_union_over_a_streaming_decoder_silently_drops_the_later_sub_extractors` - so the manifest
+    is rejected while it is being parsed. The Connector Builder downgrades these decoders to
+    `stream_response=False`, so it is rejected there too rather than letting the Builder test-read
+    a manifest that loses records once published.
+    """
+    local_factory = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    )
+    decoder_model, decoder_definition = _STREAMING_DECODERS[decoder_type]
+    decoder = local_factory.create_component(
+        model_type=decoder_model,
+        component_definition=decoder_definition,
+        config=input_config,
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        local_factory.create_component(
+            model_type=RecordSelectorModel,
+            name="test_stream",
+            component_definition=_combined_extractor_selector_definition(),
+            decoder=decoder,
+            transformations=[],
+            config=input_config,
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "CombinedExtractor" in exc_info.value.message
+    assert decoder_type in exc_info.value.internal_message or "CompositeRawDecoder" in (
+        exc_info.value.internal_message
+    )
+
+
+@pytest.mark.parametrize("decoder_type", ["JsonDecoder", "XmlDecoder"])
+def test_combined_extractor_over_a_buffered_decoder_is_accepted(decoder_type: str):
+    decoder = factory.create_component(
+        model_type=JsonDecoderModel if decoder_type == "JsonDecoder" else XmlDecoderModel,
+        component_definition={"type": decoder_type},
+        config=input_config,
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=_combined_extractor_selector_definition(),
+        decoder=decoder,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+
+
+@pytest.mark.parametrize(
+    "decoder",
+    [
+        pytest.param(
+            CompositeRawDecoder(parser=JsonParser(), stream_response=False),
+            id="buffered_composite_raw_decoder",
+        ),
+        pytest.param(
+            _BufferedCompositeRawDecoderSubclass(parser=JsonParser(), stream_response=False),
+            id="buffered_composite_raw_decoder_subclass",
+        ),
+    ],
+)
+def test_combined_extractor_over_a_buffered_composite_raw_decoder_is_accepted_in_the_builder(
+    decoder: CompositeRawDecoder,
+):
+    """The Builder rejection only covers the decoders the Builder itself downgrades.
+
+    A `CompositeRawDecoder` that reads `response.content` in production too - a custom decoder
+    subclassing it, or one built around a buffering parser - can be read by every sub-extractor and
+    must not be rejected just because the Builder is emitting messages.
+    """
+    local_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    selector = local_factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=_combined_extractor_selector_definition(),
+        decoder=decoder,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+
+
+def test_combined_extractor_is_rejected_when_nested_under_another_combined_extractor():
+    """Sub-extractors inherit the retriever's decoder, so the guard has to fire at every level."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: CombinedExtractor
+            extractors:
+              - type: DpathExtractor
+                field_path: ["a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    streaming_decoder = factory.create_component(
+        model_type=JsonlDecoderModel,
+        component_definition={"type": "JsonlDecoder"},
+        config=input_config,
+    )
+
+    with pytest.raises(AirbyteTracedException):
+        factory.create_component(
+            model_type=RecordSelectorModel,
+            name="test_stream",
+            component_definition=selector_manifest,
+            decoder=streaming_decoder,
+            transformations=[],
+            config=input_config,
+        )
+
+
+def test_combined_extractor_is_rejected_through_a_simple_retriever_with_a_streaming_decoder():
+    """The decoder is never `None` on a manifest path, so the guard is reachable end to end."""
+    content = """
+    retriever:
+      type: SimpleRetriever
+      decoder:
+        type: JsonlDecoder
+      requester:
+        type: HttpRequester
+        url_base: "https://api.test.com"
+        path: "/records"
+        http_method: GET
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: CombinedExtractor
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    retriever_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["retriever"], {}
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        factory.create_component(
+            model_type=SimpleRetrieverModel,
+            component_definition=retriever_manifest,
+            config=input_config,
+            name="test_stream",
+            primary_key="id",
+            stream_slicer=None,
+            transformations=[],
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+
+
+def _retriever_manifest_with_paginator(
+    extractor_definition: str, pagination_strategy: str
+) -> Mapping[str, Any]:
+    content = f"""
+    retriever:
+      type: SimpleRetriever
+      requester:
+        type: HttpRequester
+        url_base: "https://api.test.com"
+        path: "/records"
+        http_method: GET
+      paginator:
+        type: DefaultPaginator
+        pagination_strategy:
+{pagination_strategy}
+      record_selector:
+        type: RecordSelector
+        extractor:
+{extractor_definition}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    return transformer.propagate_types_and_parameters("", resolved_manifest["retriever"], {})
+
+
+_OFFSET_INCREMENT = """          type: OffsetIncrement
+          page_size: 2"""
+_PAGE_INCREMENT = """          type: PageIncrement
+          page_size: 2"""
+_UNION_EXTRACTOR_DEFAULT_MODE = """          type: CombinedExtractor
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+_UNION_EXTRACTOR_EXPLICIT_MODE = """          type: CombinedExtractor
+          mode: union
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+_NESTED_UNION_EXTRACTOR = """          type: CombinedExtractor
+          mode: first_match
+          extractors:
+            - type: CombinedExtractor
+              mode: union
+              extractors:
+                - type: DpathExtractor
+                  field_path: ["a"]
+                - type: DpathExtractor
+                  field_path: ["b"]
+            - type: DpathExtractor
+              field_path: ["c"]"""
+
+
+def _build_retriever(retriever_manifest: Mapping[str, Any]) -> SimpleRetriever:
+    return factory.create_component(
+        model_type=SimpleRetrieverModel,
+        component_definition=retriever_manifest,
+        config=input_config,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+    )
+
+
+def _json_response(body: Mapping[str, Any]) -> requests.Response:
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps(body).encode("utf-8")
+    return response
+
+
+@pytest.mark.parametrize(
+    "extractor_definition",
+    [
+        pytest.param(_UNION_EXTRACTOR_DEFAULT_MODE, id="union_by_default"),
+        pytest.param(_UNION_EXTRACTOR_EXPLICIT_MODE, id="union_declared"),
+        pytest.param(_NESTED_UNION_EXTRACTOR, id="union_nested_under_first_match"),
+    ],
+)
+def test_union_combined_extractor_is_rejected_by_an_offset_increment_paginator(
+    extractor_definition: str,
+):
+    """`OffsetIncrement` advances the offset by the record count of its extractor.
+
+    Under `union` that count is the sum over all sub-extractors, so the offset overshoots the page
+    the API returned and the records in between are never requested. A `union` nested anywhere in
+    the tree inflates the count of the node above it, so it is rejected as well.
+    """
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        _build_retriever(
+            _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "union" in exc_info.value.message
+    assert "OffsetIncrement" in exc_info.value.message
+
+
+def test_first_match_combined_extractor_counts_only_the_winning_sub_extractor_for_the_offset():
+    """`first_match` is accepted because the count it reports is the winner's, not a sum."""
+    extractor_definition = """          type: CombinedExtractor
+          mode: first_match
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+    )
+
+    assert isinstance(retriever.record_selector.extractor, CombinedExtractor)
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, OffsetIncrement)
+
+    # `a` misses, so the winner is `b` with its two records: the offset advances by 2, not by 4.
+    response = _json_response({"a": [], "b": [{"id": 1}, {"id": 2}]})
+    list(retriever.record_selector.select_records(response, {}, {}))
+    assert (
+        pagination_strategy.next_page_token(
+            response=response, last_page_size=2, last_record=None, last_page_token_value=0
+        )
+        == 2
+    )
+
+
+def test_union_combined_extractor_is_accepted_by_a_page_increment_paginator():
+    """`PageIncrement` only compares the count against `page_size`, so an inflated count is not lossy.
+
+    It can cost one extra request when the summed count of the last page equals `page_size`, which
+    is documented on the component rather than rejected.
+    """
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(_UNION_EXTRACTOR_DEFAULT_MODE, _PAGE_INCREMENT)
+    )
+
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, PageIncrement)
+
+
+_FIRST_MATCH_SKIPPING_EMPTY_RECORDS = """          type: CombinedExtractor
+          mode: first_match
+          skip_empty_records: true
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy",
+    [
+        pytest.param(_OFFSET_INCREMENT, id="offset_increment"),
+        pytest.param(_PAGE_INCREMENT, id="page_increment"),
+    ],
+)
+def test_a_record_counting_paginator_counts_the_empty_records_the_extractor_drops(
+    pagination_strategy: str,
+):
+    """A null on a full page must not make the page look short and silently end pagination."""
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(_FIRST_MATCH_SKIPPING_EMPTY_RECORDS, pagination_strategy)
+    )
+
+    full_page_with_a_null = _json_response({"a": [None, {"id": 1}]})
+    assert [
+        record.data
+        for record in retriever.record_selector.select_records(full_page_with_a_null, {}, {})
+    ] == [{"id": 1}]
+    # `last_page_size` is what the retriever emitted; the strategy must count the whole page.
+    assert (
+        retriever.paginator.pagination_strategy.next_page_token(
+            response=full_page_with_a_null,
+            last_page_size=1,
+            last_record={"id": 1},
+            last_page_token_value=0,
+        )
+        is not None
+    )
+
+
+def _filtering_retriever(
+    pagination_strategy_type: str, decoder: Optional[Mapping[str, Any]] = None
+) -> SimpleRetriever:
+    """Requests pages of two records and drops the record with id 2."""
+    return _build_retriever(
+        {
+            "type": "SimpleRetriever",
+            **({"decoder": decoder} if decoder else {}),
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "/records",
+                "http_method": "GET",
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "pagination_strategy": {"type": pagination_strategy_type, "page_size": 2},
+                "page_token_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "token",
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["results"]},
+                "record_filter": {"type": "RecordFilter", "condition": "{{ record['id'] != 2 }}"},
+            },
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy_type, second_page_token",
+    [("OffsetIncrement", "2"), ("PageIncrement", "1")],
+)
+def test_a_record_counting_paginator_extracts_each_page_once(
+    requests_mock, mocker, pagination_strategy_type: str, second_page_token: str
+):
+    """The filter drops a record of the full first page, which must not end the pagination."""
+    retriever = _filtering_retriever(pagination_strategy_type)
+    requests_mock.get(
+        "https://api.test.com/records",
+        [{"json": {"results": [{"id": 1}, {"id": 2}]}}, {"json": {"results": [{"id": 3}]}}],
+    )
+    extract_records = mocker.spy(DpathExtractor, "extract_records")
+
+    records = list(retriever.read_records({}, StreamSlice(partition={}, cursor_slice={})))
+
+    assert [record.data["id"] for record in records] == [1, 3]
+    assert [request.qs for request in requests_mock.request_history] == [
+        {},
+        {"token": [second_page_token]},
+    ]
+    assert extract_records.call_count == 2
+
+
+@pytest.mark.parametrize("pagination_strategy_type", ["OffsetIncrement", "PageIncrement"])
+def test_a_record_counting_paginator_paginates_a_streamed_response(
+    requests_mock, pagination_strategy_type: str
+):
+    """A streamed body can only be read once: counting the page by reading it again found none."""
+    retriever = _filtering_retriever(
+        pagination_strategy_type,
+        decoder={"type": "GzipDecoder", "decoder": {"type": "JsonDecoder"}},
+    )
+    requests_mock.get(
+        "https://api.test.com/records",
+        [
+            {"content": gzip.compress(json.dumps({"results": page}).encode())}
+            for page in ([{"id": 1}, {"id": 3}], [{"id": 4}])
+        ],
+    )
+
+    records = list(retriever.read_records({}, StreamSlice(partition={}, cursor_slice={})))
+
+    assert [record.data["id"] for record in records] == [1, 3, 4]
+
+
+def _async_retriever_definition(
+    download_extractor: Mapping[str, Any], download_paginator: Mapping[str, Any]
+) -> Dict[str, Any]:
+    return {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["url"]},
+        "download_extractor": download_extractor,
+        "download_paginator": download_paginator,
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": []},
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "path": "/exports/{{ creation_response['id'] }}",
+            "url_base": "https://api.test.com",
+            "http_method": "GET",
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "path": "/exports",
+            "url_base": "https://api.test.com",
+            "http_method": "POST",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "path": "{{download_target}}",
+            "url_base": "",
+            "http_method": "GET",
+        },
+    }
+
+
+def _download_paginator(pagination_strategy_type: str) -> Dict[str, Any]:
+    return {
+        "type": "DefaultPaginator",
+        "pagination_strategy": {"type": pagination_strategy_type, "page_size": 2},
+        "page_token_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "offset",
+        },
+    }
+
+
+def _build_download_retriever(definition: Mapping[str, Any]) -> Any:
+    component = factory.create_component(
+        model_type=AsyncRetrieverModel,
+        component_definition=definition,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+        config={},
+    )
+    job_repository = component.stream_slicer.job_orchestrator_factory(
+        [StreamSlice(partition={}, cursor_slice={})]
+    )._job_repository
+    return job_repository.download_retriever
+
+
+def test_union_combined_download_extractor_is_rejected_by_an_offset_increment_download_paginator():
+    """The download paginator is built apart from the record selector's, so it needs its own check.
+
+    Without it the strategy falls back to the retriever's record count, which under `union` is the
+    sum over all sub-extractors, and the offsets skip the records in between.
+    """
+    definition = _async_retriever_definition(
+        {
+            "type": "CombinedExtractor",
+            "mode": "union",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["a"]},
+                {"type": "DpathExtractor", "field_path": ["b"]},
+            ],
+        },
+        _download_paginator("OffsetIncrement"),
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        _build_download_retriever(definition)
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "union" in exc_info.value.message
+    assert "OffsetIncrement" in exc_info.value.message
+
+
+def test_combined_download_extractor_skipping_empty_records_counts_them_for_the_download_paginator():
+    definition = _async_retriever_definition(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "skip_empty_records": True,
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["a"]},
+                {"type": "DpathExtractor", "field_path": ["b"]},
+            ],
+        },
+        _download_paginator("PageIncrement"),
+    )
+
+    download_retriever = _build_download_retriever(definition)
+    pagination_strategy = download_retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, PageIncrement)
+    response = _json_response({"a": [None, {"id": 1}]})
+    list(download_retriever.record_selector.select_records(response, {}, {}))
+    assert (
+        pagination_strategy.next_page_token(
+            response=response,
+            last_page_size=1,
+            last_record={"id": 1},
+            last_page_token_value=0,
+        )
+        is not None
+    )
+
+
+def test_download_paginator_keeps_the_retriever_count_for_other_download_extractors():
+    """A paginator's copy would re-read a response a streaming download decoder already consumed."""
+    definition = _async_retriever_definition(
+        {"type": "DpathExtractor", "field_path": ["a"]},
+        _download_paginator("OffsetIncrement"),
+    )
+
+    pagination_strategy = _build_download_retriever(definition).paginator.pagination_strategy
+    assert isinstance(pagination_strategy, OffsetIncrement)
+    assert pagination_strategy.extractor is None
+
+
+def test_create_async_retriever_with_combined_extractors():
+    """Covers the three `AsyncRetriever` unions widened by `CombinedExtractor`."""
+    combined = {
+        "type": "CombinedExtractor",
+        "mode": "first_match",
+        "extractors": [
+            {"type": "DpathExtractor", "field_path": ["primary"]},
+            {"type": "DpathExtractor", "field_path": ["fallback"]},
+        ],
+    }
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "status_extractor": combined,
+        "download_target_extractor": combined,
+        "download_extractor": combined,
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "path": "/exports/{{ creation_response['id'] }}",
+            "url_base": "https://api.test.com",
+            "http_method": "GET",
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "path": "/exports",
+            "url_base": "https://api.test.com",
+            "http_method": "POST",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "path": "{{download_target}}",
+            "url_base": "",
+            "http_method": "GET",
+        },
+    }
+
+    component = factory.create_component(
+        model_type=AsyncRetrieverModel,
+        component_definition=definition,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+        config={},
+    )
+
+    job_repository = component.stream_slicer.job_orchestrator_factory(
+        [StreamSlice(partition={}, cursor_slice={})]
+    )._job_repository
+    assert isinstance(job_repository.status_extractor, CombinedExtractor)
+    assert isinstance(job_repository.download_target_extractor, CombinedExtractor)
+    assert isinstance(
+        job_repository.download_retriever.record_selector.extractor, CombinedExtractor
+    )
+
+
+def test_create_file_uploader_with_a_combined_download_target_extractor():
+    definition = {
+        "type": "FileUploader",
+        "requester": {
+            "type": "HttpRequester",
+            "url_base": "https://api.test.com",
+            "path": "/download",
+            "http_method": "GET",
+        },
+        "download_target_extractor": {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["url"]},
+                {"type": "DpathExtractor", "field_path": ["download_url"]},
+            ],
+        },
+    }
+
+    file_uploader = factory.create_component(
+        model_type=FileUploaderModel,
+        component_definition=definition,
+        config=input_config,
+    )
+
+    assert isinstance(file_uploader.download_target_extractor, CombinedExtractor)
+
+
+@pytest.mark.parametrize(
+    "manifest_fields, expected_timeout",
+    [
+        pytest.param(
+            {"connect_timeout_in_seconds": 30, "read_timeout_in_seconds": 300},
+            (30.0, 300.0),
+            id="both_timeouts",
+        ),
+        pytest.param(
+            {"read_timeout_in_seconds": 300},
+            (None, 300.0),
+            id="read_only",
+        ),
+        pytest.param(
+            {"connect_timeout_in_seconds": 30},
+            (30.0, None),
+            id="connect_only",
+        ),
+        pytest.param({}, None, id="no_timeouts"),
+    ],
+)
+def test_create_http_requester_with_request_timeouts(manifest_fields, expected_timeout):
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition={
+            "type": "HttpRequester",
+            "url_base": "https://api.test.com",
+            "path": "/data",
+            "http_method": "GET",
+            **manifest_fields,
+        },
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert requester._http_client._request_timeout == expected_timeout
+    if expected_timeout is None:
+        assert (
+            type(requester._http_client._session.adapters["https://"])
+            is requests.adapters.HTTPAdapter
+        )
+        assert (
+            type(requester._http_client._session.adapters["http://"])
+            is requests.adapters.HTTPAdapter
+        )
+
+
+def test_create_http_requester_with_tcp_keepalive():
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition={
+            "type": "HttpRequester",
+            "url_base": "https://api.test.com",
+            "path": "/data",
+            "http_method": "GET",
+            "use_tcp_keepalive": True,
+        },
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester._http_client._session.adapters["https://"], TcpKeepaliveHTTPAdapter)
+    assert isinstance(requester._http_client._session.adapters["http://"], TcpKeepaliveHTTPAdapter)
+
+
+@pytest.mark.parametrize(
+    "manifest_fields",
+    [
+        pytest.param({"read_timeout_in_seconds": 0}, id="read_zero"),
+        pytest.param({"connect_timeout_in_seconds": -1}, id="connect_negative"),
+        pytest.param({"read_timeout_in_seconds": -5}, id="read_negative"),
+    ],
+)
+def test_http_requester_rejects_non_positive_timeouts(manifest_fields):
+    with pytest.raises(ValidationError):
+        HttpRequesterModel(
+            type="HttpRequester",
+            url_base="https://api.test.com",
+            path="/data",
+            **manifest_fields,
+        )

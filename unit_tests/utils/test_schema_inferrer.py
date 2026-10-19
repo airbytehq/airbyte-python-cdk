@@ -228,6 +228,7 @@ NOW = 1234567
                                         "nested_key_2": "United Kingdom",
                                     },
                                 },
+                                {"title": "Nested_3", "type": "string", "value": "XL"},
                             ],
                         }
                     },
@@ -247,6 +248,7 @@ NOW = 1234567
                                         "type": {"type": ["string", "null"]},
                                         "value": {
                                             "anyOf": [
+                                                {"type": "string"},
                                                 {"type": "array", "items": {"type": "string"}},
                                                 {
                                                     "type": "object",

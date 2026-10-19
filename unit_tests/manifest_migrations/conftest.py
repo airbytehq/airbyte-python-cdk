@@ -941,10 +941,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "type": "HttpRequester",
                             "http_method": "GET",
                             "url": "https://example.com/v2/path_to_B",
-                            "request_body": {
-                                "type": "RequestBodyPlainText",
-                                "value": '{"nested": { "key": "{{ config[\'option\'] }}" }}',
-                            },
+                            "request_body_json": '{"nested": { "key": "{{ config[\'option\'] }}" }}',
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -1102,10 +1099,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "type": "HttpRequester",
                         "http_method": "GET",
                         "url": "https://example.com/v2/path_to_B",
-                        "request_body": {
-                            "type": "RequestBodyPlainText",
-                            "value": '{"nested": { "key": "{{ config[\'option\'] }}" }}',
-                        },
+                        "request_body_json": '{"nested": { "key": "{{ config[\'option\'] }}" }}',
                     },
                     "record_selector": {
                         "type": "RecordSelector",

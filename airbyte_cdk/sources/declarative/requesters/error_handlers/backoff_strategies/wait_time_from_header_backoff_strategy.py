@@ -13,6 +13,10 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
     get_numeric_value_from_header,
 )
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.max_waiting_time_helper import (
+    evaluate_max_waiting_time,
+    interpolated_max_waiting_time,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategy import (
     BackoffStrategy,
 )
@@ -28,20 +32,34 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
     Attributes:
         header (str): header to read wait time from
         regex (Optional[str]): optional regex to apply on the header to extract its value
-        max_waiting_time_in_seconds: (Optional[float]): given the value extracted from the header is greater than this value, stop the stream
+        max_waiting_time_in_seconds (Optional[Union[float, InterpolatedString, str]]): stop the stream
+            rather than wait this long or longer -- the bound is inclusive, so a wait exactly
+            equal to it is refused. Only governs waits that are actually taken: on a
+            rate-limited response where the authenticator holds another credential with quota,
+            `HttpClient` rotates onto it instead of asking this strategy for a wait, and the
+            bound does not apply. Any other retryable error still consults this strategy.
     """
 
     header: Union[InterpolatedString, str]
     parameters: InitVar[Mapping[str, Any]]
     config: Config
     regex: Optional[Union[InterpolatedString, str]] = None
-    max_waiting_time_in_seconds: Optional[float] = None
+    max_waiting_time_in_seconds: Optional[Union[float, InterpolatedString, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.regex = (
             InterpolatedString.create(self.regex, parameters=parameters) if self.regex else None
         )
         self.header = InterpolatedString.create(self.header, parameters=parameters)
+        self._max_waiting_time_in_seconds = interpolated_max_waiting_time(
+            self.max_waiting_time_in_seconds, parameters
+        )
+        # Resolved here rather than only at the first retryable error. `config` is a field and this
+        # cap interpolates over `config` alone, so it is fully knowable the moment the component
+        # exists -- and since `HttpClient` decides token rotation before it asks a strategy for a
+        # wait, a cap that cannot be evaluated would otherwise stay silent for as long as a spare
+        # credential keeps the strategies from running. A manifest mistake belongs at startup.
+        evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
 
     def backoff_time(
         self,
@@ -57,14 +75,27 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         header_value = None
         if isinstance(response_or_exception, requests.Response):
             header_value = get_numeric_value_from_header(response_or_exception, header, regex)
-            if (
-                self.max_waiting_time_in_seconds
-                and header_value
-                and header_value >= self.max_waiting_time_in_seconds
-            ):
+            max_waiting_time = evaluate_max_waiting_time(
+                self._max_waiting_time_in_seconds, self.config
+            )
+            # Not always reached: `HttpClient` decides token rotation before it asks a strategy
+            # for a wait, so on a rate limit where the authenticator has another credential with
+            # quota this check does not run. The cap bounds waiting, and that path is not
+            # waiting.
+            # `max_waiting_time is not None` rather than a truthiness check, so that 0 means
+            # "never wait" instead of silently disabling the cap. The comparison stays `>=`,
+            # which is what this cap has always done, and `WaitUntilTimeFromHeader` matches it --
+            # a wait exactly equal to the cap is refused by both.
+            # `header_value` is checked for truthiness rather than `is not None` on purpose: a
+            # header of `0` asks for no wait at all, which no cap -- not even 0 -- should refuse.
+            if max_waiting_time is not None and header_value and header_value >= max_waiting_time:
                 raise AirbyteTracedException(
-                    internal_message=f"Rate limit wait time {header_value} is greater than max waiting time of {self.max_waiting_time_in_seconds} seconds. Stopping the stream...",
-                    message="The rate limit is greater than max waiting time has been reached.",
+                    internal_message=(
+                        f"Rate limit wait time {header_value}s is greater than or equal to the "
+                        f"maximum of {max_waiting_time}s this stream is allowed to wait. "
+                        f"Stopping the stream..."
+                    ),
+                    message="The rate limit wait time is longer than the connector is allowed to wait.",
                     failure_type=FailureType.transient_error,
                 )
         return header_value

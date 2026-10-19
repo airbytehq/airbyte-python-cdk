@@ -5,6 +5,8 @@ import logging
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
+from typing_extensions import deprecated
+
 from airbyte_cdk.legacy.sources.declarative.incremental import (
     GlobalSubstreamCursor,
     PerPartitionCursor,
@@ -13,7 +15,6 @@ from airbyte_cdk.legacy.sources.declarative.incremental import (
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
-from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
 from airbyte_cdk.sources.declarative.retrievers.async_retriever import AsyncRetriever
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
@@ -28,6 +29,7 @@ from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import Config, StreamSlice
 
 
+@deprecated("DeclarativeStream has been deprecated in favor of the concurrent DefaultStream")
 @dataclass
 class DeclarativeStream(Stream):
     """
@@ -198,8 +200,6 @@ class DeclarativeStream(Stream):
         return None
 
     def get_cursor(self) -> Optional[Cursor]:
-        if self.retriever and isinstance(self.retriever, SimpleRetriever):
-            return self.retriever.cursor
         return None
 
     def _get_checkpoint_reader(

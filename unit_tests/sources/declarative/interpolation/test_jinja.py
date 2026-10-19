@@ -345,6 +345,16 @@ def test_interpolation_private_partition_attribute():
     assert actual_output == expected_output
 
 
+def test_literal_eval_handles_unhashable_set_typeerror():
+    """Test that _literal_eval gracefully handles TypeError from ast.literal_eval for nested sets."""
+    # ast.literal_eval("{{'web'}, {'discover'}}") raises TypeError: unhashable type: 'set'
+    # The interpolation should return the string as-is instead of propagating the error.
+    config = {"query": "{{'web'}, {'discover'}}"}
+    s = "{{ config['query'] }}"
+    val = interpolation.eval(s, config)
+    assert val == "{{'web'}, {'discover'}}"
+
+
 def test_given_complex_when_eval_then_return_string():
     s = "9173710294242221J"
     config = {}

@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+from freezegun import freeze_time
 from requests import Request
 
 from airbyte_cdk.models import SyncMode
@@ -140,10 +141,13 @@ def test_http_request_matching(mocker):
     users_policy.matches.side_effect = HttpRequestMatcher(
         url="http://domain/api/users", method="GET"
     )
+    users_policy.get_weight.return_value = 1
     groups_policy.matches.side_effect = HttpRequestMatcher(
         url="http://domain/api/groups", method="POST"
     )
+    groups_policy.get_weight.return_value = 1
     root_policy.matches.side_effect = HttpRequestMatcher(method="GET")
+    root_policy.get_weight.return_value = 1
     api_budget = APIBudget(
         policies=[
             users_policy,
@@ -302,6 +306,82 @@ class TestMovingWindowCallRatePolicy:
         assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(3600, 0.1)
         assert str(excinfo.value) == "Bucket for item=call with Rate limit=2/1.0h is already full"
 
+    def test_update_available_calls_zero_exhausts_bucket(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 10
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+            frozen.tick(61)
+            policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_when_bucket_full_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(3, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 3
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_ignores_expired_entries(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(
+                rates=[
+                    Rate(5, timedelta(seconds=10)),
+                    Rate(10, timedelta(minutes=1)),
+                ],
+                matchers=[],
+            )
+            for _ in range(5):
+                policy.try_acquire("call", weight=1)
+
+            frozen.tick(11)
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 10
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_multiple_rates(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(
+                rates=[
+                    Rate(10, timedelta(minutes=10)),
+                    Rate(3, timedelta(seconds=10)),
+                    Rate(2, timedelta(hours=1)),
+                ],
+                matchers=[],
+            )
+            policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 2
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_positive_available_calls_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=5, call_reset_ts=None)
+            assert policy._bucket.count() == 3
+
+            policy.update(available_calls=0, call_reset_ts=datetime.now())
+            assert policy._bucket.count() == 3
+
 
 class TestHttpStreamIntegration:
     def test_without_cache(self, mocker, requests_mock):
@@ -358,6 +438,120 @@ class TestHttpStreamIntegration:
             assert next(records) == {"data": "some_data"}
 
         assert MovingWindowCallRatePolicy.try_acquire.call_count == 1
+
+
+class TestWeightBasedRateLimiting:
+    """Tests for weight-based rate limiting where different endpoints consume different amounts from a shared budget."""
+
+    def test_matcher_weight_default_none(self):
+        """HttpRequestRegexMatcher weight defaults to None when not specified."""
+        matcher = HttpRequestRegexMatcher(url_path_pattern=r"/api/test")
+        assert matcher.weight is None
+
+    def test_matcher_weight_is_stored(self):
+        """HttpRequestRegexMatcher stores the weight value when provided."""
+        matcher = HttpRequestRegexMatcher(url_path_pattern=r"/api/test", weight=60)
+        assert matcher.weight == 60
+
+    def test_matcher_rejects_zero_weight(self):
+        """HttpRequestRegexMatcher raises ValueError for weight=0."""
+        with pytest.raises(ValueError, match="weight must be >= 1"):
+            HttpRequestRegexMatcher(url_path_pattern=r"/api/test", weight=0)
+
+    def test_matcher_rejects_negative_weight(self):
+        """HttpRequestRegexMatcher raises ValueError for negative weight."""
+        with pytest.raises(ValueError, match="weight must be >= 1"):
+            HttpRequestRegexMatcher(url_path_pattern=r"/api/test", weight=-5)
+
+    def test_policy_get_weight_returns_matcher_weight(self):
+        """BaseCallRatePolicy.get_weight returns weight from the matching matcher."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/expensive", weight=120)],
+            rates=[Rate(1000, timedelta(hours=1))],
+        )
+        req = Request("GET", "https://example.com/api/expensive")
+        assert policy.get_weight(req) == 120
+
+    def test_policy_get_weight_defaults_to_1(self):
+        """BaseCallRatePolicy.get_weight returns 1 when no matcher has a weight set."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/default")],
+            rates=[Rate(1000, timedelta(hours=1))],
+        )
+        req = Request("GET", "https://example.com/api/default")
+        assert policy.get_weight(req) == 1
+
+    def test_policy_get_weight_no_matching_matcher(self):
+        """BaseCallRatePolicy.get_weight returns 1 when no matcher matches the request."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/other", weight=50)],
+            rates=[Rate(1000, timedelta(hours=1))],
+        )
+        req = Request("GET", "https://example.com/api/unmatched")
+        assert policy.get_weight(req) == 1
+
+    def test_api_budget_uses_weight(self):
+        """APIBudget._do_acquire passes the matcher's weight to try_acquire."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/heavy", weight=10)],
+            rates=[Rate(100, timedelta(hours=1))],
+        )
+        budget = APIBudget(policies=[policy])
+
+        # Make requests — each weighs 10 from the budget of 100
+        for i in range(10):
+            budget.acquire_call(Request("GET", "https://example.com/api/heavy"), block=False)
+
+        # The 11th request should exceed the budget (10 * 10 = 100, one more = 110 > 100)
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com/api/heavy"), block=False)
+
+    def test_weight_1_backward_compatible(self):
+        """When weight is not set, behavior is identical to the old hardcoded weight=1."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/normal")],
+            rates=[Rate(5, timedelta(hours=1))],
+        )
+        budget = APIBudget(policies=[policy])
+
+        for i in range(5):
+            budget.acquire_call(Request("GET", "https://example.com/api/normal"), block=False)
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com/api/normal"), block=False)
+
+    def test_shared_budget_different_weights(self):
+        """Multiple matchers with different weights sharing one policy correctly consume the shared budget."""
+        # Shared policy matches both endpoints via regex
+        policy = MovingWindowCallRatePolicy(
+            matchers=[
+                HttpRequestRegexMatcher(url_path_pattern=r"/api/cheap", weight=1),
+                HttpRequestRegexMatcher(url_path_pattern=r"/api/expensive", weight=10),
+            ],
+            rates=[Rate(20, timedelta(hours=1))],
+        )
+        budget = APIBudget(policies=[policy])
+
+        # Make 1 expensive request (weight 10) and 10 cheap requests (weight 1 each) = total 20
+        budget.acquire_call(Request("GET", "https://example.com/api/expensive"), block=False)
+        for i in range(10):
+            budget.acquire_call(Request("GET", "https://example.com/api/cheap"), block=False)
+
+        # Budget is now at 20/20 — any further request should fail
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com/api/cheap"), block=False)
+
+    def test_moving_window_rejects_weight_exceeding_limit(self):
+        """MovingWindowCallRatePolicy raises ValueError when weight exceeds the lowest configured rate limit."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/heavy", weight=50)],
+            rates=[Rate(10, timedelta(hours=1)), Rate(100, timedelta(days=1))],
+        )
+        req = Request("GET", "https://example.com/api/heavy")
+        with pytest.raises(
+            ValueError, match="Weight can not exceed the lowest configured rate limit"
+        ):
+            policy.try_acquire(req, weight=50)
 
 
 class TestHttpRequestRegexMatcher:

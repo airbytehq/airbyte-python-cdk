@@ -3,6 +3,7 @@
 #
 
 import logging
+import warnings
 from io import IOBase
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
@@ -17,6 +18,7 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
 )
 from airbyte_cdk.sources.file_based.exceptions import (
     ConfigValidationError,
+    ExcelCalamineParsingError,
     FileBasedSourceError,
     RecordParseError,
 )
@@ -64,7 +66,7 @@ class ExcelParser(FileTypeParser):
         fields: Dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            df = self.open_and_parse_file(fp)
+            df = self.open_and_parse_file(fp, logger, file)
             for column, df_type in df.dtypes.items():
                 # Choose the broadest data type if the column's data type differs in dataframes
                 prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
@@ -92,7 +94,7 @@ class ExcelParser(FileTypeParser):
         discovered_schema: Optional[Mapping[str, SchemaType]] = None,
     ) -> Iterable[Dict[str, Any]]:
         """
-        Parses records from an Excel file based on the provided configuration.
+        Parses records from an Excel file with fallback error handling.
 
         Args:
             config (FileBasedStreamConfig): Configuration for the file-based stream.
@@ -111,7 +113,7 @@ class ExcelParser(FileTypeParser):
         try:
             # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                df = self.open_and_parse_file(fp)
+                df = self.open_and_parse_file(fp, logger, file)
                 # Yield records as dictionaries
                 # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
                 # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
@@ -180,15 +182,93 @@ class ExcelParser(FileTypeParser):
             logger.info(f"Expected ExcelFormat, got {excel_format}")
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
-    @staticmethod
-    def open_and_parse_file(fp: Union[IOBase, str, Path]) -> pd.DataFrame:
-        """
-        Opens and parses the Excel file.
+    def _open_and_parse_file_with_calamine(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> pd.DataFrame:
+        """Opens and parses Excel file using Calamine engine.
 
         Args:
             fp: File pointer to the Excel file.
+            logger: Logger for logging information and errors.
+            file: Remote file information for logging context.
+
+        Returns:
+            pd.DataFrame: Parsed data from the Excel file.
+
+        Raises:
+            ExcelCalamineParsingError: If Calamine fails to parse the file.
+        """
+        try:
+            return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+        except BaseException as exc:
+            # Calamine engine raises PanicException(child of BaseException) if Calamine fails to parse the file.
+            # Checking if ValueError in exception arg to know if it was actually an error during parsing due to invalid values in cells.
+            # Otherwise, raise an exception.
+            if "ValueError" in str(exc):
+                logger.warning(
+                    f"Calamine parsing failed for {file.file_uri_for_logging}, falling back to openpyxl: {exc}"
+                )
+                raise ExcelCalamineParsingError(
+                    f"Calamine engine failed to parse {file.file_uri_for_logging}",
+                    filename=file.uri,
+                ) from exc
+            raise exc
+
+    def _open_and_parse_file_with_openpyxl(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> pd.DataFrame:
+        """Opens and parses Excel file using Openpyxl engine.
+
+        Args:
+            fp: File pointer to the Excel file.
+            logger: Logger for logging information and errors.
+            file: Remote file information for logging context.
 
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
-        return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+        # Some file-like objects are not seekable.
+        if hasattr(fp, "seek"):
+            try:
+                fp.seek(0)  # type: ignore [union-attr]
+            except OSError as exc:
+                logger.info(
+                    f"Could not rewind stream for {file.file_uri_for_logging}; "
+                    f"proceeding with openpyxl from current position: {exc}"
+                )
+
+        with warnings.catch_warnings(record=True) as warning_records:
+            warnings.simplefilter("always")
+            df = pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload]
+
+        for warning in warning_records:
+            logger.warning(f"Openpyxl warning for {file.file_uri_for_logging}: {warning.message}")
+
+        return df  # type: ignore [no-any-return]
+
+    def open_and_parse_file(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> pd.DataFrame:
+        """Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
+
+        Args:
+            fp: File pointer to the Excel file.
+            logger: Logger for logging information and errors.
+            file: Remote file information for logging context.
+
+        Returns:
+            pd.DataFrame: Parsed data from the Excel file.
+        """
+        try:
+            return self._open_and_parse_file_with_calamine(fp, logger, file)
+        except ExcelCalamineParsingError:
+            return self._open_and_parse_file_with_openpyxl(fp, logger, file)

@@ -4,7 +4,7 @@
 
 import json
 from copy import deepcopy
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,6 +14,7 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     Type,
 )
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -629,3 +630,89 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
     actual_record_stream_names.sort()
 
     assert actual_record_stream_names == expected_stream_names
+
+
+def test_dynamic_streams_with_http_components_resolver_partition_router_request_option():
+    manifest = deepcopy(_MANIFEST)
+    manifest["dynamic_streams"][0]["components_resolver"]["retriever"]["partition_router"] = {
+        "type": "ListPartitionRouter",
+        "cursor_field": "p",
+        "values": ["p1"],
+        "request_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "p",
+        },
+    }
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items?p=p1"),
+            HttpResponse(body=json.dumps([{"id": 1, "name": "item_1"}])),
+        )
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=None
+        )
+        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
+
+    assert [stream.name for stream in actual_catalog.streams] == ["item_1"]
+
+
+@patch.object(AsyncJobOrchestrator, "_WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS", 0)
+def test_dynamic_streams_with_http_components_resolver_async_retriever():
+    manifest = deepcopy(_MANIFEST)
+    manifest["dynamic_streams"][0]["components_resolver"]["retriever"] = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": []},
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "url": "https://api.test.com/items_job",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "url": "https://api.test.com/items_job/{{ creation_response['id'] }}",
+            "http_method": "GET",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "url": "{{ download_target }}",
+            "http_method": "GET",
+        },
+    }
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(url="https://api.test.com/items_job"),
+            HttpResponse(body=json.dumps({"id": "job_1"})),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items_job/job_1"),
+            HttpResponse(
+                body=json.dumps({"status": "ready", "urls": ["https://api.test.com/download/1"]})
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/download/1"),
+            HttpResponse(
+                body=json.dumps([{"id": 1, "name": "item_1"}, {"id": 2, "name": "item_2"}])
+            ),
+        )
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=None
+        )
+        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
+
+    # the slice log message AsyncRetriever emits before its records must not resolve a stream
+    assert [stream.name for stream in actual_catalog.streams] == ["item_1", "item_2"]

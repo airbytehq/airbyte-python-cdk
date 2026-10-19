@@ -138,6 +138,14 @@ async def main():
                     "--set-default-enum-member",
                     "--use-double-quotes",
                     "--remove-special-field-name-prefix",
+                    # NOTE: without `--field-constraints`, a numeric `minimum`/`exclusiveMinimum` in the YAML
+                    # becomes a `conint(...)`/`confloat(...)` annotation, which mypy rejects - so regenerating
+                    # today produces a file that does not type check, on fields that predate this comment
+                    # (DynamicStreamCheckConfig.stream_count, both backoff strategies, AsyncRetriever, and
+                    # PageSizeReduction). Adding the flag rewrites those fields across the generated module
+                    # and is its own change; until then `declarative_component_schema.py` is edited by hand
+                    # when a bounded numeric field is added, with the bound expressed as `Field(ge=...)`.
+                    # The YAML bounds are what manifests are validated against either way.
                     # allow usage of the extra key such as `deprecated`, etc.
                     "--field-extra-keys",
                     # account the `deprecated` flag provided for the field.

@@ -72,9 +72,12 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
             record
             for record in records
             if self._cursor.should_be_synced(
-                # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
-                # Record stream name is empty because it is not used during the filtering
-                Record(data=record, associated_slice=stream_slice, stream_name="")
+                record
+                if isinstance(record, Record)
+                # Record is created on the fly to align with cursors interface; stream name is empty because it is not
+                # used during the filtering. Callers that already hold records pass them through untouched, so that the
+                # cursor keeps seeing the real stream name and slice.
+                else Record(data=record, associated_slice=stream_slice, stream_name="")
             )
         )
         if self.condition:

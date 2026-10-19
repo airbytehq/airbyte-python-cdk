@@ -14,6 +14,7 @@ config = {
     "non_empty_array": [1],
     "empty_dict": {},
     "empty_tuple": (),
+    "none_value": None,
 }
 
 
@@ -32,6 +33,24 @@ config = {
         ("test_empty_array_is_false", "{{ config['empty_array'] }}", False),
         ("test_empty_dict_is_false", "{{ config['empty_dict'] }}", False),
         ("test_empty_tuple_is_false", "{{ config['empty_tuple'] }}", False),
+        ("test_none_literal_is_false", "{{ none }}", False),
+        ("test_get_missing_key_is_false", "{{ config.get('missing_key') }}", False),
+        ("test_explicit_null_value_is_false", "{{ config['none_value'] }}", False),
+        (
+            "test_and_chain_short_circuits_to_none_is_false",
+            "{{ config['string_key'] and config.get('missing_key') }}",
+            False,
+        ),
+        (
+            "test_or_chain_short_circuits_to_none_is_false",
+            "{{ config.get('missing_key') or config['none_value'] }}",
+            False,
+        ),
+        (
+            "test_or_chain_with_truthy_value_is_true",
+            "{{ config.get('missing_key') or config['string_key'] }}",
+            True,
+        ),
         ("test_lowercase_false", '{{ "false" }}', False),
         ("test_False", "{{ False }}", False),
         ("test_True", "{{ True }}", True),
