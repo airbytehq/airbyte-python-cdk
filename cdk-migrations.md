@@ -30,7 +30,7 @@ The spec tests now fail when the emitted spec breaks one of these rules. Each fa
 
 These lints are reported as a `SpecLintWarning` and do not fail the test yet; a later release will enforce them:
 
-- **forbidden keywords**: the spec uses a keyword the setup form cannot render: `not`, `anyOf`, `allOf`, `patternProperties`, `prefixItems`, `if`, `then`, `else`, `dependentSchemas` or `dependentRequired`. Pydantic emits `allOf` for a field typed as an enum and `anyOf` for an `Optional` field (pydantic v2); inline the referenced schema, and for an optional field drop the `null` branch and the field from `required`.
+- **forbidden keywords**: the spec uses a keyword the setup form cannot render: `not`, `anyOf`, `allOf`, `patternProperties`, `prefixItems`, `if`, `then`, `else`, `dependentSchemas` or `dependentRequired`. Pydantic emits `allOf` for a field typed as an enum and `anyOf` for an `Optional` field (pydantic v2); inline the referenced schema. For an `Optional` field, replace `anyOf: [X, {type: null}]` with `X`'s keywords on the property and a `type` that lists `X`'s type followed by `null`, for example `type: [string, "null"]`. Keep the `null`: dropping it rejects every saved config that sets the field to `null`.
 - **object not empty**: a nested `type: object` declares no `properties` and no `oneOf`, so the setup form shows nothing for it. Declare its properties, or remove it.
 
 To make the warnings fail the test now, run `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.SpecLintWarning`, or pass `-W error::airbyte_cdk.test.standard_tests.SpecLintWarning` to `pytest`.

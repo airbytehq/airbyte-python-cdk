@@ -905,8 +905,9 @@ SPEC_LINTS: tuple[SpecLint, ...] = (
     ),
     # Not enforced yet. `source-facebook-marketing` (a single-item `allOf` that pydantic emits
     # for an enum field) and `destination-ragie` (pydantic-v2 `Optional` fields as `anyOf`)
-    # build their specs in code. Inlining those schemas accepts exactly the same configs, but the
-    # spec backward-compatibility check reports it as breaking.
+    # build their specs in code. Inlining the `allOf`, or rewriting `anyOf: [X, null]` as `X` with
+    # `type: [<X's type>, "null"]`, accepts exactly the same configs, but the spec
+    # backward-compatibility check reports it as breaking.
     SpecLint(
         "forbidden keywords",
         "The connector setup form cannot render these JSON Schema keywords.",
