@@ -1004,12 +1004,7 @@ def test_check_masks_secrets_in_a_config_error_raised_by_the_connector(
     assert orjson.loads(messages[-1])["connectionStatus"]["message"] == "Login failed for ****"
 
 
-def test_run_discover_without_config_when_supported(mocker):
-    """Test that discover works without config when check_config_during_discover is False."""
-    # Create a mock source that supports unprivileged discover
-    mock_source = MockSource()
-    mock_source.check_config_during_discover = False
-    
+def _mock_message_repository(mocker):
     message_repository = MagicMock()
     message_repository.consume_queue.return_value = []
     mocker.patch.object(
@@ -1018,62 +1013,84 @@ def test_run_discover_without_config_when_supported(mocker):
         new_callable=mocker.PropertyMock,
         return_value=message_repository,
     )
-    
-    entrypoint = AirbyteEntrypoint(mock_source)
-    
-    parsed_args = Namespace(command="discover", config=None)
+
+
+def test_run_discover_without_config_when_supported(mocker):
+    _mock_message_repository(mocker)
+    source = MockSource()
+    source.check_config_during_discover = False
     expected_catalog = AirbyteCatalog(
         streams=[
             AirbyteStream(
-                name="test_stream", 
-                json_schema={"type": "object"}, 
-                supported_sync_modes=[SyncMode.full_refresh]
+                name="test_stream",
+                json_schema={"type": "object"},
+                supported_sync_modes=[SyncMode.full_refresh],
             )
         ]
     )
-    
-    spec = ConnectorSpecification(connectionSpecification={})
-    mocker.patch.object(MockSource, "spec", return_value=spec)
+    mocker.patch.object(
+        MockSource, "spec", return_value=ConnectorSpecification(connectionSpecification={})
+    )
     mocker.patch.object(MockSource, "discover", return_value=expected_catalog)
-    
-    messages = list(entrypoint.run(parsed_args))
-    
-    # Should successfully return catalog without config
-    assert len(messages) == 1
-    assert _wrap_message(expected_catalog) == messages[0]
-    
-    # Verify discover was called with empty config
-    MockSource.discover.assert_called_once()
-    call_args = MockSource.discover.call_args
-    assert call_args[0][1] == {}  # config argument should be empty dict
+
+    messages = list(AirbyteEntrypoint(source).run(Namespace(command="discover", config=None)))
+
+    assert messages == [_wrap_message(expected_catalog)]
+    assert MockSource.discover.call_args[0][1] == {}
 
 
 def test_run_discover_without_config_when_not_supported(mocker):
-    """Test that discover fails with helpful error when config is required but not provided."""
-    # Create a mock source that requires config for discover
-    mock_source = MockSource()
-    mock_source.check_config_during_discover = True
-    
-    message_repository = MagicMock()
-    message_repository.consume_queue.return_value = []
+    _mock_message_repository(mocker)
+    source = MockSource()
+    mocker.patch.object(
+        MockSource, "spec", return_value=ConnectorSpecification(connectionSpecification={})
+    )
+    discover = mocker.patch.object(MockSource, "discover")
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        list(AirbyteEntrypoint(source).run(Namespace(command="discover", config=None)))
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "--config" in exc_info.value.message
+    discover.assert_not_called()
+
+
+def test_run_discover_without_config_wraps_source_errors(mocker):
+    _mock_message_repository(mocker)
+    source = MockSource()
+    source.check_config_during_discover = False
+    mocker.patch.object(
+        MockSource, "spec", return_value=ConnectorSpecification(connectionSpecification={})
+    )
+    mocker.patch.object(MockSource, "discover", side_effect=KeyError("start_date"))
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        list(AirbyteEntrypoint(source).run(Namespace(command="discover", config=None)))
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "start_date" in exc_info.value.internal_message
+
+
+def test_run_discover_with_config_skips_validation_when_check_config_against_spec_is_false(
+    mocker,
+):
+    _mock_message_repository(mocker)
+    source = MockSource()
+    source.check_config_against_spec = False
     mocker.patch.object(
         MockSource,
-        "message_repository",
-        new_callable=mocker.PropertyMock,
-        return_value=message_repository,
+        "spec",
+        return_value=ConnectorSpecification(
+            connectionSpecification={"type": "object", "required": ["api_key"]}
+        ),
     )
-    
-    entrypoint = AirbyteEntrypoint(mock_source)
-    
-    parsed_args = Namespace(command="discover", config=None)
-    
-    spec = ConnectorSpecification(connectionSpecification={})
-    mocker.patch.object(MockSource, "spec", return_value=spec)
-    
-    # Should raise ValueError with helpful message
-    with pytest.raises(ValueError) as exc_info:
-        list(entrypoint.run(parsed_args))
-    
-    error_message = str(exc_info.value)
-    assert "The '--config' argument is required but was not provided" in error_message
-    assert "does not support unprivileged discovery" in error_message
+    mocker.patch.object(MockSource, "read_config", return_value={})
+    mocker.patch.object(MockSource, "configure", return_value={})
+    catalog = AirbyteCatalog(streams=[])
+    mocker.patch.object(MockSource, "discover", return_value=catalog)
+
+    messages = list(
+        AirbyteEntrypoint(source).run(Namespace(command="discover", config="config_path"))
+    )
+
+    assert messages == [_wrap_message(catalog)]

@@ -271,7 +271,7 @@ class ConcurrentDeclarativeSource(Source):
             message_repository=self._message_repository,
         )
 
-        self.check_config_during_discover = self._uses_dynamic_schema_loader()
+        self.check_config_during_discover = self._requires_config_for_discover()
 
     def _pre_process_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -981,35 +981,33 @@ class ConcurrentDeclarativeSource(Source):
                 )
         return abstract_streams
 
-    def _uses_dynamic_schema_loader(self) -> bool:
-        """
-        Determines if any stream in the source uses a DynamicSchemaLoader.
+    def _requires_config_for_discover(self) -> bool:
+        """Return whether `discover` needs a config to build this source's catalog.
 
-        DynamicSchemaLoader makes a separate call to retrieve schema information,
-        which might require authentication. When present, config validation cannot
-        be skipped during discovery.
-
-        Returns:
-            bool: True if any stream uses a DynamicSchemaLoader (config required for discover),
-                  False otherwise (unprivileged discover may be supported).
+        A config is required when any stream (including all `ConditionalStreams` branches) uses a
+        `DynamicSchemaLoader`, or when any `dynamic_streams` definition resolves its streams from
+        the API or the config rather than from static parameters.
         """
-        for stream_config in self._stream_configs(self._source_config):
-            schema_loader = stream_config.get("schema_loader", {})
-            if (
-                isinstance(schema_loader, dict)
-                and schema_loader.get("type") == "DynamicSchemaLoader"
-            ):
+        for dynamic_definition in self._source_config.get("dynamic_streams", []):
+            resolver_type = dynamic_definition.get("components_resolver", {}).get("type")
+            if resolver_type != "ParametrizedComponentsResolver":
                 return True
 
-        dynamic_stream_definitions = self._source_config.get("dynamic_streams", [])
-        if dynamic_stream_definitions:
-            for dynamic_definition in dynamic_stream_definitions:
-                stream_template = dynamic_definition.get("stream_template", {})
-                schema_loader = stream_template.get("schema_loader", {})
-                if (
-                    isinstance(schema_loader, dict)
-                    and schema_loader.get("type") == "DynamicSchemaLoader"
-                ):
-                    return True
+        return _contains_component_type(
+            [
+                self._source_config.get("streams", []),
+                self._source_config.get("dynamic_streams", []),
+            ],
+            "DynamicSchemaLoader",
+        )
 
-        return False
+
+def _contains_component_type(node: Any, component_type: str) -> bool:
+    """Return whether any mapping nested under `node` has the given component `type`."""
+    if isinstance(node, Mapping):
+        return node.get("type") == component_type or any(
+            _contains_component_type(value, component_type) for value in node.values()
+        )
+    if isinstance(node, list):
+        return any(_contains_component_type(item, component_type) for item in node)
+    return False

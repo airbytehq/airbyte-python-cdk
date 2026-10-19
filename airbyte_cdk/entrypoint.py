@@ -105,9 +105,11 @@ class AirbyteEntrypoint(object):
             help="outputs a catalog describing the source's schema",
             parents=[parent_parser],
         )
-        required_discover_parser = discover_parser.add_argument_group("required named arguments")
-        required_discover_parser.add_argument(
-            "--config", type=str, required=False, help="path to the json configuration file"
+        discover_parser.add_argument(
+            "--config",
+            type=str,
+            required=False,
+            help="path to the json configuration file (optional if the source supports config-free discover)",
         )
         discover_parser.add_argument(
             "--manifest-path",
@@ -189,22 +191,19 @@ class AirbyteEntrypoint(object):
                     and not parsed_args.config
                     and not self.source.check_config_during_discover
                 ):
-                    # Connector supports unprivileged discover
-                    empty_config: dict[str, Any] = {}
                     yield from (
                         self.airbyte_message_to_string(queued_message)
                         for queued_message in self._emit_queued_messages(self.source)
                     )
                     yield from map(
                         AirbyteEntrypoint.airbyte_message_to_string,
-                        self.discover(source_spec, empty_config),
+                        self._discover_without_config(source_spec),
                     )
-                elif parsed_args.config is None:
-                    # Raise a helpful error message if we reach here with no config.
-                    raise ValueError(
-                        "The '--config' argument is required but was not provided. "
-                        "This connector does not support unprivileged discovery. "
-                        "Please provide a valid configuration file using the --config flag."
+                elif not parsed_args.config:
+                    raise AirbyteTracedException(
+                        message="This connector requires a config to run `discover`. Provide one with `--config`.",
+                        internal_message="`--config` was not provided and the source does not support config-free discover.",
+                        failure_type=FailureType.config_error,
                     )
                 else:
                     raw_config = self.source.read_config(parsed_args.config)
@@ -282,12 +281,28 @@ class AirbyteEntrypoint(object):
         self, source_spec: ConnectorSpecification, config: TConfig
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
-        if self.source.check_config_during_discover:
+        if self.source.check_config_against_spec and self.source.check_config_during_discover:
             self.validate_connection(source_spec, config)
         catalog = self.source.discover(self.logger, config)
 
         yield from self._emit_queued_messages(self.source)
         yield AirbyteMessage(type=Type.CATALOG, catalog=catalog)
+
+    def _discover_without_config(
+        self, source_spec: ConnectorSpecification
+    ) -> Iterable[AirbyteMessage]:
+        """Run `discover` with an empty config, for sources that support config-free discover."""
+        try:
+            yield from self.discover(source_spec, {})
+        except AirbyteTracedException:
+            raise
+        except Exception as error:
+            raise AirbyteTracedException(
+                message="This connector could not run `discover` without a config. Provide one with `--config`.",
+                internal_message=f"Config-free discover failed: {error!r}",
+                failure_type=FailureType.config_error,
+                exception=error,
+            ) from error
 
     def read(
         self, source_spec: ConnectorSpecification, config: TConfig, catalog: Any, state: list[Any]
