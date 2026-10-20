@@ -28,7 +28,7 @@ def _run_test_job_args(
 
     monkeypatch.setattr(entrypoint_wrapper, "_run_command", fake_run_command)
     run_test_job(
-        lambda: object(),
+        object,  # type: ignore[arg-type]
         verb,  # type: ignore[arg-type]
         connector_root=tmp_path,
         test_scenario=scenario,
