@@ -2954,11 +2954,11 @@ class FileUploader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class OpaqueTokenCursor(BaseModel):
+class SyncTokenCursor(BaseModel):
     class Config:
         extra = Extra.allow
 
-    type: Literal["OpaqueTokenCursor"]
+    type: Literal["SyncTokenCursor"]
     token_path: List[str] = Field(
         ...,
         description="Path to the next token in the decoded response that ends a pagination pass. The value must be a string or an integer, and is stored and sent as a string. A missing, null or empty value means the response carried no token.",
@@ -3002,7 +3002,7 @@ class DeclarativeStream(BaseModel):
         title="Retriever",
     )
     incremental_sync: Optional[
-        Union[DatetimeBasedCursor, IncrementingCountCursor, OpaqueTokenCursor]
+        Union[DatetimeBasedCursor, IncrementingCountCursor, SyncTokenCursor]
     ] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",

@@ -12,7 +12,7 @@ import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
-from airbyte_cdk.sources.declarative.incremental.opaque_token_cursor import OpaqueTokenCursor
+from airbyte_cdk.sources.declarative.incremental.sync_token_cursor import SyncTokenCursor
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
@@ -39,7 +39,7 @@ def _response(body):
 
 
 def _cursor(*, state=None, router=None, max_partitions=1000, completion_condition=None):
-    return OpaqueTokenCursor(
+    return SyncTokenCursor(
         stream_name="events",
         stream_namespace=None,
         stream_state=state,
@@ -91,9 +91,9 @@ def test_t_boot_and_t_inc_commit_only_after_partition_close_and_resume_from_stat
         PageCompleted(stream_slice, _response({"items": [], "syncToken": "token-1"}), True)
     )
 
-    assert cursor.state == {"state_type": "opaque_token"}
+    assert cursor.state == {"state_type": "sync_token"}
     cursor.close_partition(_partition({}))
-    assert cursor.state["state_type"] == "opaque_token"
+    assert cursor.state["state_type"] == "sync_token"
     assert cursor.state["token"] == "token-1"
     assert cursor.state["committed_at"].endswith("Z")
 
@@ -106,7 +106,7 @@ def test_t_boot_and_t_inc_commit_only_after_partition_close_and_resume_from_stat
 def test_t_noecho_and_t_empty_leave_committed_token_unchanged():
     cursor = _cursor(
         state={
-            "state_type": "opaque_token",
+            "state_type": "sync_token",
             "token": "previous",
             "committed_at": "2026-01-01T00:00:00Z",
         }
@@ -119,7 +119,7 @@ def test_t_noecho_and_t_empty_leave_committed_token_unchanged():
     cursor.close_partition(_partition({}))
 
     assert cursor.state == {
-        "state_type": "opaque_token",
+        "state_type": "sync_token",
         "token": "previous",
         "committed_at": "2026-01-01T00:00:00Z",
     }
@@ -137,7 +137,7 @@ def test_t_completion_condition_must_pass_before_a_token_is_committed():
         )
     )
     cursor.close_partition(_partition({}))
-    assert cursor.state == {"state_type": "opaque_token"}
+    assert cursor.state == {"state_type": "sync_token"}
 
     cursor.on_page_completed(
         PageCompleted(
@@ -158,7 +158,7 @@ def test_t_fail_discards_pending_token_when_pass_does_not_complete():
     )
     cursor.close_partition(_partition({}))
 
-    assert cursor.state == {"state_type": "opaque_token"}
+    assert cursor.state == {"state_type": "sync_token"}
 
 
 def test_t_par_keeps_tokens_partition_scoped():
@@ -172,7 +172,7 @@ def test_t_par_keeps_tokens_partition_scoped():
     cursor = _cursor(
         router=router,
         state={
-            "state_type": "opaque_token",
+            "state_type": "sync_token",
             "states": [
                 {
                     "partition": {"account": "c"},
@@ -188,7 +188,7 @@ def test_t_par_keeps_tokens_partition_scoped():
         cursor.on_page_completed(PageCompleted(stream_slice, _response({"syncToken": token}), True))
         cursor.close_partition(_partition(stream_slice.partition))
 
-    assert cursor.state["state_type"] == "opaque_token"
+    assert cursor.state["state_type"] == "sync_token"
     assert {
         (item["partition"]["account"], item["cursor"]["token"]) for item in cursor.state["states"]
     } == {("a", "token-a-new"), ("b", "token-b-new"), ("c", "token-c")}
@@ -220,7 +220,7 @@ def test_t_stream_slices_deduplicates_partitions_and_uses_only_the_cursor_token(
 
 def test_t_cap_retains_tokens_after_failed_router_enumeration_and_drops_vanished_partitions():
     state = {
-        "state_type": "opaque_token",
+        "state_type": "sync_token",
         "states": [
             {
                 "partition": {"account": "a"},
@@ -277,7 +277,7 @@ def test_t_cap_does_not_evict_existing_partitions():
 def test_t_foreign_ignores_state_from_another_cursor_type():
     cursor = _cursor(state={"state_type": "datetime", "token": "not-a-token"})
 
-    assert cursor.state == {"state_type": "opaque_token"}
+    assert cursor.state == {"state_type": "sync_token"}
 
 
 @pytest.mark.parametrize(
@@ -301,7 +301,7 @@ def test_t_foreign_datetime_and_missing_cursor_states_bootstrap(state):
     cursor = _cursor(router=router, state=state)
 
     assert list(cursor.stream_slices())[0].cursor_slice == {}
-    assert cursor.state["state_type"] == "opaque_token"
+    assert cursor.state["state_type"] == "sync_token"
     assert cursor.state["states"] == []
 
 
@@ -315,7 +315,7 @@ def test_partition_state_load_skips_only_malformed_entries(caplog):
     cursor = _cursor(
         router=router,
         state={
-            "state_type": "opaque_token",
+            "state_type": "sync_token",
             "states": [
                 {
                     "partition": {"account": "a"},
@@ -348,7 +348,7 @@ def test_t_cap_warns_once_at_final_emission_with_over_cap_partition_count(caplog
         ]
     )
     state = {
-        "state_type": "opaque_token",
+        "state_type": "sync_token",
         "states": [
             {
                 "partition": {"account": account},
@@ -386,7 +386,7 @@ def test_bootstrap_and_replay_observability_are_deduplicated_and_aged(caplog):
     caplog.clear()
     replay = _cursor(
         state={
-            "state_type": "opaque_token",
+            "state_type": "sync_token",
             "token": "T1",
             "committed_at": "2024-01-01T00:00:00Z",
         }
@@ -415,16 +415,16 @@ def test_commit_observability_counts_completed_pages_per_partition(caplog):
 def test_t_schema_ignores_incompatible_partition_state_shape():
     cursor = _cursor(
         router=Router([]),
-        state={"state_type": "opaque_token", "token": "wrong-shape"},
+        state={"state_type": "sync_token", "token": "wrong-shape"},
     )
 
-    assert cursor.state == {"state_type": "opaque_token", "states": []}
+    assert cursor.state == {"state_type": "sync_token", "states": []}
 
 
 def test_t_schema_ignores_partition_state_shape_on_unpartitioned_stream():
-    cursor = _cursor(state={"state_type": "opaque_token", "states": []})
+    cursor = _cursor(state={"state_type": "sync_token", "states": []})
 
-    assert cursor.state == {"state_type": "opaque_token"}
+    assert cursor.state == {"state_type": "sync_token"}
 
 
 def test_t_valid_and_t_init_use_partition_router_and_initial_token_slice():

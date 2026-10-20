@@ -1428,20 +1428,20 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  OpaqueTokenCursor:
-    title: Opaque Token Cursor
+  SyncTokenCursor:
+    title: Sync Token Cursor
     description: >-
-      Incremental sync driven by an opaque change token that the API returns at the end of a
-      pagination pass, such as a sync token. The token is committed to state only after the
-      pass's records are emitted, and is sent back on the next sync. Tokens are never parsed,
-      compared or derived from records.
+      Incremental sync driven by a sync token that the API returns at the end of a pagination
+      pass. The token is opaque. It is committed to state only after the pass's records are
+      emitted and sent back on the next sync. Tokens are never parsed, compared or derived
+      from records.
     type: object
     required: [type, token_path, token_option]
     additionalProperties: true
     properties:
       type:
         type: string
-        enum: [OpaqueTokenCursor]
+        enum: [SyncTokenCursor]
       token_path:
         title: Token Path
         description: >-
@@ -1907,7 +1907,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
-          - "$ref": "#/definitions/OpaqueTokenCursor"
+          - "$ref": "#/definitions/SyncTokenCursor"
       primary_key:
         title: Primary Key
         "$ref": "#/definitions/PrimaryKey"
