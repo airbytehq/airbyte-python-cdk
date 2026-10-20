@@ -4182,7 +4182,7 @@ class ModelToComponentFactory:
                 cursor.on_page_completed if isinstance(cursor, SyncTokenCursor) else None
             ),
             token_reset_handler=(
-                cursor.restart_without_token if isinstance(cursor, OpaqueTokenCursor) else None
+                cursor.restart_without_token if isinstance(cursor, SyncTokenCursor) else None
             ),
             parameters=model.parameters or {},
         )

@@ -230,7 +230,7 @@ def _reset_error_handler(*, reduce_page_size=False, pagination_reset=False):
     response_filters.append(
         {
             "type": "HttpResponseFilter",
-            "action": "RESET_OPAQUE_TOKEN",
+            "action": "RESET_SYNC_TOKEN",
             "predicate": "{{ response.get('success') == false }}",
             "error_message": "Ashby rejected the stored change token (sync_token_expired)",
         }
@@ -350,7 +350,7 @@ def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
 
 
 def test_t_reset_restarts_without_token_and_commits_terminal_token(caplog):
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(error_handler=_reset_error_handler())
     with HttpMocker() as http_mocker:
         http_mocker.post(
@@ -392,7 +392,7 @@ def test_t_reset_restarts_without_token_and_commits_terminal_token(caplog):
 
 
 def test_t_reset_context_is_fresh_after_page_size_reduction(caplog):
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(error_handler=_reset_error_handler(reduce_page_size=True))
     stream = manifest["streams"][0]
     stream["retriever"]["paginator"]["page_size_option"] = {
@@ -473,7 +473,7 @@ def test_t_reset_context_is_fresh_after_page_size_reduction(caplog):
 
 
 def test_t_reset_twice_errors_and_preserves_committed_state():
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(error_handler=_reset_error_handler())
     with HttpMocker() as http_mocker:
         http_mocker.post(
@@ -503,13 +503,13 @@ def test_t_reset_twice_errors_and_preserves_committed_state():
         and message.trace.error.failure_type == FailureType.system_error
         and message.trace.error.message
         == "Stream events: the API rejected a read without a change token. "
-        "Check the RESET_OPAQUE_TOKEN response filter."
+        "Check the RESET_SYNC_TOKEN response filter."
         for message in messages
     )
 
 
 def test_t_rpag_reset_replays_resumed_page_one_with_the_same_token():
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(error_handler=_reset_error_handler(pagination_reset=True))
     with HttpMocker() as http_mocker:
         http_mocker.post(
@@ -541,7 +541,7 @@ def test_t_rpag_reset_replays_resumed_page_one_with_the_same_token():
 
 
 def test_t_rpag_reset_after_token_reset_replays_tokenless_page_one():
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(error_handler=_reset_error_handler(pagination_reset=True))
     with HttpMocker() as http_mocker:
         http_mocker.post(
@@ -582,7 +582,7 @@ def test_t_rpag_reset_after_token_reset_replays_tokenless_page_one():
 
 
 def test_t_rpag_second_pagination_reset_is_system_error():
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(error_handler=_reset_error_handler(pagination_reset=True))
     with HttpMocker() as http_mocker:
         http_mocker.post(
@@ -623,7 +623,7 @@ def test_reset_action_on_non_token_stream_is_not_supported():
             _read(source, catalog)
 
     assert exc_info.value.failure_type.value == "config_error"
-    assert "RESET_OPAQUE_TOKEN" in str(exc_info.value)
+    assert "RESET_SYNC_TOKEN" in str(exc_info.value)
 
 
 def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():

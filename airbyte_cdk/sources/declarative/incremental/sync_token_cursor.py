@@ -203,7 +203,7 @@ class SyncTokenCursor(Cursor):
         if "token" not in stream_slice.cursor_slice:
             message = (
                 f"Stream {self._stream_name}: the API rejected a read without a change token. "
-                "Check the RESET_OPAQUE_TOKEN response filter."
+                "Check the RESET_SYNC_TOKEN response filter."
             )
             raise AirbyteTracedException(
                 internal_message=message,

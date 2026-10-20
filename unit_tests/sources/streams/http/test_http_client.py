@@ -35,9 +35,6 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     UserDefinedBackoffException,
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
-from airbyte_cdk.sources.streams.http.opaque_token_reset_exception import (
-    OpaqueTokenResetRequiredException,
-)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -47,6 +44,9 @@ from airbyte_cdk.sources.streams.http.request_window_split_exception import (
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     Oauth2Authenticator,
     TokenAuthenticator,
+)
+from airbyte_cdk.sources.streams.http.sync_token_reset_exception import (
+    SyncTokenResetRequiredException,
 )
 from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -247,16 +247,16 @@ def test_send_raises_airbyte_traced_exception_with_fail_response_action():
     assert http_client._session.send.call_count == 1
 
 
-def test_reset_opaque_token_action_raises_exception_with_error_message():
+def test_reset_sync_token_action_raises_exception_with_error_message():
     http_client = test_http_client()
     error_message = "sync_token_expired"
-    with pytest.raises(OpaqueTokenResetRequiredException) as exc_info:
+    with pytest.raises(SyncTokenResetRequiredException) as exc_info:
         http_client._handle_error_resolution(
             response=None,
             exc=None,
             request=requests.PreparedRequest(),
             error_resolution=ErrorResolution(
-                response_action=ResponseAction.RESET_OPAQUE_TOKEN,
+                response_action=ResponseAction.RESET_SYNC_TOKEN,
                 error_message=error_message,
             ),
         )

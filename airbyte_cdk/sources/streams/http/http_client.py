@@ -43,9 +43,6 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
-from airbyte_cdk.sources.streams.http.opaque_token_reset_exception import (
-    OpaqueTokenResetRequiredException,
-)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -67,6 +64,9 @@ from airbyte_cdk.sources.streams.http.request_window_split_exception import (
 from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
     ResponseAwareAuthenticator,
     TokenRotatingAuthenticator,
+)
+from airbyte_cdk.sources.streams.http.sync_token_reset_exception import (
+    SyncTokenResetRequiredException,
 )
 from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.sources.utils.types import JsonType
@@ -623,8 +623,8 @@ class HttpClient:
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
 
-        if error_resolution.response_action == ResponseAction.RESET_OPAQUE_TOKEN:
-            raise OpaqueTokenResetRequiredException(error_resolution.error_message)
+        if error_resolution.response_action == ResponseAction.RESET_SYNC_TOKEN:
+            raise SyncTokenResetRequiredException(error_resolution.error_message)
 
         if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
             raise PageSizeReductionRequiredException(

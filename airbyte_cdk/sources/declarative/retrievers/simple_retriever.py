@@ -57,10 +57,6 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.streams.http.opaque_token_reset_exception import (
-    OpaqueTokenResetNotSupportedException,
-    OpaqueTokenResetRequiredException,
-)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionNotSupportedException,
     PageSizeReductionRequiredException,
@@ -71,6 +67,10 @@ from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
 from airbyte_cdk.sources.streams.http.request_window_split_exception import (
     RequestWindowSplitNotSupportedException,
     RequestWindowSplitRequiredException,
+)
+from airbyte_cdk.sources.streams.http.sync_token_reset_exception import (
+    SyncTokenResetNotSupportedException,
+    SyncTokenResetRequiredException,
 )
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
@@ -708,9 +708,9 @@ class SimpleRetriever(Retriever):
                 yield from self._read_records_or_split_request_window(
                     records_schema, child, original_slice, depth + 1
                 )
-        except OpaqueTokenResetRequiredException as exception:
+        except SyncTokenResetRequiredException as exception:
             if self.token_reset_handler is None:
-                raise OpaqueTokenResetNotSupportedException(stream_name=self.name) from exception
+                raise SyncTokenResetNotSupportedException(stream_name=self.name) from exception
 
             reset_slice = self.token_reset_handler(stream_slice, exception.error_message)
             reason = exception.error_message or "the API rejected the stored change token"
