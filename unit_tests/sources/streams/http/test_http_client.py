@@ -713,13 +713,11 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
 
 
 @pytest.mark.parametrize(
-    "exit_on_rate_limit, expected_call_count, expected_error",
-    [[True, 6, DefaultBackoffException], [False, 6, RateLimitBackoffException]],
+    "exit_on_rate_limit, expected_call_count",
+    [[True, 1], [False, 6]],
 )
 @pytest.mark.usefixtures("mock_sleep")
-def test_backoff_strategy_endless(
-    exit_on_rate_limit: bool, expected_call_count: int, expected_error: Exception
-):
+def test_backoff_strategy_endless(exit_on_rate_limit: bool, expected_call_count: int):
     http_client = HttpClient(
         name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock())
     )
@@ -740,6 +738,66 @@ def test_backoff_strategy_endless(
                 exit_on_rate_limit=exit_on_rate_limit,
             )
         assert mocked_send.call_count == expected_call_count
+
+
+@pytest.mark.parametrize("exit_on_rate_limit", [True, False])
+def test_rate_limit_exit_fails_fast_without_affecting_retry_behavior(
+    requests_mock, exit_on_rate_limit
+):
+    url = "https://test_base_url.com/v1/endpoint"
+    requests_mock.get(url, [{"status_code": 429}, {"status_code": 200}])
+    backoff_strategy = CustomBackoffStrategy(backoff_time_value=900)
+    backoff_strategy.backoff_time = MagicMock(wraps=backoff_strategy.backoff_time)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            max_retries=1,
+            max_time=timedelta(seconds=1800),
+            error_mapping={
+                429: ErrorResolution(
+                    ResponseAction.RATE_LIMITED, FailureType.transient_error, "rate limit"
+                )
+            },
+        ),
+        backoff_strategy=backoff_strategy,
+    )
+
+    with patch("time.sleep") as mocked_sleep:
+        if exit_on_rate_limit:
+            with pytest.raises(AirbyteTracedException) as error:
+                http_client.send_request(
+                    http_method="get",
+                    url=url,
+                    request_kwargs={},
+                    exit_on_rate_limit=True,
+                )
+
+            assert error.value.failure_type == FailureType.transient_error
+            assert error.value.message == (
+                "API rate limit exceeded. Wait for the rate limit to reset and try again."
+            )
+            assert error.value.internal_message == (
+                "Rate limited while exit_on_rate_limit is set, not waiting: rate limit"
+            )
+            assert isinstance(error.value._exception, requests.HTTPError)
+            assert error.value._stream_descriptor.name == "test"
+            backoff_strategy.backoff_time.assert_not_called()
+            mocked_sleep.assert_not_called()
+            assert requests_mock.call_count == 1
+        else:
+            _, response = http_client.send_request(
+                http_method="get",
+                url=url,
+                request_kwargs={},
+                exit_on_rate_limit=False,
+            )
+
+            assert response.status_code == 200
+            backoff_strategy.backoff_time.assert_called_once()
+            assert mocked_sleep.call_args_list[0].args == (901,)
+            assert requests_mock.call_count == 2
 
 
 def test_given_different_headers_then_response_is_not_cached(requests_mock):

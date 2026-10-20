@@ -793,6 +793,29 @@ class HttpClient:
                 and self._can_retry_on_another_token(request)
             )
 
+            if (
+                error_resolution.response_action == ResponseAction.RATE_LIMITED
+                and exit_on_rate_limit
+                and not rotate_instead_of_waiting
+            ):
+                error_message = error_resolution.error_message or (
+                    f"Request to {request.url} failed with failure type "
+                    f"{error_resolution.failure_type}, response action "
+                    f"{error_resolution.response_action}."
+                )
+                raise AirbyteTracedException(
+                    message="API rate limit exceeded. Wait for the rate limit to reset and try again.",
+                    internal_message=(
+                        "Rate limited while exit_on_rate_limit is set, not waiting: "
+                        f"{error_message}"
+                    ),
+                    failure_type=FailureType.transient_error,
+                    exception=(
+                        requests.HTTPError(response=response) if response is not None else exc
+                    ),
+                    stream_descriptor=StreamDescriptor(name=self._name),
+                )
+
             if rotate_instead_of_waiting:
                 # Says that a wait was skipped without the number, which is no longer computed,
                 # and names the cap explicitly: a connector that configured one gets no other

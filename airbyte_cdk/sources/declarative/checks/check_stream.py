@@ -7,11 +7,13 @@ import traceback
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 CHECK_STREAM_NAMES_CONFIG_KEY = "__airbyte_check_stream_names"
 
@@ -131,6 +133,10 @@ class CheckStream(ConnectionChecker):
                 message = f"Stream {stream_name} is not available: {reason}"
                 logger.warning(message)
                 return stream_is_available, message
+        except AirbyteTracedException as error:
+            if error.failure_type == FailureType.transient_error:
+                raise
+            return self._log_error(logger, f"checking availability of stream {stream_name}", error)
         except Exception as error:
             return self._log_error(logger, f"checking availability of stream {stream_name}", error)
         return True, None
@@ -194,6 +200,12 @@ class CheckStream(ConnectionChecker):
                     message = f"Dynamic Stream {stream.name} is not available: {reason}"
                     logger.warning(message)
                     return False, message
+            except AirbyteTracedException as error:
+                if error.failure_type == FailureType.transient_error:
+                    raise
+                return self._log_error(
+                    logger, f"checking availability of dynamic stream {stream.name}", error
+                )
             except Exception as error:
                 return self._log_error(
                     logger, f"checking availability of dynamic stream {stream.name}", error

@@ -2,10 +2,11 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from contextlib import contextmanager
 from logging import Logger
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
+from typing import Any, Callable, Iterable, Iterator, List, Mapping, Optional, Union
 
-from airbyte_cdk.models import AirbyteStream, SyncMode
+from airbyte_cdk.models import AirbyteStream, FailureType, SyncMode
 from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
     ConcurrentPerPartitionCursor,
 )
@@ -121,32 +122,63 @@ class DefaultStream(AbstractStream):
             return None
         return stream_slicer._partition_router
 
+    @contextmanager
+    def _exit_on_rate_limit(self) -> Iterator[None]:
+        if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
+            yield
+            return
+
+        retriever = self._stream_partition_generator._partition_factory._retriever
+        target: Any
+        if hasattr(retriever, "exit_on_rate_limit"):
+            target = retriever
+        else:
+            target = getattr(retriever, "requester", None)
+
+        if target is None or not hasattr(target, "exit_on_rate_limit"):
+            yield
+            return
+
+        previous_value = target.exit_on_rate_limit
+        target.exit_on_rate_limit = True
+        try:
+            yield
+        finally:
+            target.exit_on_rate_limit = previous_value
+
     def check_availability(self) -> StreamAvailability:
         """
         Check stream availability by attempting to read the first record of the stream.
         """
-        try:
-            partition = next(iter(self.generate_partitions()))
-        except StopIteration:
-            # NOTE: The following comment was copied from legacy stuff and I don't know how relevant it is:
-            # If stream_slices has no `next()` item (Note - this is different from stream_slices returning [None]!)
-            # This can happen when a substream's `stream_slices` method does a `for record in parent_records: yield <something>`
-            # without accounting for the case in which the parent stream is empty.
-            return StreamAvailability.unavailable(
-                f"Cannot attempt to connect to stream {self.name} - no stream slices were found"
-            )
-        except AirbyteTracedException as error:
-            return StreamAvailability.unavailable(
-                error.message or error.internal_message or "<no error message>"
-            )
+        with self._exit_on_rate_limit():
+            try:
+                partition = next(iter(self.generate_partitions()))
+            except StopIteration:
+                # NOTE: The following comment was copied from legacy stuff and I don't know how relevant it is:
+                # If stream_slices has no `next()` item (Note - this is different from stream_slices returning [None]!)
+                # This can happen when a substream's `stream_slices` method does a `for record in parent_records: yield <something>`
+                # without accounting for the case in which the parent stream is empty.
+                return StreamAvailability.unavailable(
+                    f"Cannot attempt to connect to stream {self.name} - no stream slices were found"
+                )
+            except AirbyteTracedException as error:
+                if error.failure_type == FailureType.transient_error:
+                    raise
+                return StreamAvailability.unavailable(
+                    error.message or error.internal_message or "<no error message>"
+                )
 
-        try:
-            next(iter(partition.read()))
-            return StreamAvailability.available()
-        except StopIteration:
-            self._logger.info(f"Successfully connected to stream {self.name}, but got 0 records.")
-            return StreamAvailability.available()
-        except AirbyteTracedException as error:
-            return StreamAvailability.unavailable(
-                error.message or error.internal_message or "<no error message>"
-            )
+            try:
+                next(iter(partition.read()))
+                return StreamAvailability.available()
+            except StopIteration:
+                self._logger.info(
+                    f"Successfully connected to stream {self.name}, but got 0 records."
+                )
+                return StreamAvailability.available()
+            except AirbyteTracedException as error:
+                if error.failure_type == FailureType.transient_error:
+                    raise
+                return StreamAvailability.unavailable(
+                    error.message or error.internal_message or "<no error message>"
+                )

@@ -6,20 +6,22 @@ import json
 import logging
 from copy import deepcopy
 from typing import Any, Iterable, Mapping, Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 from jsonschema.exceptions import ValidationError
 
-from airbyte_cdk.models import Status
+from airbyte_cdk.models import FailureType, Status
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = logging.getLogger("test")
 config = dict()
@@ -796,6 +798,126 @@ def test_check_stream1(
             assert connection_status.status == expected_result
 
 
+@pytest.mark.parametrize(
+    "failure_type, should_raise",
+    [
+        (FailureType.transient_error, True),
+        (FailureType.config_error, False),
+    ],
+)
+def test_check_connection_propagates_transient_availability_errors(failure_type, should_raise):
+    stream = MagicMock(spec=AbstractStream)
+    stream.name = "mock_stream"
+    error = AirbyteTracedException(message="request failed", failure_type=failure_type)
+    stream.check_availability.side_effect = error
+    source = MagicMock()
+    source.streams.return_value = [stream]
+    check_stream = CheckStream(stream_names=["mock_stream"], parameters={})
+
+    if should_raise:
+        with pytest.raises(AirbyteTracedException) as raised_error:
+            check_stream.check_connection(source, logger, config)
+        assert raised_error.value is error
+    else:
+        available, reason = check_stream.check_connection(source, logger, config)
+        assert available is False
+        assert "request failed" in reason
+
+
+def test_check_generated_stream_availability_propagates_transient_error():
+    stream = MagicMock(spec=AbstractStream)
+    stream.name = "generated_stream"
+    error = AirbyteTracedException(
+        message="request failed", failure_type=FailureType.transient_error
+    )
+    stream.check_availability.side_effect = error
+    check_stream = CheckStream(stream_names=[], parameters={})
+
+    with pytest.raises(AirbyteTracedException) as raised_error:
+        check_stream._check_generated_streams_availability(
+            [{"name": "generated_stream"}], {"generated_stream": stream}, logger, None
+        )
+
+    assert raised_error.value is error
+
+
+@pytest.mark.parametrize("status_code", [200, 429])
+def test_concurrent_declarative_check_fails_fast_when_rate_limited(status_code):
+    manifest = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["stream"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "stream",
+                "primary_key": ["id"],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/items",
+                        "http_method": "GET",
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "max_retries": 1,
+                            "backoff_strategies": [
+                                {"type": "WaitTimeFromHeader", "header": "Retry-After"}
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            }
+        ],
+    }
+    request = HttpRequest(url="https://api.test.com/items")
+    response = HttpResponse(
+        body=json.dumps([{"id": 1}] if status_code == 200 else {"error": "rate limited"}),
+        status_code=status_code,
+        headers={"Retry-After": "900"} if status_code == 429 else {},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(request, response)
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest,
+            config={},
+            catalog=None,
+            state=None,
+        )
+
+        with patch("time.sleep") as mocked_sleep:
+            if status_code == 429:
+                with pytest.raises(AirbyteTracedException) as error:
+                    source.check(logger, {})
+
+                assert error.value.failure_type == FailureType.transient_error
+                assert error.value.message == (
+                    "API rate limit exceeded. Wait for the rate limit to reset and try again."
+                )
+                http_mocker.assert_number_of_calls(request, 1)
+            else:
+                connection_status = source.check(logger, {})
+
+                assert connection_status.status == Status.SUCCEEDED
+                http_mocker.assert_number_of_calls(request, 1)
+
+            mocked_sleep.assert_not_called()
+
+
 def test_check_empty_static_stream_override_falls_back_to_manifest_streams_and_checks_dynamic_streams():
     manifest = {
         **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
@@ -840,11 +962,12 @@ def test_check_empty_static_stream_override_falls_back_to_manifest_streams_and_c
             state=None,
         )
 
-        connection_status = source.check(logger, check_config)
+        with pytest.raises(AirbyteTracedException) as error:
+            source.check(logger, check_config)
 
+        assert error.value.failure_type == FailureType.transient_error
         http_mocker.assert_number_of_calls(static_stream_request, 6)
         http_mocker.assert_number_of_calls(item_request_2, 0)
-        assert connection_status.status == Status.FAILED
 
 
 def test_check_stream_missing_fields():
