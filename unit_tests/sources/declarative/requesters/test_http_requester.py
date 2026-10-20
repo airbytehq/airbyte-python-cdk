@@ -228,6 +228,22 @@ def test_basic_send_request():
     assert sent_request.body is None
 
 
+def test_fail_fast_on_rate_limit_is_forwarded_to_http_client(mocker):
+    requester = create_requester()
+    assert requester.fail_fast_on_rate_limit is False
+    requester.fail_fast_on_rate_limit = True
+    send_request = mocker.patch.object(
+        requester._http_client,
+        "send_request",
+        return_value=(PreparedRequest(), requests.Response()),
+    )
+
+    requester.send_request()
+
+    send_request.assert_called_once()
+    assert send_request.call_args.kwargs["fail_fast_on_rate_limit"] is True
+
+
 @pytest.mark.parametrize(
     "provider_data, provider_json, param_data, param_json, authenticator_data, authenticator_json, expected_exception, expected_body",
     [

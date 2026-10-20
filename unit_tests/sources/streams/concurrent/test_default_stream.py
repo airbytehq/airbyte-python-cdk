@@ -385,11 +385,13 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._cursor,
         ), partition_generator
 
-    def test_check_availability_temporarily_enables_exit_on_rate_limit(self):
+    def test_check_availability_temporarily_enables_fail_fast_on_rate_limit(self):
         for use_requester in [False, True]:
             for previous_value in [False, True]:
                 with self.subTest(use_requester=use_requester, previous_value=previous_value):
-                    rate_limited_component = SimpleNamespace(exit_on_rate_limit=previous_value)
+                    rate_limited_component = SimpleNamespace(
+                        fail_fast_on_rate_limit=previous_value, exit_on_rate_limit=False
+                    )
                     retriever = (
                         SimpleNamespace(requester=rate_limited_component)
                         if use_requester
@@ -398,11 +400,13 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
                     stream, partition_generator = self._stream_with_retriever(retriever)
 
                     def generate():
-                        assert rate_limited_component.exit_on_rate_limit is True
+                        assert rate_limited_component.fail_fast_on_rate_limit is True
+                        assert rate_limited_component.exit_on_rate_limit is False
                         return [self._partition]
 
                     def read():
-                        assert rate_limited_component.exit_on_rate_limit is True
+                        assert rate_limited_component.fail_fast_on_rate_limit is True
+                        assert rate_limited_component.exit_on_rate_limit is False
                         return [Mock(spec=Record)]
 
                     partition_generator.generate.side_effect = generate
@@ -411,7 +415,8 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
                     availability = stream.check_availability()
 
                     assert availability.is_available is True
-                    assert rate_limited_component.exit_on_rate_limit is previous_value
+                    assert rate_limited_component.fail_fast_on_rate_limit is previous_value
+                    assert rate_limited_component.exit_on_rate_limit is False
 
     def test_check_availability_propagates_transient_errors_and_restores_flag(self):
         for failure_type, should_raise in [
@@ -420,31 +425,47 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         ]:
             for raise_during_generation in [False, True]:
                 for previous_value in [False, True]:
-                    with self.subTest(
-                        failure_type=failure_type,
-                        raise_during_generation=raise_during_generation,
-                        previous_value=previous_value,
-                    ):
-                        retriever = SimpleNamespace(exit_on_rate_limit=previous_value)
-                        stream, partition_generator = self._stream_with_retriever(retriever)
-                        error = AirbyteTracedException(
-                            message="request failed", failure_type=failure_type
-                        )
-                        if raise_during_generation:
-                            partition_generator.generate.side_effect = error
-                        else:
-                            self._partition.read.side_effect = error
+                    for use_requester in [False, True]:
+                        with self.subTest(
+                            failure_type=failure_type,
+                            raise_during_generation=raise_during_generation,
+                            previous_value=previous_value,
+                            use_requester=use_requester,
+                        ):
+                            fail_fast_component = SimpleNamespace(
+                                fail_fast_on_rate_limit=previous_value, exit_on_rate_limit=False
+                            )
+                            retriever = (
+                                SimpleNamespace(requester=fail_fast_component)
+                                if use_requester
+                                else fail_fast_component
+                            )
+                            stream, partition_generator = self._stream_with_retriever(retriever)
+                            error = AirbyteTracedException(
+                                message="request failed", failure_type=failure_type
+                            )
 
-                        if should_raise:
-                            with pytest.raises(AirbyteTracedException) as raised_error:
-                                stream.check_availability()
-                            assert raised_error.value is error
-                        else:
-                            availability = stream.check_availability()
-                            assert availability.is_available is False
-                            assert availability.reason == "request failed"
+                            def raise_error():
+                                assert fail_fast_component.fail_fast_on_rate_limit is True
+                                assert fail_fast_component.exit_on_rate_limit is False
+                                raise error
 
-                        assert retriever.exit_on_rate_limit is previous_value
+                            if raise_during_generation:
+                                partition_generator.generate.side_effect = raise_error
+                            else:
+                                self._partition.read.side_effect = raise_error
+
+                            if should_raise:
+                                with pytest.raises(AirbyteTracedException) as raised_error:
+                                    stream.check_availability()
+                                assert raised_error.value is error
+                            else:
+                                availability = stream.check_availability()
+                                assert availability.is_available is False
+                                assert availability.reason == "request failed"
+
+                            assert fail_fast_component.fail_fast_on_rate_limit is previous_value
+                            assert fail_fast_component.exit_on_rate_limit is False
 
     def test_given_unknown_error_when_reading_record_when_get_availability_then_raise(self) -> None:
         """

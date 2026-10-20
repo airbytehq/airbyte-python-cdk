@@ -333,6 +333,7 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        fail_fast_on_rate_limit: bool = False,
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -363,6 +364,7 @@ class HttpClient:
                 request_kwargs,
                 log_formatter=log_formatter,
                 exit_on_rate_limit=exit_on_rate_limit,
+                fail_fast_on_rate_limit=fail_fast_on_rate_limit,
             )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
             return response
@@ -450,6 +452,7 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        fail_fast_on_rate_limit: bool = False,
     ) -> requests.Response:
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
@@ -548,6 +551,7 @@ class HttpClient:
             request=request,
             error_resolution=error_resolution,
             exit_on_rate_limit=exit_on_rate_limit,
+            fail_fast_on_rate_limit=fail_fast_on_rate_limit,
         )
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
@@ -613,6 +617,7 @@ class HttpClient:
         request: requests.PreparedRequest,
         error_resolution: ErrorResolution,
         exit_on_rate_limit: Optional[bool] = False,
+        fail_fast_on_rate_limit: bool = False,
     ) -> None:
         if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
             self._evict_key(request)
@@ -795,7 +800,7 @@ class HttpClient:
 
             if (
                 error_resolution.response_action == ResponseAction.RATE_LIMITED
-                and exit_on_rate_limit
+                and fail_fast_on_rate_limit
                 and not rotate_instead_of_waiting
             ):
                 error_message = error_resolution.error_message or (
@@ -894,6 +899,7 @@ class HttpClient:
         dedupe_query_params: bool = False,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        fail_fast_on_rate_limit: bool = False,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
@@ -923,6 +929,7 @@ class HttpClient:
             request_kwargs=request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
+            fail_fast_on_rate_limit=fail_fast_on_rate_limit,
         )
 
         return request, response

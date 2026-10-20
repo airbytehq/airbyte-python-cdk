@@ -70,6 +70,7 @@ class HttpRequester(Requester):
     read_timeout_in_seconds: Optional[float] = None
     use_tcp_keepalive: bool = False
     _exit_on_rate_limit: bool = False
+    _fail_fast_on_rate_limit: bool = False
     stream_response: bool = False
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
 
@@ -133,6 +134,14 @@ class HttpRequester(Requester):
     @exit_on_rate_limit.setter
     def exit_on_rate_limit(self, value: bool) -> None:
         self._exit_on_rate_limit = value
+
+    @property
+    def fail_fast_on_rate_limit(self) -> bool:
+        return self._fail_fast_on_rate_limit
+
+    @fail_fast_on_rate_limit.setter
+    def fail_fast_on_rate_limit(self, value: bool) -> None:
+        self._fail_fast_on_rate_limit = value
 
     def get_authenticator(self) -> DeclarativeAuthenticator:
         return self._authenticator
@@ -489,6 +498,7 @@ class HttpRequester(Requester):
             dedupe_query_params=True,
             log_formatter=log_formatter,
             exit_on_rate_limit=self._exit_on_rate_limit,
+            fail_fast_on_rate_limit=self._fail_fast_on_rate_limit,
         )
 
         return response

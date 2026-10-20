@@ -123,34 +123,34 @@ class DefaultStream(AbstractStream):
         return stream_slicer._partition_router
 
     @contextmanager
-    def _exit_on_rate_limit(self) -> Iterator[None]:
+    def _fail_fast_on_rate_limit(self) -> Iterator[None]:
         if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
             yield
             return
 
         retriever = self._stream_partition_generator._partition_factory._retriever
         target: Any
-        if hasattr(retriever, "exit_on_rate_limit"):
+        if hasattr(retriever, "fail_fast_on_rate_limit"):
             target = retriever
         else:
             target = getattr(retriever, "requester", None)
 
-        if target is None or not hasattr(target, "exit_on_rate_limit"):
+        if target is None or not hasattr(target, "fail_fast_on_rate_limit"):
             yield
             return
 
-        previous_value = target.exit_on_rate_limit
-        target.exit_on_rate_limit = True
+        previous_value = target.fail_fast_on_rate_limit
+        target.fail_fast_on_rate_limit = True
         try:
             yield
         finally:
-            target.exit_on_rate_limit = previous_value
+            target.fail_fast_on_rate_limit = previous_value
 
     def check_availability(self) -> StreamAvailability:
         """
         Check stream availability by attempting to read the first record of the stream.
         """
-        with self._exit_on_rate_limit():
+        with self._fail_fast_on_rate_limit():
             try:
                 partition = next(iter(self.generate_partitions()))
             except StopIteration:
