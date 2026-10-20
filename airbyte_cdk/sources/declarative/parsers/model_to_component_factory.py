@@ -496,6 +496,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     WaitTimeFromHeader as WaitTimeFromHeaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    WaitTimeFromResponse as WaitTimeFromResponseModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     WaitUntilTimeFromHeader as WaitUntilTimeFromHeaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -538,6 +541,7 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
     WaitTimeFromHeaderBackoffStrategy,
+    WaitTimeFromResponseBackoffStrategy,
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
@@ -885,6 +889,7 @@ class ModelToComponentFactory:
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
             ValidateAdheresToSchemaModel: self.create_validate_adheres_to_schema,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
+            WaitTimeFromResponseModel: self.create_wait_time_from_response,
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
             HttpComponentsResolverModel: self.create_http_components_resolver,
@@ -5186,6 +5191,17 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             config=config,
             regex=model.regex,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
+        )
+
+    @staticmethod
+    def create_wait_time_from_response(
+        model: WaitTimeFromResponseModel, config: Config, **kwargs: Any
+    ) -> WaitTimeFromResponseBackoffStrategy:
+        return WaitTimeFromResponseBackoffStrategy(
+            wait_time_in_seconds=model.wait_time_in_seconds,
+            parameters=model.parameters or {},
+            config=config,
             max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
