@@ -505,11 +505,15 @@ def test_find_oauth_parameter_errors_accepts_paths_through_oneof_and_arrays() ->
 def test_find_oauth_parameter_errors_reports_each_missing_path() -> None:
     spec = _oauth_spec(["credentials", "method"], ["refresh_token"])
     assert find_oauth_parameter_errors(spec) == [
-        "`/advanced_auth/predicate_key` names the config path `/credentials/method`, which is "
-        "not a property of `connectionSpecification`.",
-        "`/advanced_auth/oauth_config_specification/complete_oauth_output_specification/"
-        "properties/refresh_token/path_in_connector_config` names the config path "
-        "`/refresh_token`, which is not a property of `connectionSpecification`.",
+        (
+            "`/advanced_auth/predicate_key` names the config path `/credentials/method`, which is "
+            "not a property of `connectionSpecification`."
+        ),
+        (
+            "`/advanced_auth/oauth_config_specification/complete_oauth_output_specification/"
+            "properties/refresh_token/path_in_connector_config` names the config path "
+            "`/refresh_token`, which is not a property of `connectionSpecification`."
+        ),
     ]
 
 
