@@ -11,6 +11,9 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_time_from_header_backoff_strategy import (
     WaitTimeFromHeaderBackoffStrategy,
 )
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_time_from_response_backoff_strategy import (
+    WaitTimeFromResponseBackoffStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_until_time_from_header_backoff_strategy import (
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
@@ -19,5 +22,6 @@ __all__ = [
     "ConstantBackoffStrategy",
     "ExponentialBackoffStrategy",
     "WaitTimeFromHeaderBackoffStrategy",
+    "WaitTimeFromResponseBackoffStrategy",
     "WaitUntilTimeFromHeaderBackoffStrategy",
 ]

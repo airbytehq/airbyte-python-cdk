@@ -653,6 +653,7 @@ class HttpResponseFilter(BaseModel):
     error_message: Optional[str] = Field(
         None,
         description="Error Message to display if the response matches the filter.",
+        examples=["Skipping {{ request_url }} (HTTP 404)."],
         title="Error Message",
     )
     error_message_contains: Optional[str] = Field(
@@ -673,6 +674,7 @@ class HttpResponseFilter(BaseModel):
         description="Match the response if the predicate evaluates to true.",
         examples=[
             "{{ 'Too much requests' in response }}",
+            "{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}",
             "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}",
         ],
         title="Predicate",
@@ -1447,6 +1449,26 @@ class WaitTimeFromHeader(BaseModel):
     max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
         None,
         description="Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
+        title="Max Waiting Time in Seconds",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class WaitTimeFromResponse(BaseModel):
+    type: Literal["WaitTimeFromResponse"]
+    wait_time_in_seconds: str = Field(
+        ...,
+        description="The expression defining how long to wait before retrying, in seconds relative to now (convert an absolute timestamp with `timestamp(...) - now_utc().timestamp()`). An empty, zero, negative or non-numeric result, or an expression that cannot be evaluated on the response, defers to the next backoff strategy. Nothing bounds the wait unless `max_waiting_time_in_seconds` is set, so setting it is strongly recommended.",
+        examples=[
+            "{{ response.retry_after_seconds }}",
+            "{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response is mapping and response.get('error') is mapping and ((response.error.message or '') | string | regex_search('Retry after (\\S+Z)'))) else '' }}",
+        ],
+        title="Wait Time in Seconds",
+    )
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
+        None,
+        description="Stop the stream instead of waiting, when the computed wait is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
         examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
         title="Max Waiting Time in Seconds",
     )
@@ -2294,6 +2316,7 @@ class DefaultErrorHandler(BaseModel):
                 ConstantBackoffStrategy,
                 ExponentialBackoffStrategy,
                 WaitTimeFromHeader,
+                WaitTimeFromResponse,
                 WaitUntilTimeFromHeader,
                 CustomBackoffStrategy,
             ]

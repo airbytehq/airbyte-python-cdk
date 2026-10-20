@@ -17,6 +17,7 @@ import pytest
 import requests
 import yaml
 from boltons.typeutils import classproperty
+from pydantic import ValidationError
 
 from airbyte_cdk.models import (
     AirbyteStream,
@@ -29,7 +30,11 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
-from airbyte_cdk.test.models.scenario import SCENARIO_SECTIONS, ScenarioCommand
+from airbyte_cdk.test.models.scenario import (
+    SCENARIO_SECTIONS,
+    ScenarioCommand,
+    entry_key_problems,
+)
 from airbyte_cdk.test.standard_tests._assertions import (
     assert_check_outcome,
     assert_config_matches_spec,
@@ -392,6 +397,16 @@ class DockerConnectorTestSuite:
         return deduped_scenarios
 
     @classmethod
+    def _raise_if_invalid(cls, problems: list[str]) -> None:
+        """Fail collection with every problem found in `acceptance-test-config.yml`, if any."""
+        if problems:
+            config_file = cls.get_connector_root_dir().absolute() / ACCEPTANCE_TEST_CONFIG
+            raise ValueError(
+                f"`{config_file}` is not valid for the standard tests:\n"
+                + "\n".join(f"- {problem}" for problem in problems)
+            )
+
+    @classmethod
     def get_scenarios(
         cls,
     ) -> list[ConnectorTestScenario]:
@@ -403,6 +418,11 @@ class DockerConnectorTestSuite:
         runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read` of the
         streams of the config's `configured_catalog_path`, or of every discovered stream when it
         declares none (`SECTION_COMMANDS`). The `incremental` section is not collected.
+
+        An entry of a collected section that sets a key the standard tests do not read, or one
+        they fill in themselves (`sections`, `test_strictness_level`), fails collection, with one
+        line per key naming the key, the section and the config, including entries that are
+        skipped (no `config_path`, or an `iam_role` config). See `entry_key_problems`.
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
@@ -419,7 +439,7 @@ class DockerConnectorTestSuite:
             return []
 
         test_strictness_level = all_tests_config.get("test_strictness_level")
-        test_scenarios: list[ConnectorTestScenario] = []
+        entries: list[tuple[str, dict[str, Any]]] = []
         for category in SCENARIO_SECTIONS:
             if (
                 category not in all_tests_config["acceptance_tests"]
@@ -428,14 +448,31 @@ class DockerConnectorTestSuite:
                 continue
 
             for test in all_tests_config["acceptance_tests"][category]["tests"]:
-                if "config_path" not in test:
-                    # Skip tests without a config_path
-                    continue
+                if isinstance(test, dict):
+                    entries.append((category, test))
 
-                if "iam_role" in test["config_path"]:
-                    # We skip iam_role tests for now, as they are not supported in the test suite.
-                    continue
+        # Every entry is checked, including those skipped below, so that a key that is not read
+        # fails collection wherever it is set.
+        cls._raise_if_invalid(
+            [
+                problem
+                for category, test in entries
+                for problem in entry_key_problems(test, (category,))
+            ]
+        )
 
+        problems: list[str] = []
+        test_scenarios: list[ConnectorTestScenario] = []
+        for category, test in entries:
+            if "config_path" not in test:
+                # Skip tests without a config_path
+                continue
+
+            if "iam_role" in test["config_path"]:
+                # We skip iam_role tests for now, as they are not supported in the test suite.
+                continue
+
+            try:
                 scenario = ConnectorTestScenario.model_validate(
                     {
                         **test,
@@ -443,8 +480,17 @@ class DockerConnectorTestSuite:
                         "test_strictness_level": test_strictness_level,
                     }
                 )
+            except ValidationError as error:
+                # Reported without the input, which can hold config values.
+                problems.extend(
+                    f"`{category}` entry for config `{test['config_path']}`: "
+                    f"`{'.'.join(str(part) for part in detail['loc'])}`: {detail['msg']}"
+                    for detail in error.errors()
+                )
+                continue
 
-                test_scenarios.append(scenario)
+            test_scenarios.append(scenario)
+        cls._raise_if_invalid(problems)
 
         deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
 
