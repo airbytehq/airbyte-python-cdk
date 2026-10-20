@@ -132,9 +132,7 @@ def test_zero_scenarios_without_bypass_lists_why_each_part_produced_nothing(
 
 def test_entry_without_config_path_declares_a_bypass(tmp_path: Path) -> None:
     config = {
-        "acceptance_tests": {
-            "basic_read": {"tests": [{"bypass_reason": "Read needs a paid plan", "timeout": 1}]}
-        }
+        "acceptance_tests": {"basic_read": {"tests": [{"bypass_reason": "Read needs a paid plan"}]}}
     }
     suite = _suite(_write_connector(tmp_path / "source-test", config))
 
@@ -236,8 +234,11 @@ def test_invalid_entry_fails_with_its_location_and_without_values(tmp_path: Path
         collect_scenarios(config, tmp_path / ACCEPTANCE_TEST_CONFIG)
 
     message = str(error.value)
-    assert message.startswith("`acceptance_tests.basic_read[0]` in ")
-    assert "`empty_streams.0`: Input should be a valid dictionary" in message
+    assert message.startswith(f"`{tmp_path / ACCEPTANCE_TEST_CONFIG}` is not valid for the")
+    assert (
+        "- `basic_read` entry for config `secrets/config.json`: `empty_streams.0`: Input should "
+        "be a valid dictionary" in message
+    )
     assert "secret_stream_name" not in message, "input values are not printed"
 
 

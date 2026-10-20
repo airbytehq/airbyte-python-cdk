@@ -26,7 +26,11 @@ from typing import Any, TypeGuard
 import yaml
 from pydantic import ValidationError
 
-from airbyte_cdk.test.models.scenario import SCENARIO_SECTIONS, ConnectorTestScenario
+from airbyte_cdk.test.models.scenario import (
+    SCENARIO_SECTIONS,
+    ConnectorTestScenario,
+    entry_key_problems,
+)
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG, METADATA_YAML
 
 JAVA_LANGUAGE_TAGS = frozenset({"language:java"})
@@ -183,9 +187,11 @@ def collect_scenarios(config: Mapping[str, Any], config_path: Path) -> Collected
     A section `bypass_reason` counts only when the section lists no runnable config.
 
     Raises:
-        AcceptanceTestConfigError: An entry is not a valid scenario (e.g. `empty_streams` as plain
-            strings), or a top-level `bypass_reason` is declared next to runnable configs, which
-            would leave it unclear whether the connector is tested.
+        AcceptanceTestConfigError: An entry sets a key the standard tests do not read (see
+            `entry_key_problems`; every entry is checked, including those that are not run), an
+            entry is not a valid scenario (e.g. `empty_streams` as plain strings), or a top-level
+            `bypass_reason` is declared next to runnable configs, which would leave it unclear
+            whether the connector is tested. The first two list every problem of the file.
     """
     collected = CollectedScenarios(config_path=config_path)
     top_level_reason = config.get("bypass_reason")
@@ -193,15 +199,29 @@ def collect_scenarios(config: Mapping[str, Any], config_path: Path) -> Collected
         collected.bypasses.append(ScenarioBypass(reason=top_level_reason, location="bypass_reason"))
 
     acceptance_tests = config.get("acceptance_tests") or {}
+    _raise_if_invalid(
+        config_path,
+        [
+            problem
+            for section_name in SCENARIO_SECTIONS
+            for entry in section_entries(acceptance_tests.get(section_name)) or []
+            if isinstance(entry, Mapping)
+            for problem in entry_key_problems(entry, (section_name,))
+        ],
+    )
+
     strictness_level = config.get("test_strictness_level")
+    problems: list[str] = []
     for section_name in SCENARIO_SECTIONS:
         if section_name in acceptance_tests:
             _collect_section(
                 collected,
+                problems,
                 section_name,
                 acceptance_tests[section_name],
                 strictness_level=strictness_level,
             )
+    _raise_if_invalid(config_path, problems)
     for section_name in acceptance_tests:
         if section_name not in SCENARIO_SECTIONS:
             collected.notes.append(
@@ -219,6 +239,7 @@ def collect_scenarios(config: Mapping[str, Any], config_path: Path) -> Collected
 
 def _collect_section(
     collected: CollectedScenarios,
+    problems: list[str],
     section_name: str,
     section: Any,
     *,
@@ -247,7 +268,7 @@ def _collect_section(
             collected.notes.append(f"`{prefix}`: empty list.")
         for index, entry in enumerate(entries):
             location = f"{prefix}[{index}]"
-            if _collect_entry(collected, section_name, location, entry, strictness_level):
+            if _collect_entry(collected, problems, section_name, location, entry, strictness_level):
                 runnable += 1
 
     if section_reason is None:
@@ -271,12 +292,16 @@ def _collect_section(
 
 def _collect_entry(
     collected: CollectedScenarios,
+    problems: list[str],
     section_name: str,
     location: str,
     entry: Any,
     strictness_level: Any,
 ) -> bool:
-    """Collect one section entry; return whether it is a runnable scenario."""
+    """Collect one section entry; return whether it is a runnable scenario.
+
+    An entry that is not a valid scenario adds its problems to `problems` instead.
+    """
     if not isinstance(entry, Mapping):
         collected.notes.append(f"`{location}`: a {type(entry).__name__}, not a mapping.")
         return False
@@ -316,15 +341,23 @@ def _collect_entry(
         )
     except ValidationError as error:
         # Pydantic's own message repeats the offending input; name the field and rule only.
-        problems = "; ".join(
-            f"`{'.'.join(str(part) for part in problem['loc']) or '(entry)'}`: {problem['msg']}"
-            for problem in error.errors(include_input=False, include_url=False)
+        problems.extend(
+            f"`{section_name}` entry for config `{config_path}`: "
+            f"`{'.'.join(str(part) for part in detail['loc']) or '(entry)'}`: {detail['msg']}"
+            for detail in error.errors(include_input=False, include_url=False)
         )
-        raise AcceptanceTestConfigError(
-            f"`{location}` in {collected.config_path} is not a valid test entry: {problems}."
-        ) from None
+        return False
     collected.scenarios.append(scenario)
     return True
+
+
+def _raise_if_invalid(config_path: Path, problems: list[str]) -> None:
+    """Fail with every problem found in `acceptance-test-config.yml`, one per line, if any."""
+    if problems:
+        raise AcceptanceTestConfigError(
+            f"`{config_path}` is not valid for the standard tests:\n"
+            + "\n".join(f"- {problem}" for problem in problems)
+        )
 
 
 def _is_reason(value: Any) -> TypeGuard[str]:

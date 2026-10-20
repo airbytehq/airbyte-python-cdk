@@ -6,16 +6,15 @@
 
 This release changes how the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) read `acceptance-test-config.yml`. There is no change to how connectors run. Previously a connector whose file listed no config the tests could run, or that had no file at all, collected an empty scenario list: every test that takes a scenario (`test_check`, `test_discover`, `test_basic_read` and their Docker counterparts) was skipped as "got empty parameter set" and the run passed. Now:
 
-| `acceptance-test-config.yml`                                                                      | Before                                                                               | Now                                                                                                                                |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Lists at least one config under `spec`, `connection`, `discovery`, `basic_read` or `full_refresh` | Scenarios run                                                                        | Scenarios run. Declared bypasses (below) are also reported as skipped tests.                                                       |
-| Lists no runnable config, but declares a `bypass_reason`                                          | Every scenario test skipped as an empty parameter set                                | One skipped test per scenario test and distinct reason, whose skip message is the declared reason, plus one line after collection. |
-| Lists no runnable config and declares no `bypass_reason`                                          | Every scenario test skipped as an empty parameter set                                | Collection fails, naming the file and why each section and entry produced nothing.                                                 |
-| Missing (Python or manifest-only connector)                                                       | `UserWarning`, every scenario test skipped                                           | Collection fails.                                                                                                                  |
-| Missing (Java connector, `language:java` in `metadata.yaml`)                                      | `UserWarning`, every scenario test skipped                                           | Reported as a bypass: Java connectors are tested by their Gradle suites.                                                           |
-| Legacy top-level `tests:` key instead of `acceptance_tests:`                                      | Collection failed with "Acceptance tests config not found" and the whole parsed file | Collection fails with a message naming the file and the migration.                                                                 |
-| A section written as a plain list (`connection: [...]`, the legacy layout)                        | Silently ignored                                                                     | Read as the section's `tests` list.                                                                                                |
-| An entry that is not a valid scenario (e.g. `empty_streams` as plain strings)                     | Pydantic `ValidationError`, including the offending values                           | Collection fails, naming the entry, the field and the rule, without the values.                                                    |
+| `acceptance-test-config.yml` | Before | Now |
+|---|---|---|
+| Lists at least one config under `spec`, `connection`, `discovery`, `basic_read` or `full_refresh` | Scenarios run | Scenarios run. Declared bypasses (below) are also reported as skipped tests. |
+| Lists no runnable config, but declares a `bypass_reason` | Every scenario test skipped as an empty parameter set | One skipped test per scenario test and distinct reason, whose skip message is the declared reason, plus one line after collection. |
+| Lists no runnable config and declares no `bypass_reason` | Every scenario test skipped as an empty parameter set | Collection fails, naming the file and why each section and entry produced nothing. |
+| Missing (Python or manifest-only connector) | `UserWarning`, every scenario test skipped | Collection fails. |
+| Missing (Java connector, `language:java` in `metadata.yaml`) | `UserWarning`, every scenario test skipped | Reported as a bypass: Java connectors are tested by their Gradle suites. |
+| Legacy top-level `tests:` key instead of `acceptance_tests:` | Collection failed with "Acceptance tests config not found" and the whole parsed file | Collection fails with a message naming the file and the migration. |
+| A section written as a plain list (`connection: [...]`, the legacy layout) | Silently ignored | Read as the section's `tests` list. Its entries are checked like the entries under `tests`: a key the Standard Tests do not read, or an invalid value, fails collection. |
 
 A `bypass_reason` counts in three places:
 
@@ -34,6 +33,42 @@ Migration steps:
 - `empty_streams` entries must be mappings (`- name: <stream>`), not plain strings.
 
 Rationale: an empty scenario list looked like a green test run, so a connector whose configs were never collected, or whose configuration silently degraded to nothing, reported coverage it did not have. The opt-out is explicit and machine-readable so that the connectors that legitimately have no test configs say so in the test report instead of being indistinguishable from a broken configuration.
+
+## Upgrading to 7.39.0
+
+### `acceptance-test-config.yml` keys the Standard Tests do not read fail collection
+
+`ConnectorTestScenario` declared `expect_records` (with `exact_order`), `timeout_seconds` and `file_types`, and no test read them: they parsed, and the check they configured in the retired Connector Acceptance Tests (CAT) never ran. They are removed. Any other key that the model did not declare was dropped without a word, so a misspelled key (`empty_stream` for `empty_streams`) was ignored as well.
+
+An entry of a collected section (`spec`, `connection`, `discovery`, `basic_read`, `full_refresh`) that sets a key the Standard Tests do not read now fails test collection, with one line per key naming the key, the section and the config:
+
+```
+`.../source-example/acceptance-test-config.yml` is not valid for the standard tests:
+- `expect_records` in the `basic_read` entry for config `secrets/config.json` is no longer read: it configured the Connector Acceptance Tests' comparison of the records read against recorded ones, which the standard tests do not run. Remove the key.
+- `timeout_seconds` in the `full_refresh` entry for config `secrets/config.json` is no longer read: the standard tests have no per-config timeout. Remove the key.
+```
+
+| Key | Status |
+|---|---|
+| `expect_records`, `exact_order` | Removed: no comparison against recorded records. |
+| `ignored_fields` | Removed: it listed fields CAT skipped when comparing records, against `expect_records` or between two consecutive full-refresh reads, and the Standard Tests run neither comparison. It was never declared on the model. |
+| `fail_on_extra_columns` | Removed: CAT accepted it but never enforced it, and the Standard Tests have no such check. It was never declared on the model. |
+| `timeout_seconds` | Removed: no per-config timeout. |
+| `file_types` | Removed: no file-type coverage check. |
+| `config_path`, `config_dict`, `configured_catalog_path`, `empty_streams` (`name`, `bypass_reason`), `status`, `validate_schema`, `bypass_reason` | Read. `bypass_reason` is reserved for the upcoming rule that a connector without test configs must say why. |
+| `spec_path`, `deployment_mode` and `backward_compatibility_tests_config` in `spec`; `deployment_mode` in `connection`; `backward_compatibility_tests_config` in `discovery`; `client_container_config`, `expect_trace_message_on_failure` and `validate_state_messages` in `basic_read`; `client_container_config` in `full_refresh` | Accepted in that section only. `backward_compatibility_tests_config.disable_for_version` of a `spec` entry is read by the spec backward-compatibility test; the others are CAT keys without a Standard Test counterpart yet. |
+| `sections`, `test_strictness_level` | Rejected on an entry: the Standard Tests fill them in. `sections` comes from the section that lists the entry; `test_strictness_level` is read only at the top level of the file. |
+| Anything else | Rejected as unknown. |
+
+Entries are checked even when they are not run (no `config_path`, or an `iam_role` config). The `incremental` section is not collected and is not checked. A config value that fails validation (an unknown `status`, for example) is reported the same way, without printing the value.
+
+Migration steps:
+
+- Remove the keys the error names from `acceptance-test-config.yml`. Keep the recorded-records files that `expect_records.path` pointed at: they stay useful as a reference for the records a connector produces. These are test-only changes and need no version bump.
+- Fix the spelling of a misspelled key; the error lists the keys the section accepts.
+- Python code that builds `ConnectorTestScenario` with `expect_records`, `timeout_seconds` or `file_types`, or uses `ConnectorTestScenario.AcceptanceTestExpectRecords` or `AcceptanceTestFileTypes`, must drop them.
+
+Rationale: a key that parses and is ignored reads like a check that runs. A connector with `expect_records` looks like its records are compared against a recorded file, and they are not. Removal is loud rather than silent, and a hard error rather than a deprecation window: the cleanup that removes these keys from every Airbyte-maintained connector (the monorepo and the enterprise connectors) merges before this release, so none of them fails on it.
 
 ## Upgrading to 7.36.0
 

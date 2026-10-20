@@ -428,6 +428,11 @@ class DockerConnectorTestSuite:
         `pytest_generate_tests` fails collection when there is no scenario and no declared
         bypass (`get_scenario_bypasses`).
 
+        An entry of a collected section that sets a key the standard tests do not read, or one
+        they fill in themselves (`sections`, `test_strictness_level`), fails collection, with one
+        line per key naming the key, the section and the config, including entries that are
+        skipped (no `config_path`, or an `iam_role` config). See `collect_scenarios`.
+
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
