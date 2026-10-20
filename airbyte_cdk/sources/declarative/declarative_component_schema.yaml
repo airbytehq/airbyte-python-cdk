@@ -1459,9 +1459,15 @@ definitions:
       token_option:
         title: Send Token In
         description: >-
-          Where to send the stored token on each request of a pass: the JSON body, the query
-          string, a header or the form body.
-        "$ref": "#/definitions/RequestOption"
+          How to send the stored token. A RequestOption puts it in the JSON body, the query
+          string, a header or the form body: on every request of a pass, or on the first request
+          only when the retriever sets ignore_stream_slicer_parameters_on_paginated_requests.
+          RequestPath makes it the URL of the first request of a pass, for APIs whose token is a
+          complete URL, such as a Microsoft Graph @odata.deltaLink; the paginator sends the
+          later requests.
+        anyOf:
+          - "$ref": "#/definitions/RequestOption"
+          - "$ref": "#/definitions/RequestPath"
       completion_condition:
         title: Completion Condition
         description: >-

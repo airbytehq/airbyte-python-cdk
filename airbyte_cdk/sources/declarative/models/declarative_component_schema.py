@@ -2965,9 +2965,9 @@ class SyncTokenCursor(BaseModel):
         examples=[["syncToken"], ["nextSyncToken"], ["meta", "sync_token"]],
         title="Token Path",
     )
-    token_option: RequestOption = Field(
+    token_option: Union[RequestOption, RequestPath] = Field(
         ...,
-        description="Where to send the stored token on each request of a pass: the JSON body, the query string, a header or the form body.",
+        description="How to send the stored token. A RequestOption puts it in the JSON body, the query string, a header or the form body: on every request of a pass, or on the first request only when the retriever sets ignore_stream_slicer_parameters_on_paginated_requests. RequestPath makes it the URL of the first request of a pass, for APIs whose token is a complete URL, such as a Microsoft Graph @odata.deltaLink; the paginator sends the later requests.",
         title="Send Token In",
     )
     completion_condition: Optional[str] = Field(

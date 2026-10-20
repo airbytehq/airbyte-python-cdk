@@ -37,6 +37,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ListPartitionRouter as ListPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    OffsetIncrement as OffsetIncrementModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PageIncrement as PageIncrementModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PaginationReset as PaginationResetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -44,6 +50,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestOption as RequestOptionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestPath as RequestPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
@@ -155,6 +167,39 @@ def _manifest(
             "type": "Spec",
         },
     }
+
+
+def _request_path_manifest(
+    *,
+    initial_token=None,
+    request_parameters=None,
+    partitioned=False,
+    partition_values=("a", "b", "c"),
+    error_handler=None,
+):
+    manifest = _manifest(
+        initial_token=initial_token,
+        partitioned=partitioned,
+        partition_values=partition_values,
+        error_handler=error_handler,
+    )
+    stream = manifest["streams"][0]
+    requester = stream["retriever"]["requester"]
+    requester["http_method"] = "GET"
+    if request_parameters is not None:
+        requester["request_parameters"] = request_parameters
+    stream["incremental_sync"]["token_path"] = ["@odata.deltaLink"]
+    stream["incremental_sync"]["token_option"] = {"type": "RequestPath"}
+    paginator = stream["retriever"]["paginator"]
+    paginator["page_token_option"] = {"type": "RequestPath"}
+    paginator["pagination_strategy"] = {
+        "type": "CursorPagination",
+        "cursor_value": "{{ response.get('@odata.nextLink') }}",
+        "stop_condition": "{{ not response.get('@odata.nextLink') }}",
+    }
+    if partitioned:
+        stream["retriever"]["partition_router"].pop("request_option")
+    return manifest
 
 
 def _source_and_catalog(
@@ -1026,3 +1071,308 @@ def test_t_inert_cursor_types_read_without_sync_page_observer(cursor_kind):
     retriever = generator._partition_factory._retriever
     assert isinstance(retriever, SimpleRetriever)
     assert retriever.page_observer is None
+    assert retriever.first_request_path is None
+
+
+def test_t_inert_request_option_sync_token_does_not_bind_first_request_path():
+    source, _ = _source_and_catalog(_manifest())
+    stream = source.streams(config={})[0]
+    retriever = stream._stream_partition_generator._partition_factory._retriever
+
+    assert isinstance(retriever, SimpleRetriever)
+    assert retriever.first_request_path is None
+
+
+@pytest.mark.parametrize(
+    ("initial_token", "expected_url"),
+    (
+        (None, _URL),
+        ("https://api.example.com/initial?cursor=1", "https://api.example.com/initial?cursor=1"),
+    ),
+)
+def test_t_url_init_uses_initial_request_path_or_requester_path(initial_token, expected_url):
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(expected_url),
+            HttpResponse(json.dumps({"items": [], "@odata.deltaLink": "D2"})),
+        )
+        source, catalog = _source_and_catalog(_request_path_manifest(initial_token=initial_token))
+        messages = _read(source, catalog)
+
+    assert _state(messages)[0].stream.stream_state.__dict__["token"] == "D2"
+
+
+def test_t_url_resumes_from_stored_token_and_follows_next_link_exactly():
+    token = "https://api.example.com/delta?cursor=stored"
+    next_link = "https://api.example.com/delta?cursor=page-2"
+    state = _incoming_state({"state_type": "sync_token", "token": token})
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(token),
+            HttpResponse(json.dumps({"items": [{"id": "1"}], "@odata.nextLink": next_link})),
+        )
+        http_mocker.get(
+            HttpRequest(next_link),
+            HttpResponse(json.dumps({"items": [{"id": "2"}], "@odata.deltaLink": "D2"})),
+        )
+        source, catalog = _source_and_catalog(_request_path_manifest(), state)
+        messages = _read(source, catalog, state)
+
+    assert [message.record.data for message in messages if message.type == Type.RECORD] == [
+        {"id": "1"},
+        {"id": "2"},
+    ]
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "D2"
+
+
+def test_t_url_params_keeps_configured_query_parameters_on_each_exact_url():
+    token = "https://api.example.com/delta?cursor=stored"
+    next_link = "https://api.example.com/delta?cursor=page-2"
+    state = _incoming_state({"state_type": "sync_token", "token": token})
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(f"{token}&$select=id"),
+            HttpResponse(json.dumps({"items": [], "@odata.nextLink": next_link})),
+        )
+        http_mocker.get(
+            HttpRequest(f"{next_link}&$select=id"),
+            HttpResponse(json.dumps({"items": [], "@odata.deltaLink": "D2"})),
+        )
+        source, catalog = _source_and_catalog(
+            _request_path_manifest(request_parameters={"$select": "id"}), state
+        )
+        messages = _read(source, catalog, state)
+
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "D2"
+
+
+def test_t_url_reset_without_initial_token_restarts_at_requester_path(caplog):
+    token = "https://api.example.com/delta?cursor=expired"
+    state = _incoming_state({"state_type": "sync_token", "token": token})
+    error_handler = _reset_error_handler()
+    for response_filter in error_handler["response_filters"]:
+        if response_filter["action"] == "RESET_SYNC_TOKEN":
+            response_filter["http_codes"] = [410]
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(token),
+            HttpResponse(json.dumps({"success": False}), status_code=410),
+        )
+        http_mocker.get(
+            HttpRequest(_URL),
+            HttpResponse(json.dumps({"items": [], "@odata.deltaLink": "D2"})),
+        )
+        source, catalog = _source_and_catalog(
+            _request_path_manifest(error_handler=error_handler), state
+        )
+        messages = _read(source, catalog, state)
+
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "D2"
+    assert "sync_token_expired" in caplog.text or "RESET_SYNC_TOKEN" in caplog.text
+
+
+def test_t_url_par_keeps_each_partition_token_independent():
+    tokens = {
+        "a": "https://api.example.com/a?cursor=A1",
+        "b": "https://api.example.com/b?cursor=B1",
+        "c": "https://api.example.com/c?cursor=C1",
+    }
+    state = _incoming_state(
+        {
+            "state_type": "sync_token",
+            "states": [
+                {
+                    "partition": {"account": account},
+                    "cursor": {"token": token, "committed_at": "2026-01-01T00:00:00Z"},
+                }
+                for account, token in tokens.items()
+            ],
+        }
+    )
+    with HttpMocker() as http_mocker:
+        for account in ("a", "b", "c"):
+            http_mocker.get(
+                HttpRequest(tokens[account]),
+                HttpResponse(json.dumps({"items": [], "@odata.deltaLink": f"{account}-next"})),
+            )
+        source, catalog = _source_and_catalog(_request_path_manifest(partitioned=True), state)
+        messages = _read(source, catalog, state)
+
+    committed = {
+        item["partition"]["account"]: item["cursor"]["token"]
+        for item in _state(messages)[-1].stream.stream_state.__dict__["states"]
+    }
+    assert committed == {"a": "a-next", "b": "b-next", "c": "c-next"}
+
+
+@pytest.mark.parametrize(
+    ("token", "expected_url"),
+    (
+        ("/relative?cursor=1", "https://api.example.com/relative?cursor=1"),
+        ("https://API.EXAMPLE.COM/delta?cursor=1", "https://API.EXAMPLE.COM/delta?cursor=1"),
+    ),
+)
+def test_t_origin_accepts_relative_and_same_origin_urls(token, expected_url):
+    state = _incoming_state({"state_type": "sync_token", "token": token})
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(expected_url),
+            HttpResponse(json.dumps({"items": [], "@odata.deltaLink": "D2"})),
+        )
+        source, catalog = _source_and_catalog(_request_path_manifest(), state)
+        messages = _read(source, catalog, state)
+
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "D2"
+
+
+@pytest.mark.parametrize(
+    ("token", "expected_message"),
+    (
+        (
+            "https://evil.example/x",
+            "Stream events: the stored sync token points at evil.example, not the API host "
+            "api.example.com. Clear this stream's state to start over.",
+        ),
+        (
+            "//evil.example/x",
+            "Stream events: the stored sync token points at evil.example, not the API host "
+            "api.example.com. Clear this stream's state to start over.",
+        ),
+        (
+            "http://api.example.com/delta",
+            "Stream events: the stored sync token points at http://api.example.com, not the API "
+            "host https://api.example.com. Clear this stream's state to start over.",
+        ),
+        (
+            "https://api.example.com:8443/delta",
+            "Stream events: the stored sync token points at api.example.com:8443, not the API "
+            "host api.example.com. Clear this stream's state to start over.",
+        ),
+    ),
+)
+def test_t_origin_rejects_other_host_or_scheme_before_http_request(token, expected_message):
+    state = _incoming_state({"state_type": "sync_token", "token": token})
+    with HttpMocker() as http_mocker:
+        source, catalog = _source_and_catalog(_request_path_manifest(), state)
+        messages = _read_until_error(source, catalog, state)
+
+    assert any(
+        message.type == Type.TRACE
+        and message.trace.error
+        and message.trace.error.failure_type == FailureType.config_error
+        and message.trace.error.message == expected_message
+        for message in messages
+    )
+    assert http_mocker._mocker.request_history == []
+
+
+def test_t_pos_does_not_send_sync_token_with_paginator_on_later_pages():
+    manifest = _manifest()
+    stream = manifest["streams"][0]
+    requester = stream["retriever"]["requester"]
+    requester["http_method"] = "GET"
+    stream["incremental_sync"]["token_path"] = ["next_stream_position"]
+    stream["incremental_sync"]["token_option"] = {
+        "type": "RequestOption",
+        "field_name": "stream_position",
+        "inject_into": "request_parameter",
+    }
+    stream["incremental_sync"]["completion_condition"] = "{{ response.chunk_size == 0 }}"
+    retriever = stream["retriever"]
+    retriever["ignore_stream_slicer_parameters_on_paginated_requests"] = True
+    paginator = retriever["paginator"]
+    paginator["page_token_option"] = {
+        "type": "RequestOption",
+        "field_name": "stream_position",
+        "inject_into": "request_parameter",
+    }
+    paginator["pagination_strategy"] = {
+        "type": "CursorPagination",
+        "cursor_value": "{{ response.get('next_stream_position') }}",
+        "stop_condition": "{{ response.get('chunk_size') == 0 }}",
+    }
+    state = _incoming_state({"state_type": "sync_token", "token": "P1"})
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(_URL, query_params={"stream_position": "P1"}),
+            HttpResponse(
+                json.dumps({"items": [{"id": "1"}], "chunk_size": 1, "next_stream_position": "P2"})
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(_URL, query_params={"stream_position": "P2"}),
+            HttpResponse(
+                json.dumps({"items": [{"id": "2"}], "chunk_size": 1, "next_stream_position": "P3"})
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(_URL, query_params={"stream_position": "P3"}),
+            HttpResponse(json.dumps({"items": [], "chunk_size": 0, "next_stream_position": "P4"})),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read(source, catalog, state)
+
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "P4"
+
+
+@pytest.mark.parametrize("paginator_option", ("page_token_option", "page_size_option"))
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("field_name", "stream_position"), ("field_path", ["stream_position"])),
+)
+def test_t_collide_requires_ignore_flag_for_matching_request_option(paginator_option, field, value):
+    stream = _stream_model()
+    token_option = RequestOptionModel.parse_obj(
+        {"type": "RequestOption", "inject_into": "request_parameter", field: value}
+    )
+    paginator_request_option = RequestOptionModel.parse_obj(
+        {"type": "RequestOption", "inject_into": "request_parameter", field: value}
+    )
+    stream.incremental_sync.token_option = token_option
+    setattr(stream.retriever.paginator, paginator_option, paginator_request_option)
+
+    with pytest.raises(ValueError) as exc_info:
+        ModelToComponentFactory._validate_sync_token_stream(stream)
+    assert str(exc_info.value) == (
+        "Stream events: token_option and the paginator both set request_parameter "
+        '"stream_position". Set ignore_stream_slicer_parameters_on_paginated_requests: '
+        "true on the retriever so the stored token is sent only on the first request of each pass."
+    )
+
+    stream.retriever.ignore_stream_slicer_parameters_on_paginated_requests = True
+    ModelToComponentFactory._validate_sync_token_stream(stream)
+
+
+@pytest.mark.parametrize("token_mode", ("request_path", "ignore_flag"))
+@pytest.mark.parametrize(
+    ("strategy_model", "strategy_name"),
+    (
+        (PageIncrementModel, "PageIncrement"),
+        (OffsetIncrementModel, "OffsetIncrement"),
+    ),
+)
+@pytest.mark.parametrize("inject_on_first_request", (True, False))
+def test_t_firstreq_requires_page_token_to_be_disabled_for_first_request(
+    token_mode, strategy_model, strategy_name, inject_on_first_request
+):
+    stream = _stream_model()
+    if token_mode == "request_path":
+        stream.incremental_sync.token_option = RequestPathModel(type="RequestPath")
+    else:
+        stream.retriever.ignore_stream_slicer_parameters_on_paginated_requests = True
+    stream.retriever.paginator.pagination_strategy = strategy_model.parse_obj(
+        {"type": strategy_name, "inject_on_first_request": inject_on_first_request}
+    )
+
+    if inject_on_first_request:
+        with pytest.raises(ValueError) as exc_info:
+            ModelToComponentFactory._validate_sync_token_stream(stream)
+        assert str(exc_info.value) == (
+            f"Stream events: {strategy_name} with inject_on_first_request: true sends a page "
+            "token on the first request, so the stored sync token would never be sent. Set "
+            "inject_on_first_request: false or use CursorPagination."
+        )
+    else:
+        ModelToComponentFactory._validate_sync_token_stream(stream)

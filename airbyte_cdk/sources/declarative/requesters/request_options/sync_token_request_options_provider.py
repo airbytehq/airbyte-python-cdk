@@ -13,12 +13,13 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
+from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
 @dataclass
 class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
-    token_option: RequestOption
+    token_option: Union[RequestOption, RequestPath]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     initial_token: Optional[str] = None
@@ -33,8 +34,18 @@ class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
     def _get_request_options(
         self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
     ) -> Mapping[str, Any]:
+        if isinstance(self.token_option, RequestPath):
+            return {}
         if not self.token_option or self.token_option.inject_into != option_type:
             return {}
+        token = self._get_token(stream_slice)
+        if token is None:
+            return {}
+        result: dict[str, Any] = {}
+        self.token_option.inject_into_request(result, token, self.config)
+        return result
+
+    def _get_token(self, stream_slice: Optional[StreamSlice]) -> Optional[Any]:
         token = (
             stream_slice.cursor_slice.get("token")
             if stream_slice and stream_slice.cursor_slice
@@ -42,11 +53,12 @@ class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
         )
         if token is None and self._initial_token:
             token = self._initial_token.eval(self.config)
-        if token is None:
-            return {}
-        result: dict[str, Any] = {}
-        self.token_option.inject_into_request(result, token, self.config)
-        return result
+        return token
+
+    def get_request_path(self, stream_slice: Optional[StreamSlice]) -> Optional[str]:
+        """Return the initial request URL; after reset, use `initial_token` or the requester path."""
+        token = self._get_token(stream_slice)
+        return str(token) if token is not None else None
 
     def get_request_params(
         self,
