@@ -4,6 +4,7 @@
 
 import json
 import logging
+import re
 from http import HTTPStatus
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
 from unittest.mock import ANY, MagicMock, Mock, patch
@@ -223,7 +224,9 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
 
     with pytest.raises(
         AirbyteTracedException,
-        match="API rate limit exceeded.",
+        match=re.escape(
+            f"API rate limit exceeded for stream '{stream.name}' after all retries were exhausted."
+        ),
     ):
         list(stream.read_records(SyncMode.full_refresh))
     if retries <= 0:
@@ -317,10 +320,31 @@ def test_raise_on_http_errors_off_429(mocker):
     mocker.patch.object(requests.Session, "send", return_value=req)
     with pytest.raises(
         AirbyteTracedException,
-        match="API rate limit exceeded.",
+        match=re.escape(
+            f"API rate limit exceeded for stream '{stream.name}' after all retries were exhausted."
+        ),
     ):
         stream.exit_on_rate_limit = True
         list(stream.read_records(SyncMode.full_refresh))
+
+
+def test_rate_limit_exhaustion_includes_stream_context(mocker):
+    mocker.patch("time.sleep", lambda x: None)
+    stream = AutoFailFalseHttpStream()
+    req = requests.Response()
+    req.status_code = 429
+    mocker.patch.object(requests.Session, "send", return_value=req)
+
+    stream.exit_on_rate_limit = True
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        list(stream.read_records(SyncMode.full_refresh))
+
+    assert (
+        exc_info.value.message
+        == f"API rate limit exceeded for stream '{stream.name}' after all retries were exhausted."
+    )
+    assert exc_info.value.failure_type == FailureType.transient_error
+    assert exc_info.value._stream_descriptor.name == stream.name
 
 
 @pytest.mark.parametrize("status_code", [500, 501, 503, 504])
