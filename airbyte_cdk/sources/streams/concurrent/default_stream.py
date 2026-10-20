@@ -9,7 +9,7 @@ from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
     ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.sources.declarative.incremental.opaque_token_cursor import OpaqueTokenCursor
+from airbyte_cdk.sources.declarative.incremental.sync_token_cursor import SyncTokenCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -128,7 +128,7 @@ class DefaultStream(AbstractStream):
         if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
             return None
         stream_slicer = self._stream_partition_generator._stream_slicer
-        if isinstance(stream_slicer, OpaqueTokenCursor):
+        if isinstance(stream_slicer, SyncTokenCursor):
             return stream_slicer._partition_router
         if not isinstance(stream_slicer, ConcurrentPerPartitionCursor):
             return None

@@ -40,8 +40,8 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
-class OpaqueTokenCursor(Cursor):
-    STATE_TYPE = "opaque_token"
+class SyncTokenCursor(Cursor):
+    STATE_TYPE = "sync_token"
 
     def __init__(
         self,

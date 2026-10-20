@@ -17,7 +17,7 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
 @dataclass
-class OpaqueTokenRequestOptionsProvider(RequestOptionsProvider):
+class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
     token_option: RequestOption
     config: Config
     parameters: InitVar[Mapping[str, Any]]

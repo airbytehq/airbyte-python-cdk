@@ -36,9 +36,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ListPartitionRouter as ListPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    OpaqueTokenCursor as OpaqueTokenCursorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PaginationReset as PaginationResetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -49,6 +46,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SyncTokenCursor as SyncTokenCursorModel,
 )
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
@@ -111,7 +111,7 @@ def _manifest(
             },
         },
         "incremental_sync": {
-            "type": "OpaqueTokenCursor",
+            "type": "SyncTokenCursor",
             "token_path": ["syncToken"],
             "token_option": {
                 "type": "RequestOption",
@@ -247,7 +247,7 @@ def test_t_inc_and_t_noecho_never_commit_intermediate_token(echo_initial_token):
     first_response = {"items": [{"id": "1"}], "nextCursor": "p2"}
     if echo_initial_token:
         first_response["syncToken"] = "T1"
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     with HttpMocker() as http_mocker:
         http_mocker.post(
             HttpRequest(_URL, body={"syncToken": "T1"}),
@@ -281,7 +281,7 @@ def test_t_empty_pages_can_commit_terminal_token():
 
 
 def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
-    state = _incoming_state({"state_type": "opaque_token", "token": "T1"})
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
     manifest = _manifest(
         error_handler={
             "type": "DefaultErrorHandler",
@@ -348,7 +348,7 @@ def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():
 def test_t_resume_replays_existing_partition_and_bootstraps_missing_partition():
     state = _incoming_state(
         {
-            "state_type": "opaque_token",
+            "state_type": "sync_token",
             "states": [
                 {
                     "partition": {"account": "a"},
@@ -378,7 +378,7 @@ def test_t_resume_replays_existing_partition_and_bootstraps_missing_partition():
 def test_t_par_keeps_successful_partition_commits_when_another_fails():
     state = _incoming_state(
         {
-            "state_type": "opaque_token",
+            "state_type": "sync_token",
             "states": [
                 {
                     "partition": {"account": "c"},
@@ -444,7 +444,7 @@ def test_t_boot_inc_builder_and_resume_send_exact_request_bodies():
         first_state = _state(first_read)
         assert any(message.type == Type.RECORD for message in first_read)
         first_stream_state = first_state[0].stream.stream_state.__dict__
-        assert first_stream_state["state_type"] == "opaque_token"
+        assert first_stream_state["state_type"] == "sync_token"
         assert first_stream_state["token"] == "sync-1"
         assert first_stream_state["committed_at"].endswith("Z")
 
@@ -537,12 +537,12 @@ def test_t_valid_rejects_grouping_async_lazy_dependency_and_reserved_partition()
         type="GroupingPartitionRouter"
     )
     with pytest.raises(ValueError, match="GroupingPartitionRouter"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
     stream = _stream_model()
     stream.retriever = AsyncRetrieverModel.construct(type="AsyncRetriever")
     with pytest.raises(ValueError, match="AsyncRetriever"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
     for parent_config, error in (
         ({"lazy_read_pointer": ["items"]}, "lazy_read_pointer"),
@@ -564,21 +564,21 @@ def test_t_valid_rejects_grouping_async_lazy_dependency_and_reserved_partition()
             type="SubstreamPartitionRouter", parent_stream_configs=[parent]
         )
         with pytest.raises(ValueError, match=error):
-            ModelToComponentFactory._validate_opaque_token_stream(stream)
+            ModelToComponentFactory._validate_sync_token_stream(stream)
 
     stream = _stream_model()
     stream.retriever.partition_router = ListPartitionRouterModel.construct(
         type="ListPartitionRouter", cursor_field="token"
     )
     with pytest.raises(ValueError, match="partition router field 'token'"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
 
-def test_t_valid_rejects_opaque_token_parent_dependency():
+def test_t_valid_rejects_sync_token_parent_dependency():
     stream = _stream_model()
     parent_stream = DeclarativeStreamModel.construct(
         type="DeclarativeStream",
-        incremental_sync=OpaqueTokenCursorModel.construct(type="OpaqueTokenCursor"),
+        incremental_sync=SyncTokenCursorModel.construct(type="SyncTokenCursor"),
     )
     parent = ParentStreamConfigModel.construct(
         type="ParentStreamConfig",
@@ -591,8 +591,8 @@ def test_t_valid_rejects_opaque_token_parent_dependency():
         type="SubstreamPartitionRouter", parent_stream_configs=[parent]
     )
 
-    with pytest.raises(ValueError, match="OpaqueTokenCursor parent"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+    with pytest.raises(ValueError, match="SyncTokenCursor parent"):
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
 
 def test_t_valid_warns_for_custom_retriever(caplog):
@@ -600,7 +600,7 @@ def test_t_valid_warns_for_custom_retriever(caplog):
     stream.retriever = CustomRetrieverModel.construct(type="CustomRetriever")
 
     with caplog.at_level(logging.WARNING, logger="airbyte"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
     assert "CustomRetriever does not expose response pages" in caplog.text
 
@@ -612,7 +612,7 @@ def test_t_valid_rejects_pagination_reset_limits_and_query_property_chunking():
         limits=PaginationResetLimitsModel.construct(type="PaginationResetLimits"),
     )
     with pytest.raises(ValueError, match="pagination reset `limits`"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
     stream = _stream_model()
     stream.retriever.requester.query_properties = {
@@ -620,7 +620,7 @@ def test_t_valid_rejects_pagination_reset_limits_and_query_property_chunking():
         "property_chunking": {"type": "PropertyChunking"},
     }
     with pytest.raises(ValueError, match="query property chunking"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
     stream = _stream_model()
     stream.retriever.requester.request_parameters = {
@@ -630,7 +630,7 @@ def test_t_valid_rejects_pagination_reset_limits_and_query_property_chunking():
         }
     }
     with pytest.raises(ValueError, match="query property chunking"):
-        ModelToComponentFactory._validate_opaque_token_stream(stream)
+        ModelToComponentFactory._validate_sync_token_stream(stream)
 
 
 def test_t_inert_preserves_initial_token_when_response_has_no_token():
@@ -665,7 +665,7 @@ def test_t_inert_leaves_page_observer_unset_for_datetime_cursor():
 
 
 @pytest.mark.parametrize("cursor_kind", ["datetime", "count", "none"])
-def test_t_inert_cursor_types_read_without_opaque_page_observer(cursor_kind):
+def test_t_inert_cursor_types_read_without_sync_page_observer(cursor_kind):
     manifest = _manifest()
     if cursor_kind == "datetime":
         manifest["streams"][0]["incremental_sync"] = {
