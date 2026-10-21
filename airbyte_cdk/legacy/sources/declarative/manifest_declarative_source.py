@@ -34,7 +34,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
-from airbyte_cdk.sources.declarative.concurrent_declarative_source import _validate_manifest
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import validate_manifest
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConditionalStreams as ConditionalStreamsModel,
@@ -447,7 +447,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         Validates the connector manifest against the declarative component schema
         """
 
-        _validate_manifest(self._source_config, self._declarative_component_schema)
+        validate_manifest(self._source_config, self._declarative_component_schema)
 
         cdk_version_str = metadata.version("airbyte_cdk")
         cdk_version = self._parse_version(cdk_version_str, "airbyte-cdk")

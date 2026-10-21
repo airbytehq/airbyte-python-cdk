@@ -34,7 +34,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
-    _get_declarative_component_schema,
+    get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
@@ -46,7 +46,7 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRe
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from unit_tests.sources.declarative.parsers.test_model_to_component_factory import get_retriever
 from unit_tests.sources.declarative.test_concurrent_declarative_source import (
-    _two_stream_schema_validation_manifest,
+    two_stream_schema_validation_manifest,
 )
 
 logger = logging.getLogger("airbyte")
@@ -2560,22 +2560,22 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
 @pytest.mark.parametrize("migrate_manifest", [False, True])
 def test_building_a_source_does_not_check_the_component_schema(migrate_manifest):
     with patch.object(
-        validator_for(_get_declarative_component_schema()),
+        validator_for(get_declarative_component_schema()),
         "check_schema",
         side_effect=AssertionError("check_schema must not run at source build"),
     ) as check_schema:
         ManifestDeclarativeSource(
-            source_config=_two_stream_schema_validation_manifest(),
+            source_config=two_stream_schema_validation_manifest(),
             migrate_manifest=migrate_manifest,
         )
         check_schema.assert_not_called()
 
 
-def test_validate_source_delegates_to_validate_manifest():
+def test_legacy_source_delegates_to_public_manifest_validator():
     with patch(
-        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source._validate_manifest"
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source.validate_manifest"
     ) as validate_manifest:
-        source = ManifestDeclarativeSource(source_config=_two_stream_schema_validation_manifest())
+        source = ManifestDeclarativeSource(source_config=two_stream_schema_validation_manifest())
 
     validate_manifest.assert_called_once_with(
         source._source_config, source._declarative_component_schema

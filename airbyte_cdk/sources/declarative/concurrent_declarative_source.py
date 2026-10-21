@@ -122,7 +122,7 @@ class TestLimits:
     max_streams: int = field(default=DEFAULT_MAX_STREAMS)
 
 
-def _get_declarative_component_schema() -> Dict[str, Any]:
+def get_declarative_component_schema() -> Dict[str, Any]:
     try:
         raw_component_schema = pkgutil.get_data(
             "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
@@ -140,12 +140,13 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
         )
 
 
-def _validate_manifest(manifest: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
-    # The component schema ships with the CDK and is checked against its metaschema in unit
-    # tests, so a valid manifest skips `check_schema`. If validation fails or raises,
-    # `check_schema` runs before the error propagates, so a broken schema surfaces as
-    # `SchemaError` instead of being blamed on the manifest. `best_match` keeps the error
-    # `jsonschema.validate` would raise; raising it here gives the cause a traceback.
+def validate_manifest(manifest: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
+    """Validate a manifest against the shipped component schema.
+
+    Unit tests check the schema's metaschema, so valid manifests skip `check_schema`. On failure,
+    check the schema first to surface `SchemaError`, while preserving `jsonschema.validate`'s
+    best-match error as the cause with a traceback.
+    """
     validator_class = validator_for(schema)
     try:
         error = best_match(validator_class(schema).iter_errors(manifest))
@@ -225,7 +226,7 @@ class ConcurrentDeclarativeSource(Source):
 
         self._should_normalize = normalize_manifest
         self._should_migrate = migrate_manifest
-        self._declarative_component_schema = _get_declarative_component_schema()
+        self._declarative_component_schema = get_declarative_component_schema()
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
         # set additional attributes
@@ -366,7 +367,7 @@ class ConcurrentDeclarativeSource(Source):
         Validates the connector manifest against the declarative component schema
         """
 
-        _validate_manifest(self._source_config, self._declarative_component_schema)
+        validate_manifest(self._source_config, self._declarative_component_schema)
 
     def _migrate_and_transform_config(
         self,

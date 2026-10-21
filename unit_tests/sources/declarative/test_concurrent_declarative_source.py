@@ -55,7 +55,7 @@ from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobL
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
-    _get_declarative_component_schema,
+    get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -7150,7 +7150,7 @@ def test_combined_extractor_skipping_empty_records_reads_every_page(
     ]
 
 
-def _two_stream_schema_validation_manifest() -> Dict[str, Any]:
+def two_stream_schema_validation_manifest() -> Dict[str, Any]:
     def stream(name: str) -> Dict[str, Any]:
         return {
             "type": "DeclarativeStream",
@@ -7184,10 +7184,10 @@ def _two_stream_schema_validation_manifest() -> Dict[str, Any]:
 
 
 def test_invalid_manifest_raises_the_best_match_error_not_the_first():
-    manifest = _two_stream_schema_validation_manifest()
+    manifest = two_stream_schema_validation_manifest()
     manifest["streams"][0]["primary_key"] = 5
     manifest["streams"][1]["retriever"]["requester"]["http_method"] = "FETCH"
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
 
     first = next(Draft7Validator(schema).iter_errors(manifest))
 
@@ -7218,12 +7218,12 @@ def test_invalid_manifest_raises_the_best_match_error_not_the_first():
 @pytest.mark.parametrize("migrate_manifest", [False, True])
 def test_building_a_source_does_not_check_the_component_schema(migrate_manifest):
     with patch.object(
-        validator_for(_get_declarative_component_schema()),
+        validator_for(get_declarative_component_schema()),
         "check_schema",
         side_effect=AssertionError("check_schema must not run at source build"),
     ) as check_schema:
         ConcurrentDeclarativeSource(
-            source_config=_two_stream_schema_validation_manifest(),
+            source_config=two_stream_schema_validation_manifest(),
             config={},
             catalog=create_catalog("a"),
             state=None,
@@ -7233,14 +7233,14 @@ def test_building_a_source_does_not_check_the_component_schema(migrate_manifest)
 
 
 def test_a_broken_component_schema_that_fails_the_manifest_raises_schema_error():
-    manifest = _two_stream_schema_validation_manifest()
-    broken = copy.deepcopy(_get_declarative_component_schema())
+    manifest = two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(get_declarative_component_schema())
     broken["definitions"]["HttpRequester"]["required"] = "type"
 
     assert list(Draft7Validator(broken).iter_errors(manifest))
 
     with patch(
-        "airbyte_cdk.sources.declarative.concurrent_declarative_source._get_declarative_component_schema",
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.get_declarative_component_schema",
         return_value=broken,
     ):
         with pytest.raises(SchemaError):
@@ -7250,8 +7250,8 @@ def test_a_broken_component_schema_that_fails_the_manifest_raises_schema_error()
 
 
 def test_a_component_schema_that_passes_check_schema_but_breaks_validation_reraises():
-    manifest = _two_stream_schema_validation_manifest()
-    broken = copy.deepcopy(_get_declarative_component_schema())
+    manifest = two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(get_declarative_component_schema())
     broken["definitions"]["HttpRequester"]["properties"]["path"] = {
         "$ref": "#/definitions/DoesNotExist"
     }
@@ -7261,7 +7261,7 @@ def test_a_component_schema_that_passes_check_schema_but_breaks_validation_rerai
         list(Draft7Validator(broken).iter_errors(manifest))
 
     with patch(
-        "airbyte_cdk.sources.declarative.concurrent_declarative_source._get_declarative_component_schema",
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.get_declarative_component_schema",
         return_value=broken,
     ):
         with pytest.raises(type(expected.value)) as exc_info:
@@ -7273,15 +7273,15 @@ def test_a_component_schema_that_passes_check_schema_but_breaks_validation_rerai
 
 
 def test_a_broken_component_schema_that_breaks_validation_raises_schema_error():
-    manifest = _two_stream_schema_validation_manifest()
-    broken = copy.deepcopy(_get_declarative_component_schema())
+    manifest = two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(get_declarative_component_schema())
     broken["definitions"]["HttpRequester"]["properties"]["path"]["type"] = "strng"
 
     with pytest.raises(UnknownType):
         list(Draft7Validator(broken).iter_errors(manifest))
 
     with patch(
-        "airbyte_cdk.sources.declarative.concurrent_declarative_source._get_declarative_component_schema",
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.get_declarative_component_schema",
         return_value=broken,
     ):
         with pytest.raises(SchemaError):
