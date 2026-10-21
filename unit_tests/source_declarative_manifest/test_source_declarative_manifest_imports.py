@@ -40,21 +40,31 @@ print("LOADED_HEAVY_MODULES=" + json.dumps(sorted(m for m in ("pandas", "numpy")
 """
 
 
-def test_spec_check_discover_do_not_import_pandas_or_numpy() -> None:
-    manifest_path = Path(__file__).parent.parent / "resources" / "valid_local_manifest.yaml"
-    config_path = Path(__file__).parent.parent / "resources" / "valid_local_pokeapi_config.json"
-
+def test_spec_check_discover_do_not_import_pandas_or_numpy(
+    valid_local_manifest, valid_local_config_file
+) -> None:
+    """Declarative/SDM start-up must not import pandas or numpy. Import heavy libraries inside the function that needs them; `python -X importtime -c "import airbyte_cdk.cli.source_declarative_manifest._run"` shows which module pulls one in."""
     result = subprocess.run(
-        [sys.executable, "-c", SCRIPT, str(manifest_path), str(config_path)],
+        [
+            sys.executable,
+            "-c",
+            SCRIPT,
+            str(valid_local_manifest),
+            str(valid_local_config_file),
+        ],
         capture_output=True,
         text=True,
         timeout=120,
+        cwd=Path(__file__).resolve().parents[2],
     )
 
-    assert result.returncode == 0, result.stderr
-    assert '"connectionStatus":{"status":"SUCCEEDED"}' in result.stdout
-    assert '"catalog"' in result.stdout
+    output = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, output
+    assert '"connectionStatus":{"status":"SUCCEEDED"}' in result.stdout, output
+    assert '"catalog"' in result.stdout, output
     marker = next(
-        line for line in result.stdout.splitlines() if line.startswith("LOADED_HEAVY_MODULES=")
+        (line for line in result.stdout.splitlines() if line.startswith("LOADED_HEAVY_MODULES=")),
+        None,
     )
-    assert json.loads(marker.split("=", 1)[1]) == []
+    assert marker is not None, output
+    assert json.loads(marker.split("=", 1)[1]) == [], output

@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest import TestCase
 
+import pandas  # noqa: F401  # loaded here so limit_memory measures CSV parsing, not the extractor's lazy import
 import pytest
 import requests
 import requests_mock

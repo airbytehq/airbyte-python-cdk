@@ -139,7 +139,11 @@ class ResponseToFileExtractor(RecordExtractor):
         """
 
         # Imported lazily: pandas (and numpy) are slow to import and only needed for CSV parsing.
-        import pandas as pd
+        try:
+            import pandas as pd
+        except ImportError:
+            os.remove(path)
+            raise
 
         try:
             with open(path, "r", encoding=file_encoding) as data:
