@@ -7,6 +7,7 @@ import re
 import threading
 import time
 from datetime import timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,7 @@ from requests_cache import CachedRequest
 
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.declarative.auth.oauth import DeclarativeOauth2Authenticator
+from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
@@ -43,6 +45,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     Oauth2Authenticator,
     TokenAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -2011,3 +2014,117 @@ def test_given_split_request_window_action_then_log_the_response_as_an_auxiliary
         "Stream 'test' request window rejected, retrying with a smaller window"
     )
     assert "no records" in logged[0]["http"]["description"]
+
+
+@pytest.mark.parametrize("use_cache", [True, False])
+def test_default_session_mounts_plain_http_adapter(use_cache):
+    http_client = HttpClient(name="test", logger=MagicMock(), use_cache=use_cache)
+
+    assert type(http_client._session.adapters["https://"]) is requests.adapters.HTTPAdapter
+    assert not isinstance(http_client._session.adapters["http://"], TcpKeepaliveHTTPAdapter)
+    assert type(http_client._session.adapters["http://"]) is requests.adapters.HTTPAdapter
+    assert http_client._session.adapters["https://"]._pool_connections == MAX_CONNECTION_POOL_SIZE
+    assert http_client._session.adapters["https://"]._pool_maxsize == MAX_CONNECTION_POOL_SIZE
+
+
+@pytest.mark.parametrize("use_cache", [True, False])
+def test_opted_in_session_mounts_tcp_keepalive_adapter(use_cache):
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), use_cache=use_cache, use_tcp_keepalive=True
+    )
+
+    for prefix in ("https://", "http://"):
+        adapter = http_client._session.adapters[prefix]
+        assert isinstance(adapter, TcpKeepaliveHTTPAdapter)
+        assert adapter._pool_connections == MAX_CONNECTION_POOL_SIZE
+        assert adapter._pool_maxsize == MAX_CONNECTION_POOL_SIZE
+
+
+def test_passed_in_session_is_not_modified_even_with_tcp_keepalive():
+    mocked_session = MagicMock(spec=requests.Session)
+    HttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+        use_tcp_keepalive=True,
+    )
+
+    mocked_session.mount.assert_not_called()
+
+
+def _session_with_200():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_response = requests.Response()
+    mocked_response.status_code = 200
+    mocked_session.send.return_value = mocked_response
+    return mocked_session
+
+
+def test_no_timeout_kwarg_by_default():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(name="test", logger=MagicMock(), session=mocked_session)
+
+    http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert "timeout" not in mocked_session.send.call_args.kwargs
+
+
+def test_request_timeout_is_passed_to_session_send():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), session=mocked_session, request_timeout=(5, 10)
+    )
+
+    http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert mocked_session.send.call_args.kwargs["timeout"] == (5, 10)
+
+
+def test_explicit_timeout_in_request_kwargs_wins():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), session=mocked_session, request_timeout=(5, 10)
+    )
+
+    http_client.send_request(
+        http_method="get",
+        url="https://airbyte.io",
+        request_kwargs={"timeout": 1},
+    )
+
+    assert mocked_session.send.call_args.kwargs["timeout"] == 1
+
+
+def test_read_timeout_is_retried_then_raises():
+    attempts = []
+
+    class SlowHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            attempts.append(1)
+            time.sleep(2)
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SlowHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        http_client = HttpClient(
+            name="test",
+            logger=MagicMock(),
+            error_handler=HttpStatusErrorHandler(logger=MagicMock(), max_retries=1),
+            request_timeout=(1, 0.5),
+        )
+        with pytest.raises(AirbyteTracedException):
+            http_client.send_request(
+                http_method="get",
+                url=f"http://127.0.0.1:{server.server_port}/",
+                request_kwargs={},
+            )
+        assert len(attempts) == 2
+    finally:
+        server.shutdown()
+        server.server_close()

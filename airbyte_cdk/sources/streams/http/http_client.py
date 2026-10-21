@@ -65,6 +65,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
     ResponseAwareAuthenticator,
     TokenRotatingAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -160,6 +161,8 @@ class HttpClient:
         error_message_parser: Optional[ErrorMessageParser] = None,
         disable_retries: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        request_timeout: Optional[Union[float, Tuple[Optional[float], Optional[float]]]] = None,
+        use_tcp_keepalive: bool = False,
     ):
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
@@ -168,12 +171,21 @@ class HttpClient:
         else:
             self._use_cache = use_cache
             self._session = self._request_session()
-            self._session.mount(
-                "https://",
-                requests.adapters.HTTPAdapter(
-                    pool_connections=MAX_CONNECTION_POOL_SIZE, pool_maxsize=MAX_CONNECTION_POOL_SIZE
-                ),
-            )
+            if use_tcp_keepalive:
+                tcp_keepalive_adapter = TcpKeepaliveHTTPAdapter(
+                    pool_connections=MAX_CONNECTION_POOL_SIZE,
+                    pool_maxsize=MAX_CONNECTION_POOL_SIZE,
+                )
+                self._session.mount("https://", tcp_keepalive_adapter)
+                self._session.mount("http://", tcp_keepalive_adapter)
+            else:
+                self._session.mount(
+                    "https://",
+                    requests.adapters.HTTPAdapter(
+                        pool_connections=MAX_CONNECTION_POOL_SIZE,
+                        pool_maxsize=MAX_CONNECTION_POOL_SIZE,
+                    ),
+                )
         if isinstance(authenticator, AuthBase):
             self._session.auth = authenticator
         self._logger = logger
@@ -191,6 +203,7 @@ class HttpClient:
         self._disable_retries = disable_retries
         self._message_repository = message_repository
         self._authenticator_update_failed = False
+        self._request_timeout = request_timeout
 
     @property
     def cache_filename(self) -> str:
@@ -452,6 +465,9 @@ class HttpClient:
 
         response: Optional[requests.Response] = None
         exc: Optional[requests.RequestException] = None
+
+        if self._request_timeout is not None and "timeout" not in request_kwargs:
+            request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
 
         try:
             response = self._session.send(request, **request_kwargs)
