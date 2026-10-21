@@ -238,18 +238,15 @@ class AirbyteEntrypoint(object):
         try:
             check_result = self.source.check(self.logger, config)
         except AirbyteTracedException as traced_exc:
-            yield traced_exc.as_airbyte_message()
+            yield traced_exc.as_sanitized_airbyte_message()
             # The platform uses the exit code to surface unexpected failures so we raise the exception if the failure type not a config error
             # If the failure is not exceptional, we'll emit a failed connection status message and return
             if traced_exc.failure_type != FailureType.config_error:
                 raise traced_exc
             else:
-                yield AirbyteMessage(
-                    type=Type.CONNECTION_STATUS,
-                    connectionStatus=AirbyteConnectionStatus(
-                        status=Status.FAILED, message=traced_exc.message
-                    ),
-                )
+                connection_status = traced_exc.as_connection_status_message()
+                if connection_status:
+                    yield connection_status
                 return
         if check_result.status == Status.SUCCEEDED:
             self.logger.info("Check succeeded")

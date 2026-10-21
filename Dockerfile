@@ -20,6 +20,9 @@ RUN poetry config virtualenvs.create false \
 # Build and install the package
 RUN pip install dist/*.whl
 
+# pandas is imported lazily by the CDK, so verify it is importable at build time
+RUN python -c "import pandas"
+
 # Precompile bytecode for installed packages, skipping test directories. `poetry install` does not
 # compile it, and the runtime `airbyte` user cannot write to the root-owned site-packages, so without
 # this every connector process recompiles its dependencies on start.

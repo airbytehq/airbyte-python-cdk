@@ -1983,9 +1983,19 @@ def migration_mocks(monkeypatch):
     mock_decoded_bytes.decode.return_value = "decoded_message"
     mock_orjson_dumps = Mock(return_value=mock_decoded_bytes)
 
-    monkeypatch.setattr("builtins.open", _mock_open)
+    # Patch `open` and `print` only in the module under test: patching `builtins` also catches
+    # calls made by other code during the test (for example ddtrace writing bytecode caches).
+    monkeypatch.setattr(
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source.open",
+        _mock_open,
+        raising=False,
+    )
     monkeypatch.setattr("json.dump", mock_json_dump)
-    monkeypatch.setattr("builtins.print", mock_print)
+    monkeypatch.setattr(
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source.print",
+        mock_print,
+        raising=False,
+    )
     monkeypatch.setattr(
         "airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump",
         mock_serializer_dump,
