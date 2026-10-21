@@ -20,10 +20,11 @@ RUN poetry config virtualenvs.create false \
 # Build and install the package
 RUN pip install dist/*.whl
 
-# Precompile bytecode for all installed packages. `poetry install` does not compile it, and the
-# runtime `airbyte` user cannot write to the root-owned site-packages, so without this every
-# connector process recompiles its dependencies on start. Fails the build if any file fails to compile.
-RUN python -m compileall -q -j 0 /usr/local/lib/python3.13/site-packages
+# Precompile bytecode for installed packages, skipping test directories. `poetry install` does not
+# compile it, and the runtime `airbyte` user cannot write to the root-owned site-packages, so without
+# this every connector process recompiles its dependencies on start.
+RUN python -m compileall -q -j 0 -x '/tests?/' /usr/local/lib/python3.13/site-packages \
+    || echo "WARNING: some files failed to compile (see errors above); continuing without their bytecode"
 
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \

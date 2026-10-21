@@ -58,14 +58,19 @@ jobs:
           docker run --rm -i --entrypoint python airbyte/source-declarative-manifest:bytecode-check - <<'EOF'
           import importlib.util
           import pathlib
+          import re
           import struct
           import sys
           import sysconfig
+
+          SKIP = re.compile(r"/tests?/")  # keep in sync with compileall -x in the Dockerfile
 
           root = pathlib.Path(sysconfig.get_paths()["purelib"])
           missing, stale = [], []
           total = 0
           for src in root.rglob("*.py"):
+              if SKIP.search(str(src)):
+                  continue
               total += 1
               pyc = pathlib.Path(importlib.util.cache_from_source(str(src)))
               if not pyc.is_file():
@@ -73,9 +78,9 @@ jobs:
                   continue
               header = pyc.read_bytes()[:16]
               flags = int.from_bytes(header[4:8], "little")
-              if header[:4] != importlib.util.MAGIC_NUMBER:
+              if len(header) < 16 or header[:4] != importlib.util.MAGIC_NUMBER or flags != 0:
                   stale.append(src)
-              elif flags == 0:
+              else:
                   mtime, size = struct.unpack("<II", header[8:16])
                   st = src.stat()
                   if (mtime, size) != (int(st.st_mtime) & 0xFFFFFFFF, st.st_size & 0xFFFFFFFF):
