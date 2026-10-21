@@ -32,6 +32,7 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 
 @pytest.fixture(name="destination")
@@ -247,6 +248,37 @@ class TestRun:
         assert returned_check_result.connectionStatus.status == Status.FAILED
         # the specific phrasing is not relevant, so only check for the keywords
         assert "validation error" in returned_check_result.connectionStatus.message
+
+    def test_run_check_masks_secrets_in_the_config_validation_error(
+        self,
+        mocker,
+        destination: Destination,
+        tmp_path: Path,
+    ) -> None:
+        file_path = tmp_path / "config.json"
+        write_file(file_path, {"password": "abcd1234"})
+        spec = {
+            "type": "object",
+            "properties": {
+                "password": {"type": "string", "pattern": "^[a-z]+$", "airbyte_secret": True}
+            },
+        }
+        mocker.patch.object(
+            destination, "spec", return_value=ConnectorSpecification(connectionSpecification=spec)
+        )
+        mocker.patch.object(destination, "check")
+
+        try:
+            parsed_args = argparse.Namespace(command="check", config=file_path)
+            returned_check_result = next(iter(destination.run_cmd(parsed_args)))
+        finally:
+            update_secrets([])
+
+        destination.check.assert_not_called()  # type: ignore
+        message = returned_check_result.connectionStatus.message
+        assert message.startswith("Config validation error:")
+        assert "abcd1234" not in message
+        assert "****" in message
 
     def test_run_write(self, mocker, destination: Destination, tmp_path, monkeypatch):
         config_path, dummy_config = tmp_path / "config.json", {"user": "sherif"}

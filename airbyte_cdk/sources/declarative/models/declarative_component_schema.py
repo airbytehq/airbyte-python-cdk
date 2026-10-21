@@ -653,6 +653,7 @@ class HttpResponseFilter(BaseModel):
     error_message: Optional[str] = Field(
         None,
         description="Error Message to display if the response matches the filter.",
+        examples=["Skipping {{ request_url }} (HTTP 404)."],
         title="Error Message",
     )
     error_message_contains: Optional[str] = Field(
@@ -673,6 +674,7 @@ class HttpResponseFilter(BaseModel):
         description="Match the response if the predicate evaluates to true.",
         examples=[
             "{{ 'Too much requests' in response }}",
+            "{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}",
             "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}",
         ],
         title="Predicate",
@@ -1447,6 +1449,26 @@ class WaitTimeFromHeader(BaseModel):
     max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
         None,
         description="Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
+        title="Max Waiting Time in Seconds",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class WaitTimeFromResponse(BaseModel):
+    type: Literal["WaitTimeFromResponse"]
+    wait_time_in_seconds: str = Field(
+        ...,
+        description="The expression defining how long to wait before retrying, in seconds relative to now (convert an absolute timestamp with `timestamp(...) - now_utc().timestamp()`). An empty, zero, negative or non-numeric result, or an expression that cannot be evaluated on the response, defers to the next backoff strategy. Nothing bounds the wait unless `max_waiting_time_in_seconds` is set, so setting it is strongly recommended.",
+        examples=[
+            "{{ response.retry_after_seconds }}",
+            "{{ max(1, timestamp(response.error.message | regex_search('Retry after (\\S+Z)')) - now_utc().timestamp()) if (response is mapping and response.get('error') is mapping and ((response.error.message or '') | string | regex_search('Retry after (\\S+Z)'))) else '' }}",
+        ],
+        title="Wait Time in Seconds",
+    )
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
+        None,
+        description="Stop the stream instead of waiting, when the computed wait is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
         examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
         title="Max Waiting Time in Seconds",
     )
@@ -2294,6 +2316,7 @@ class DefaultErrorHandler(BaseModel):
                 ConstantBackoffStrategy,
                 ExponentialBackoffStrategy,
                 WaitTimeFromHeader,
+                WaitTimeFromResponse,
                 WaitUntilTimeFromHeader,
                 CustomBackoffStrategy,
             ]
@@ -3203,6 +3226,26 @@ class HttpRequester(BaseModelWithDeprecations):
         False,
         description="Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).",
         title="Use Cache",
+    )
+    connect_timeout_in_seconds: Optional[float] = Field(
+        None,
+        description="Maximum time to establish the connection (TCP + TLS handshake). When unset, no connect timeout is applied.",
+        examples=[30],
+        gt=0,
+        title="Connect Timeout (seconds)",
+    )
+    read_timeout_in_seconds: Optional[float] = Field(
+        None,
+        description="The maximum time to wait for the server to send any data (the first byte of the response, or the next chunk while the body is read). It is NOT a limit on the total request duration. When unset, no read timeout is applied. Only set it when every endpoint served by this requester responds well within the value; synchronous report or export endpoints can stay silent for minutes. Each timed-out attempt counts against the error handler's retry window (600 s for manifest connectors), so a value near 300 allows only a few retries.",
+        examples=[300],
+        gt=0,
+        title="Read Timeout (seconds)",
+    )
+    use_tcp_keepalive: Optional[bool] = Field(
+        False,
+        description="Enables TCP keepalive (60 s idle, 10 s probe interval, 6 probes) on this requester's connections, so dead or NAT-dropped connections are detected and fail instead of hanging forever. Does not fail slow but alive servers; use read_timeout_in_seconds to bound those.",
+        examples=[True],
+        title="Use TCP Keepalive",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
