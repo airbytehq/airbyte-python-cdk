@@ -14,8 +14,8 @@ from unittest.mock import Mock, call, mock_open, patch
 import pytest
 import requests
 import yaml
-from jsonschema.exceptions import SchemaError, UnknownType, ValidationError
-from jsonschema.validators import Draft7Validator, validate
+from jsonschema.exceptions import ValidationError
+from jsonschema.validators import validator_for
 
 import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
 from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
@@ -45,6 +45,9 @@ from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from unit_tests.sources.declarative.parsers.test_model_to_component_factory import get_retriever
+from unit_tests.sources.declarative.test_concurrent_declarative_source import (
+    _two_stream_schema_validation_manifest,
+)
 
 logger = logging.getLogger("airbyte")
 
@@ -2554,103 +2557,26 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
     )
 
 
-def _two_stream_schema_validation_manifest() -> dict[str, Any]:
-    def stream(name: str) -> dict[str, Any]:
-        return {
-            "type": "DeclarativeStream",
-            "name": name,
-            "primary_key": [],
-            "schema_loader": {
-                "type": "InlineSchemaLoader",
-                "schema": {"type": "object", "properties": {}},
-            },
-            "retriever": {
-                "type": "SimpleRetriever",
-                "requester": {
-                    "type": "HttpRequester",
-                    "url_base": "https://api.test.com",
-                    "path": f"/{name}",
-                    "http_method": "GET",
-                },
-                "record_selector": {
-                    "type": "RecordSelector",
-                    "extractor": {"type": "DpathExtractor", "field_path": []},
-                },
-            },
-        }
-
-    return {
-        "version": "6.0.0",
-        "type": "DeclarativeSource",
-        "check": {"type": "CheckStream", "stream_names": ["a"]},
-        "streams": [stream("a"), stream("b")],
-    }
-
-
-def test_invalid_manifest_raises_the_best_match_error_not_the_first():
-    manifest = _two_stream_schema_validation_manifest()
-    manifest["streams"][0]["primary_key"] = 5
-    manifest["streams"][1]["retriever"]["requester"]["http_method"] = "FETCH"
-    schema = _get_declarative_component_schema()
-
-    assert next(Draft7Validator(schema).iter_errors(manifest)).json_path == "$.streams[0]"
-
-    with pytest.raises(ValidationError) as expected_error:
-        validate(manifest, schema)
-    expected = expected_error.value
-
-    with pytest.raises(ValidationError) as exc_info:
-        ManifestDeclarativeSource(source_config=manifest)
-
-    assert (
-        exc_info.value.message
-        == "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-    )
-    cause = exc_info.value.__cause__
-    assert cause is not None
-    assert cause.message == expected.message
-    assert cause.json_path == expected.json_path
-    assert list(cause.schema_path) == list(expected.schema_path)
-    assert cause.validator == expected.validator
-    assert cause.validator_value == expected.validator_value
-    assert cause.json_path == "$.streams[1].retriever.requester.http_method"
-
-
-def test_building_a_source_does_not_check_the_component_schema():
+@pytest.mark.parametrize("migrate_manifest", [False, True])
+def test_building_a_source_does_not_check_the_component_schema(migrate_manifest):
     with patch.object(
-        Draft7Validator,
+        validator_for(_get_declarative_component_schema()),
         "check_schema",
         side_effect=AssertionError("check_schema must not run at source build"),
-    ):
-        ManifestDeclarativeSource(source_config=_two_stream_schema_validation_manifest())
+    ) as check_schema:
+        ManifestDeclarativeSource(
+            source_config=_two_stream_schema_validation_manifest(),
+            migrate_manifest=migrate_manifest,
+        )
+        check_schema.assert_not_called()
 
 
-def test_a_broken_component_schema_that_fails_the_manifest_raises_schema_error():
-    manifest = _two_stream_schema_validation_manifest()
-    broken = deepcopy(_get_declarative_component_schema())
-    broken["definitions"]["HttpRequester"]["properties"]["http_method"]["enum"] = "GET"
-
-    assert list(Draft7Validator(broken).iter_errors(manifest))
-
+def test_validate_source_delegates_to_validate_manifest():
     with patch(
-        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source._get_declarative_component_schema",
-        return_value=broken,
-    ):
-        with pytest.raises(SchemaError):
-            ManifestDeclarativeSource(source_config=manifest)
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source._validate_manifest"
+    ) as validate_manifest:
+        source = ManifestDeclarativeSource(source_config=_two_stream_schema_validation_manifest())
 
-
-def test_a_broken_component_schema_that_breaks_validation_raises_schema_error():
-    manifest = _two_stream_schema_validation_manifest()
-    broken = deepcopy(_get_declarative_component_schema())
-    broken["definitions"]["HttpRequester"]["properties"]["path"]["type"] = "strng"
-
-    with pytest.raises(UnknownType):
-        list(Draft7Validator(broken).iter_errors(manifest))
-
-    with patch(
-        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source._get_declarative_component_schema",
-        return_value=broken,
-    ):
-        with pytest.raises(SchemaError):
-            ManifestDeclarativeSource(source_config=manifest)
+    validate_manifest.assert_called_once_with(
+        source._source_config, source._declarative_component_schema
+    )

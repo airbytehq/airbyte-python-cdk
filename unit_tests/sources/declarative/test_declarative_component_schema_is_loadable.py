@@ -12,11 +12,12 @@ surfaced as 194 unrelated test failures rather than as one obvious error -- the 
 at the wrong layer and with unreadable output. What these guards add is not coverage but a named
 failure in milliseconds.
 
-Two guards, because the two ways prose breaks a plain scalar look nothing alike. A `": "` is loud:
-the file stops parsing, so loading it is enough to catch it. A `" #"` is silent: YAML reads the
-rest of the line as a comment, the value keeps parsing as a shorter string, and nothing in the
+Three guards, because the two ways prose breaks a plain scalar look nothing alike. A `": "` is
+loud: the file stops parsing, so loading it is enough to catch it. A `" #"` is silent: YAML reads
+the rest of the line as a comment, the value keeps parsing as a shorter string, and nothing in the
 parsed tree records that a sentence went missing. Only the source text knows, so the second guard
-reads that instead of the loaded schema.
+reads that instead of the loaded schema. The third validates the parsed schema against Draft 7,
+since `_validate_source` checks it only when a manifest fails validation.
 """
 
 import pkgutil
@@ -54,7 +55,7 @@ def test_the_shipped_component_schema_parses():
 
 
 def test_the_shipped_component_schema_is_a_valid_draft_7_schema():
-    """`_validate_source` skips `check_schema` at runtime, so this is where a malformed schema is caught."""
+    """`_validate_source` runs `check_schema` only when a manifest fails validation, so a malformed schema that still accepts manifests is caught only here."""
     schema = _get_declarative_component_schema()
     validator_class = validator_for(schema)
     assert validator_class is Draft7Validator

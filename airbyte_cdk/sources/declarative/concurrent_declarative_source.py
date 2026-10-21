@@ -140,6 +140,27 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
         )
 
 
+def _validate_manifest(manifest: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
+    # The component schema ships with the CDK and is checked against its metaschema in unit
+    # tests, so a valid manifest skips `check_schema`. If validation fails or raises,
+    # `check_schema` runs before the error propagates, so a broken schema surfaces as
+    # `SchemaError` instead of being blamed on the manifest. `best_match` keeps the error
+    # `jsonschema.validate` would raise; raising it here gives the cause a traceback.
+    validator_class = validator_for(schema)
+    try:
+        error = best_match(validator_class(schema).iter_errors(manifest))
+        if error is not None:
+            raise error
+    except ValidationError as e:
+        validator_class.check_schema(schema)
+        raise ValidationError(
+            "Validation against json schema defined in declarative_component_schema.yaml schema failed"
+        ) from e
+    except Exception:
+        validator_class.check_schema(schema)
+        raise
+
+
 class ConcurrentDeclarativeSource(Source):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
@@ -345,23 +366,7 @@ class ConcurrentDeclarativeSource(Source):
         Validates the connector manifest against the declarative component schema
         """
 
-        # The component schema ships with the CDK and is checked against its metaschema in unit
-        # tests, so a valid manifest skips `check_schema`. On failure the schema is checked first,
-        # so a broken schema is reported as `SchemaError` rather than blamed on the manifest.
-        # `best_match` keeps the error `jsonschema.validate` would raise.
-        validator_class = validator_for(self._declarative_component_schema)
-        try:
-            error = best_match(
-                validator_class(self._declarative_component_schema).iter_errors(self._source_config)
-            )
-        except Exception:
-            validator_class.check_schema(self._declarative_component_schema)
-            raise
-        if error is not None:
-            validator_class.check_schema(self._declarative_component_schema)
-            raise ValidationError(
-                "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-            ) from error
+        _validate_manifest(self._source_config, self._declarative_component_schema)
 
     def _migrate_and_transform_config(
         self,
