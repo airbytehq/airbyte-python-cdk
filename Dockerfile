@@ -20,6 +20,9 @@ RUN poetry config virtualenvs.create false \
 # Build and install the package
 RUN pip install dist/*.whl
 
+# pandas is imported lazily by the CDK, so verify it is importable at build time
+RUN python -c "import pandas"
+
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
     && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
