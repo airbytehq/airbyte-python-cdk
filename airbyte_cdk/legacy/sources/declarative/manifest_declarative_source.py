@@ -36,6 +36,9 @@ from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerial
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
+from airbyte_cdk.sources.declarative.manifest_validation_error import (
+    format_manifest_validation_error,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConditionalStreams as ConditionalStreamsModel,
 )
@@ -450,9 +453,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         try:
             validate(self._source_config, self._declarative_component_schema)
         except ValidationError as e:
-            raise ValidationError(
-                "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-            ) from e
+            raise ValidationError(format_manifest_validation_error(e)) from e
 
         cdk_version_str = metadata.version("airbyte_cdk")
         cdk_version = self._parse_version(cdk_version_str, "airbyte-cdk")
