@@ -6,6 +6,7 @@ import io
 import pkgutil
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 import yaml
@@ -18,7 +19,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     _get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
-from airbyte_cdk.utils.yaml_loader import get_safe_loader, safe_load_yaml
+from airbyte_cdk.utils.yaml_loader import _get_safe_loader, safe_load_yaml
 
 requires_libyaml = pytest.mark.skipif(
     not yaml.__with_libyaml__, reason="PyYAML was built without libyaml"
@@ -39,16 +40,28 @@ check:
   stream_names: ["lists"]
 """
 
+# A list item whose nested mapping is indented one space short.
+MISINDENTED_YAML = (
+    'version: "1"\nstreams:\n  - type: DeclarativeStream\n    name: a\n   primary_key: id\n'
+)
+
+ESCAPED_EMOJI_YAML = 'description: "\\ud83d\\ude00 emoji"\n'
+
+
+class _NonSeekable(io.StringIO):
+    def seekable(self) -> bool:
+        return False
+
 
 @requires_libyaml
 def test_get_safe_loader_uses_c_loader_when_available() -> None:
-    assert get_safe_loader() is yaml.CSafeLoader
+    assert _get_safe_loader() is yaml.CSafeLoader
 
 
 def test_falls_back_to_pure_python_loader_without_libyaml(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delattr(yaml, "CSafeLoader", raising=False)
 
-    assert get_safe_loader() is yaml.SafeLoader
+    assert _get_safe_loader() is yaml.SafeLoader
     assert safe_load_yaml("a: 1\nb: [x, y]") == {"a": 1, "b": ["x", "y"]}
     assert YamlDeclarativeSource._parse("version: 1.0.0\nstreams: []") == {
         "version": "1.0.0",
@@ -63,24 +76,22 @@ def test_component_schema_parses_identically_with_both_loaders() -> None:
     pure_python_schema = yaml.load(raw, Loader=yaml.SafeLoader)
     c_loader_schema = yaml.load(raw, Loader=yaml.CSafeLoader)
     assert pure_python_schema == c_loader_schema
+    assert repr(pure_python_schema) == repr(c_loader_schema)
     assert c_loader_schema == _get_declarative_component_schema()
 
 
-@pytest.mark.parametrize(
-    "loader",
-    [
-        yaml.SafeLoader,
-        pytest.param(
-            yaml.CSafeLoader,
-            marks=pytest.mark.skipif(
-                not yaml.__with_libyaml__, reason="PyYAML was built without libyaml"
-            ),
-        ),
-    ],
-)
-def test_malformed_yaml_raises_parser_error_with_both_loaders(loader: Any) -> None:
+@requires_libyaml
+def test_malformed_yaml_raises_parser_error_with_c_loader() -> None:
     with pytest.raises(yaml.parser.ParserError):
-        yaml.load(MALFORMED_YAML, Loader=loader)
+        safe_load_yaml(MALFORMED_YAML)
+
+
+def test_malformed_yaml_raises_parser_error_without_libyaml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr(yaml, "CSafeLoader", raising=False)
+    with pytest.raises(yaml.parser.ParserError):
+        safe_load_yaml(MALFORMED_YAML)
 
 
 @requires_libyaml
@@ -118,12 +129,6 @@ def test_declarative_call_sites_use_c_loader(
     assert len(instantiated) == 5
 
 
-# A list item whose nested mapping is indented one space short.
-MISINDENTED_YAML = (
-    'version: "1"\nstreams:\n  - type: DeclarativeStream\n    name: a\n   primary_key: id\n'
-)
-
-
 @requires_libyaml
 def test_syntax_error_in_string_matches_pure_python_message() -> None:
     with pytest.raises(yaml.YAMLError) as expected_exc_info:
@@ -134,6 +139,7 @@ def test_syntax_error_in_string_matches_pure_python_message() -> None:
 
     assert str(actual_exc_info.value) == str(expected_exc_info.value)
     assert type(actual_exc_info.value) is type(expected_exc_info.value)
+    assert actual_exc_info.value.__context__ is None
     assert "^" in str(actual_exc_info.value)
 
     with pytest.raises(yaml.YAMLError) as parse_exc_info:
@@ -141,6 +147,7 @@ def test_syntax_error_in_string_matches_pure_python_message() -> None:
 
     assert str(parse_exc_info.value) == str(expected_exc_info.value)
     assert type(parse_exc_info.value) is type(expected_exc_info.value)
+    assert parse_exc_info.value.__context__ is None
 
 
 @requires_libyaml
@@ -157,22 +164,47 @@ def test_syntax_error_in_file_matches_pure_python_message(tmp_path: Path) -> Non
             safe_load_yaml(f)
 
     assert str(actual_exc_info.value) == str(expected_exc_info.value)
+    assert actual_exc_info.value.__context__ is None
     assert str(path) in str(actual_exc_info.value)
 
 
 @requires_libyaml
-def test_syntax_error_in_non_seekable_stream_keeps_c_loader_message() -> None:
-    class _NonSeekable(io.StringIO):
-        def seekable(self) -> bool:
-            return False
+def test_syntax_error_does_not_chain_c_loader_error() -> None:
+    with pytest.raises(yaml.YAMLError) as exc_info:
+        safe_load_yaml(MISINDENTED_YAML)
+    assert exc_info.value.__context__ is None
 
-    with pytest.raises(yaml.YAMLError) as expected_exc_info:
-        yaml.load(_NonSeekable(MISINDENTED_YAML), Loader=yaml.CSafeLoader)
 
-    with pytest.raises(yaml.YAMLError) as actual_exc_info:
+@requires_libyaml
+def test_non_seekable_stream_parses_and_errors_like_safe_loader() -> None:
+    assert safe_load_yaml(_NonSeekable(ESCAPED_EMOJI_YAML)) == yaml.load(
+        _NonSeekable(ESCAPED_EMOJI_YAML), Loader=yaml.SafeLoader
+    )
+    with pytest.raises(yaml.YAMLError) as expected:
+        yaml.load(_NonSeekable(MISINDENTED_YAML), Loader=yaml.SafeLoader)
+    with pytest.raises(yaml.YAMLError) as actual:
         safe_load_yaml(_NonSeekable(MISINDENTED_YAML))
+    assert str(actual.value) == str(expected.value)
 
-    assert str(actual_exc_info.value) == str(expected_exc_info.value)
+
+@requires_libyaml
+def test_mock_open_handle_with_invalid_yaml_raises() -> None:
+    with pytest.raises(yaml.YAMLError):
+        safe_load_yaml(mock.mock_open(read_data=MISINDENTED_YAML)())
+
+
+def test_str_subclass_parses() -> None:
+    class _Str(str):
+        pass
+
+    assert safe_load_yaml(_Str("a: 1")) == {"a": 1}
+
+
+@requires_libyaml
+def test_c_loader_accepts_tab_separators_that_safe_loader_rejects() -> None:
+    with pytest.raises(yaml.scanner.ScannerError):
+        yaml.load("a:\tb", Loader=yaml.SafeLoader)
+    assert safe_load_yaml("a:\tb") == {"a": "b"}
 
 
 @requires_libyaml
