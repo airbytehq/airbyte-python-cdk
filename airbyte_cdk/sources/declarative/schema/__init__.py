@@ -9,6 +9,7 @@ from airbyte_cdk.sources.declarative.schema.dynamic_schema_loader import (
     SchemaTypeIdentifier,
     TypesMap,
 )
+from airbyte_cdk.sources.declarative.schema.inferred_schema_loader import InferredSchemaLoader
 from airbyte_cdk.sources.declarative.schema.inline_schema_loader import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.schema.json_file_schema_loader import JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
@@ -18,6 +19,7 @@ __all__ = [
     "DefaultSchemaLoader",
     "SchemaLoader",
     "InlineSchemaLoader",
+    "InferredSchemaLoader",
     "DynamicSchemaLoader",
     "ComplexFieldType",
     "TypesMap",
