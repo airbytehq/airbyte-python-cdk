@@ -139,7 +139,8 @@ class JinjaInterpolation(Interpolation):
             undeclared_not_in_context = {var for var in undeclared if var not in context}
             if undeclared_not_in_context:
                 raise ValueError(
-                    f"Jinja macro has undeclared variables: {undeclared_not_in_context}. Context: {context}"
+                    f"Jinja macro has undeclared variables: {sorted(undeclared_not_in_context)}. "
+                    f"Template: {s!r}. Available variables: {sorted(context.keys())}."
                 )
             return self._compile(s).render(context)  # type: ignore # from_string is able to handle None
         except TypeError:
