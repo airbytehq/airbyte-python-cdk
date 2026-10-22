@@ -21,8 +21,8 @@ from typing import (
 
 import orjson
 from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, StreamDescriptor
-from jsonschema.exceptions import ValidationError
-from jsonschema.validators import validate
+from jsonschema.exceptions import ValidationError, best_match
+from jsonschema.validators import validator_for
 
 from airbyte_cdk.config_observation import create_connector_config_control_message
 from airbyte_cdk.connector_builder.models import (
@@ -122,7 +122,7 @@ class TestLimits:
     max_streams: int = field(default=DEFAULT_MAX_STREAMS)
 
 
-def _get_declarative_component_schema() -> Dict[str, Any]:
+def get_declarative_component_schema() -> Dict[str, Any]:
     try:
         raw_component_schema = pkgutil.get_data(
             "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
@@ -138,6 +138,28 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
         raise FileNotFoundError(
             f"Failed to read manifest component json schema required for deduplication: {e}"
         )
+
+
+def validate_manifest(manifest: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
+    """Validate a manifest against the shipped component schema.
+
+    Unit tests check the schema's metaschema, so valid manifests skip `check_schema`. On failure,
+    check the schema first to surface `SchemaError`, while preserving `jsonschema.validate`'s
+    best-match error as the cause with a traceback.
+    """
+    validator_class = validator_for(schema)
+    try:
+        error = best_match(validator_class(schema).iter_errors(manifest))
+        if error is not None:
+            raise error
+    except ValidationError as e:
+        validator_class.check_schema(schema)
+        raise ValidationError(
+            "Validation against json schema defined in declarative_component_schema.yaml schema failed"
+        ) from e
+    except Exception:
+        validator_class.check_schema(schema)
+        raise
 
 
 class ConcurrentDeclarativeSource(Source):
@@ -204,7 +226,7 @@ class ConcurrentDeclarativeSource(Source):
 
         self._should_normalize = normalize_manifest
         self._should_migrate = migrate_manifest
-        self._declarative_component_schema = _get_declarative_component_schema()
+        self._declarative_component_schema = get_declarative_component_schema()
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
         # set additional attributes
@@ -345,12 +367,7 @@ class ConcurrentDeclarativeSource(Source):
         Validates the connector manifest against the declarative component schema
         """
 
-        try:
-            validate(self._source_config, self._declarative_component_schema)
-        except ValidationError as e:
-            raise ValidationError(
-                "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-            ) from e
+        validate_manifest(self._source_config, self._declarative_component_schema)
 
     def _migrate_and_transform_config(
         self,

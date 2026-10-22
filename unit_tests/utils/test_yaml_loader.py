@@ -16,7 +16,7 @@ from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
     _get_declarative_component_schema as _legacy_get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
-    _get_declarative_component_schema,
+    get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.utils.yaml_loader import _get_safe_loader, safe_load_yaml
@@ -77,7 +77,7 @@ def test_component_schema_parses_identically_with_both_loaders() -> None:
     c_loader_schema = yaml.load(raw, Loader=yaml.CSafeLoader)
     assert pure_python_schema == c_loader_schema
     assert repr(pure_python_schema) == repr(c_loader_schema)
-    assert c_loader_schema == _get_declarative_component_schema()
+    assert c_loader_schema == get_declarative_component_schema()
 
 
 @requires_libyaml
@@ -107,7 +107,7 @@ def test_declarative_call_sites_use_c_loader(
 
     monkeypatch.setattr(yaml, "CSafeLoader", _Spy)
 
-    _get_declarative_component_schema()
+    get_declarative_component_schema()
     assert len(instantiated) == 1
 
     _legacy_get_declarative_component_schema()
