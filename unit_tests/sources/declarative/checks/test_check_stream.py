@@ -907,3 +907,313 @@ def test_check_stream_only_type_provided():
     )
     with pytest.raises(ValueError):
         source.check(logger, _CONFIG)
+
+
+def _stream_config(name: str, path: Optional[str] = None) -> dict:
+    return {
+        "type": "DeclarativeStream",
+        "name": name,
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": path or f"/{name}",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "paginator": {"type": "NoPagination"},
+        },
+    }
+
+
+def _source_with_streams(
+    stream_configs: list[dict],
+    stream_names: list[str],
+    config: Optional[dict] = None,
+) -> ConcurrentDeclarativeSource:
+    return ConcurrentDeclarativeSource(
+        source_config={
+            "version": "6.7.0",
+            "type": "DeclarativeSource",
+            "streams": deepcopy(stream_configs),
+            "check": {"type": "CheckStream", "stream_names": stream_names},
+        },
+        config=config or {},
+        catalog=None,
+        state=None,
+    )
+
+
+def _created_stream_names(create_component_spy) -> list[str]:
+    return [
+        call.args[1]["name"]
+        for call in create_component_spy.call_args_list
+        if len(call.args) > 1
+        and getattr(call.args[0], "__name__", "") in {"DeclarativeStream", "StateDelegatingStream"}
+    ]
+
+
+def test_check_builds_only_the_named_static_stream(mocker):
+    source = _source_with_streams(
+        [_stream_config("first"), _stream_config("selected"), _stream_config("third")],
+        ["selected"],
+    )
+    create_component_spy = mocker.spy(source._constructor, "create_component")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/selected"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+        assert source.check(logger, {}).status == Status.SUCCEEDED
+
+    assert _created_stream_names(create_component_spy) == ["selected"]
+
+
+def test_check_does_not_build_an_unread_stream_that_fails_to_build(mocker):
+    streams = [_stream_config("checked"), _stream_config("unread_bad")]
+    source = _source_with_streams(streams, ["checked"])
+
+    def patch_bad_stream(source):
+        original_create_component = source._constructor.create_component
+
+        def create_component(model, component_config, *args, **kwargs):
+            if (
+                getattr(model, "__name__", "") in {"DeclarativeStream", "StateDelegatingStream"}
+                and component_config["name"] == "unread_bad"
+            ):
+                raise ValueError("bad unread stream")
+            return original_create_component(model, component_config, *args, **kwargs)
+
+        mocker.patch.object(source._constructor, "create_component", side_effect=create_component)
+
+    patch_bad_stream(source)
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/checked"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+        assert source.check(logger, {}).status == Status.SUCCEEDED
+
+    failing_source = _source_with_streams(streams, ["unread_bad"])
+    patch_bad_stream(failing_source)
+    status = failing_source.check(logger, {})
+    assert status.status == Status.FAILED
+    assert "Encountered an error while discovering streams" in status.message
+
+
+@pytest.mark.parametrize("condition", [True, False])
+def test_check_stream_name_inside_conditional_streams(condition, mocker):
+    manifest = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "streams": [
+            {
+                "type": "ConditionalStreams",
+                "condition": "{{ config['include_conditional'] }}",
+                "streams": [_stream_config("conditional_stream")],
+            },
+            _stream_config("other_stream"),
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["conditional_stream"]},
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={"include_conditional": condition},
+        catalog=None,
+        state=None,
+    )
+
+    if condition:
+        create_component_spy = mocker.spy(source._constructor, "create_component")
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url="https://api.test.com/conditional_stream"),
+                HttpResponse(body=json.dumps([{"id": 1}])),
+            )
+            assert source.check(logger, source._config).status == Status.SUCCEEDED
+        assert _created_stream_names(create_component_spy) == ["conditional_stream"]
+    else:
+        with pytest.raises(ValueError, match="conditional_stream is not part of the catalog"):
+            source.check(logger, source._config)
+
+
+def test_check_stream_names_can_be_overridden_from_config_for_concurrent_source(mocker):
+    source = _source_with_streams(
+        [_stream_config("default_stream"), _stream_config("selected_stream")],
+        ["default_stream"],
+        config={"__airbyte_check_stream_names": ["selected_stream"]},
+    )
+    create_component_spy = mocker.spy(source._constructor, "create_component")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/selected_stream"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+
+    assert _created_stream_names(create_component_spy) == ["selected_stream"]
+
+
+def test_check_with_misspelled_stream_name_uses_catalog_error():
+    source = _source_with_streams(
+        [_stream_config("first"), _stream_config("second")], ["misspelled"]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"misspelled is not part of the catalog\. Expected one of \['first', 'second'\]\.",
+    ):
+        source.check(logger, {})
+
+
+def test_check_for_dynamic_stream_name_falls_back_to_streams(mocker):
+    manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
+    manifest["dynamic_streams"] = [manifest["dynamic_streams"][1]]
+    manifest["check"] = {"type": "CheckStream", "stream_names": ["item_3"]}
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={**_CONFIG, "api_key": "test"},
+        catalog=None,
+        state=None,
+    )
+    streams_spy = mocker.spy(source, "streams")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/static"),
+            HttpResponse(body=json.dumps([])),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items/3"),
+            HttpResponse(body=json.dumps([])),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+
+    streams_spy.assert_called_once()
+
+
+def test_check_dynamic_stream_configs_are_evaluated_once_when_not_checked(mocker):
+    manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
+    manifest["dynamic_streams"] = [manifest["dynamic_streams"][1]]
+    manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={**_CONFIG, "api_key": "test"},
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/static"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+        dynamic_configs_spy = mocker.spy(source, "_dynamic_stream_configs")
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+
+    dynamic_configs_spy.assert_called_once()
+
+
+def test_check_builds_a_named_state_delegating_stream(mocker):
+    stream = _stream_config("state_stream")
+    incremental_stream = deepcopy(stream)
+    incremental_stream["incremental_sync"] = {
+        "type": "DatetimeBasedCursor",
+        "start_datetime": "2024-01-01T00:00:00Z",
+        "end_datetime": "2024-01-02T00:00:00Z",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "cursor_field": "updated_at",
+    }
+    state_delegating_stream = {
+        "type": "StateDelegatingStream",
+        "name": "state_stream",
+        "full_refresh_stream": stream,
+        "incremental_stream": incremental_stream,
+    }
+    source = _source_with_streams([state_delegating_stream], ["state_stream"])
+    create_component_spy = mocker.spy(source._constructor, "create_component")
+
+    streams = source.streams_by_name(["state_stream"])
+
+    assert streams is not None
+    assert [stream.name for stream in streams] == ["state_stream"]
+    assert _created_stream_names(create_component_spy) == ["state_stream"]
+    assert any(
+        component_call.args
+        and getattr(component_call.args[0], "__name__", "") == "StateDelegatingStream"
+        for component_call in create_component_spy.call_args_list
+    )
+
+
+def test_check_still_fails_when_spec_config_validations_fail():
+    source_config = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "streams": [_stream_config("selected")],
+        "check": {"type": "CheckStream", "stream_names": ["selected"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {"settings": {"type": "object"}},
+            },
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["settings"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "type": "object",
+                                "properties": {"mode": {"type": "string", "enum": ["sync"]}},
+                                "required": ["mode"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=source_config,
+        config={"settings": {"mode": "invalid"}},
+        catalog=None,
+        state=None,
+    )
+
+    status = source.check(logger, source._config)
+
+    assert status.status == Status.FAILED
+    assert "Encountered an error while discovering streams" in status.message
+
+
+def test_check_stream_uses_streams_for_legacy_manifest_source():
+    from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
+        ManifestDeclarativeSource,
+    )
+
+    source = MagicMock(spec=ManifestDeclarativeSource)
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected"
+    source.streams.return_value = [stream]
+    checker = CheckStream(stream_names=["selected"], parameters={})
+
+    assert checker._build_streams(source, {}, ["selected"]) == [stream]
+
+    source.streams.assert_called_once_with(config={})

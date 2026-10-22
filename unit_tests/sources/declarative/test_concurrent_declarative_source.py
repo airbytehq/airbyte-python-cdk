@@ -6700,6 +6700,118 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated():
     )
 
 
+def test_initialize_cache_for_parent_streams_reads_all_configs_without_mutating_them():
+    def stream_config(name: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "retriever": {"requester": {}},
+        }
+
+    partition_parent = stream_config("partition_parent")
+    partition_child = stream_config("partition_child")
+    partition_child["retriever"]["partition_router"] = [
+        {
+            "type": "UnionPartitionRouter",
+            "partition_routers": [
+                {
+                    "type": "GroupingPartitionRouter",
+                    "underlying_partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {
+                                "stream": partition_parent,
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    ]
+    incremental_child = stream_config("incremental_child")
+    incremental_child["incremental_sync"] = {
+        "parent_stream": {
+            "name": "incremental_parent",
+            "retriever": {"requester": {}},
+        }
+    }
+    all_stream_configs = [partition_parent, partition_child, incremental_child]
+    unchanged_configs = deepcopy(all_stream_configs)
+    selected_configs = deepcopy([partition_parent])
+
+    initialized = ConcurrentDeclarativeSource._initialize_cache_for_parent_streams(
+        selected_configs, all_stream_configs=all_stream_configs
+    )
+
+    assert initialized[0]["retriever"]["requester"]["use_cache"] is True
+    assert all_stream_configs == unchanged_configs
+    assert ConcurrentDeclarativeSource._parent_stream_names(all_stream_configs) == {
+        "partition_parent",
+        "incremental_parent",
+    }
+
+
+def test_streams_by_name_builds_a_checked_substream_without_returning_its_parent():
+    def stream_config(name: str, path: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "primary_key": [],
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": path,
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "paginator": {"type": "NoPagination"},
+            },
+        }
+
+    parent = stream_config("parent", "/parent")
+    child = stream_config("child", "/child")
+    child["retriever"]["partition_router"] = {
+        "type": "SubstreamPartitionRouter",
+        "parent_stream_configs": [
+            {
+                "stream": deepcopy(parent),
+                "parent_key": "id",
+                "partition_field": "parent_id",
+            }
+        ],
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config={
+            "version": "6.7.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["child"]},
+            "streams": [parent, child],
+        },
+        config={},
+        catalog=None,
+        state=None,
+    )
+
+    streams = source.streams_by_name(["child"])
+
+    assert streams is not None
+    assert [stream.name for stream in streams] == ["child"]
+    child_stream = streams[0]
+    parent_streams = child_stream._stream_partition_generator._stream_slicer.parent_stream_configs
+    assert [parent_config.stream.name for parent_config in parent_streams] == ["parent"]
+
+
 def test_dynamic_stream_discovery_http_requests_use_api_budget():
     """Verify that HttpComponentsResolver's requester receives the configured api_budget.
 

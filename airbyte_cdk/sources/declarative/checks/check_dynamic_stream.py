@@ -4,7 +4,7 @@
 
 import logging
 from dataclasses import InitVar, dataclass
-from typing import Any, List, Mapping, Tuple, Union
+from typing import Any, List, Mapping, Tuple, Union, cast
 
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.check_stream import evaluate_availability
@@ -38,7 +38,20 @@ class CheckDynamicStream(ConnectionChecker):
         logger: logging.Logger,
         config: Mapping[str, Any],
     ) -> Tuple[bool, Any]:
-        streams: List[Union[Stream, AbstractStream]] = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
+        from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+            ConcurrentDeclarativeSource,
+        )
+
+        if (
+            isinstance(source, ConcurrentDeclarativeSource)
+            and self.use_check_availability
+            and self.stream_count >= 1
+        ):
+            streams: List[Union[Stream, AbstractStream]] = cast(
+                List[Union[Stream, AbstractStream]], source.first_streams(self.stream_count)
+            )
+        else:
+            streams = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
 
         if len(streams) == 0:
             return False, f"No streams to connect to from source {source}"
