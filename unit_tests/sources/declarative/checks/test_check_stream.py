@@ -20,6 +20,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("test")
 config = dict()
@@ -1113,6 +1114,7 @@ def test_check_for_dynamic_stream_name_falls_back_to_streams(mocker):
         state=None,
     )
     streams_spy = mocker.spy(source, "streams")
+    dynamic_configs_spy = mocker.spy(source, "_dynamic_stream_configs")
 
     with HttpMocker() as http_mocker:
         http_mocker.get(
@@ -1126,9 +1128,92 @@ def test_check_for_dynamic_stream_name_falls_back_to_streams(mocker):
         assert source.check(logger, source._config).status == Status.SUCCEEDED
 
     streams_spy.assert_called_once()
+    dynamic_configs_spy.assert_called_once()
 
 
-def test_check_dynamic_stream_configs_are_evaluated_once_when_not_checked(mocker):
+def test_check_static_stream_does_not_resolve_http_dynamic_stream():
+    manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
+    manifest["dynamic_streams"] = [manifest["dynamic_streams"][0]]
+    manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={**_CONFIG, "api_key": "test"},
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/static"),
+            HttpResponse(body=json.dumps([])),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+
+
+def test_check_with_duplicate_dynamic_streams_skips_resolution():
+    manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
+    manifest["dynamic_streams"] = [manifest["dynamic_streams"][1]]
+    manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
+    config_with_duplicate_dynamic_streams = {
+        **_CONFIG,
+        "api_key": "test",
+        "custom_streams": [
+            {"id": 1, "name": "duplicate"},
+            {"id": 2, "name": "duplicate"},
+        ],
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=config_with_duplicate_dynamic_streams,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/static"),
+            HttpResponse(body=json.dumps([])),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+
+    with pytest.raises(
+        AirbyteTracedException,
+        match="Dynamic streams list contains a duplicate name: duplicate. Please check your configuration.",
+    ):
+        source.discover(logger=source.logger, config=source._config)
+
+
+def test_check_skips_http_dynamic_stream_resolver_errors():
+    manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
+    manifest["dynamic_streams"] = [manifest["dynamic_streams"][0]]
+    manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={**_CONFIG, "api_key": "test"},
+        catalog=None,
+        state=None,
+    )
+    resolver_request = HttpRequest(url="https://api.test.com/items")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/static"),
+            HttpResponse(body=json.dumps([])),
+        )
+        http_mocker.get(
+            resolver_request,
+            HttpResponse(body=json.dumps({"error": "server error"}), status_code=500),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(resolver_request, 0)
+
+        with pytest.raises(AirbyteTracedException, match="HTTP Status Code: 500"):
+            source.discover(logger=source.logger, config=source._config)
+
+
+def test_check_dynamic_stream_configs_are_not_evaluated_when_only_static_streams_are_checked(
+    mocker,
+):
     manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
     manifest["dynamic_streams"] = [manifest["dynamic_streams"][1]]
     manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
@@ -1147,7 +1232,7 @@ def test_check_dynamic_stream_configs_are_evaluated_once_when_not_checked(mocker
         dynamic_configs_spy = mocker.spy(source, "_dynamic_stream_configs")
         assert source.check(logger, source._config).status == Status.SUCCEEDED
 
-    dynamic_configs_spy.assert_called_once()
+    dynamic_configs_spy.assert_not_called()
 
 
 def test_check_builds_a_named_state_delegating_stream(mocker):

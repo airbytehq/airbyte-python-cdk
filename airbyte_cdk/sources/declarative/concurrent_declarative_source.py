@@ -491,7 +491,7 @@ class ConcurrentDeclarativeSource(Source):
         return type(self).streams is ConcurrentDeclarativeSource.streams
 
     def _streams_by_name(self, stream_names: List[str]) -> Optional[List[AbstractStream]]:
-        """Build the named static streams plus every dynamic stream.
+        """Build the named static streams without resolving or building dynamic streams.
 
         Return None when the names are empty, any name isn't static, or `streams()` is overridden.
         """
@@ -506,14 +506,13 @@ class ConcurrentDeclarativeSource(Source):
             return None
 
         self._prepare_for_stream_build()
-        dynamic_configs = self.dynamic_streams
         selected_names = set(stream_names)
         selected_configs = [
             stream_config
             for stream_config in static_configs
             if stream_config.get("name") in selected_names
-        ] + dynamic_configs
-        return self._create_streams(selected_configs, static_configs + dynamic_configs)
+        ]
+        return self._create_streams(selected_configs, static_configs)
 
     def _first_streams(self, count: int) -> Optional[List[AbstractStream]]:
         """Build the first `count` streams, static then dynamic, in `streams()` order.
