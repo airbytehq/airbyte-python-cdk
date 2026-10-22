@@ -75,7 +75,8 @@ def run_test_job(
         empty_if_missing=True,
         connector_root=connector_root,
     )
-    if config_dict and verb != "spec":
+    has_config = test_scenario.config_dict is not None or test_scenario.config_path is not None
+    if verb != "spec" and (config_dict or has_config):
         # Write the config to a temp json file and pass the path to the file as an argument.
         config_path = (
             Path(tempfile.gettempdir()) / "airbyte-test" / f"temp_config_{uuid.uuid4().hex}.json"
