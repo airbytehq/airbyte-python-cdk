@@ -311,7 +311,8 @@ class ConcurrentDeclarativeSource(Source):
         # Resolve references in the manifest
         resolved_manifest = ManifestReferenceResolver().preprocess_manifest(manifest)
         # Propagate types and parameters throughout the manifest
-        propagated_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
+        # Resolver output is freshly built and contains no shared containers.
+        propagated_manifest = ManifestComponentTransformer()._propagate_in_place(
             "", resolved_manifest, {}
         )
 
