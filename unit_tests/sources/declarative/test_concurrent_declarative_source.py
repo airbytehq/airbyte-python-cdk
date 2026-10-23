@@ -25,7 +25,8 @@ from airbyte_protocol_dataclasses.models import (
     AirbyteTraceMessage,
     TraceType,
 )
-from jsonschema.exceptions import ValidationError
+from jsonschema.exceptions import SchemaError, UnknownType, ValidationError
+from jsonschema.validators import Draft7Validator, validate, validator_for
 from typing_extensions import deprecated
 
 import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
@@ -44,6 +45,7 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     FailureType,
     Level,
+    OrchestratorType,
     Status,
     StreamDescriptor,
     SyncMode,
@@ -52,6 +54,8 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobLimitReached
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
+    TestLimits,
+    get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -4484,9 +4488,19 @@ def migration_mocks(monkeypatch):
     mock_decoded_bytes.decode.return_value = "decoded_message"
     mock_orjson_dumps = Mock(return_value=mock_decoded_bytes)
 
-    monkeypatch.setattr("builtins.open", _mock_open)
+    # Patch `open` and `print` only in the module under test: patching `builtins` also catches
+    # calls made by other code during the test (for example ddtrace writing bytecode caches).
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.open",
+        _mock_open,
+        raising=False,
+    )
     monkeypatch.setattr("json.dump", mock_json_dump)
-    monkeypatch.setattr("builtins.print", mock_print)
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.print",
+        mock_print,
+        raising=False,
+    )
     monkeypatch.setattr(
         "airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump",
         mock_serializer_dump,
@@ -6635,13 +6649,18 @@ def test_get_partition_router(stream_factory, expected_type):
         assert isinstance(router, GroupingPartitionRouter)
 
 
-def test_api_budget_is_set_before_dynamic_streams_evaluated():
-    """Verify that set_api_budget is called before dynamic_streams is accessed in streams().
-
-    This is a regression test for https://github.com/airbytehq/oncall/issues/11954
-    where dynamic stream discovery HTTP requests bypassed the configured rate limiter
-    because set_api_budget was called after self.dynamic_streams was evaluated.
-    """
+@pytest.mark.parametrize(
+    "build_path, expect_dynamic_stream_configs",
+    [
+        pytest.param("streams", True, id="streams"),
+        pytest.param("_streams_by_name", False, id="streams_by_name"),
+        pytest.param("_first_streams", True, id="first_streams"),
+    ],
+)
+def test_api_budget_is_set_before_dynamic_streams_evaluated(
+    build_path, expect_dynamic_stream_configs
+):
+    """Verify all stream-building paths set the API budget before dynamic discovery."""
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
     )
@@ -6659,7 +6678,6 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated():
         call_order.append("dynamic_stream_configs")
         return original_dynamic_stream_configs(*args, **kwargs)
 
-    # Add an api_budget to the source config so set_api_budget is actually called
     source._source_config["api_budget"] = {
         "type": "HTTPAPIBudget",
         "policies": [
@@ -6677,13 +6695,147 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated():
             source, "_dynamic_stream_configs", side_effect=tracking_dynamic_stream_configs
         ),
     ):
-        source.streams(config=_CONFIG)
+        if build_path == "streams":
+            source.streams(config=_CONFIG)
+        elif build_path == "_streams_by_name":
+            stream_name = source._stream_configs(source._source_config)[0]["name"]
+            source._streams_by_name([stream_name])
+        else:
+            source._first_streams(1)
 
     assert "set_api_budget" in call_order, "set_api_budget was never called"
-    assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
-    assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
-        f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
+    if expect_dynamic_stream_configs:
+        assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
+        assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
+            f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
+        )
+    else:
+        assert "dynamic_stream_configs" not in call_order
+
+
+@pytest.mark.parametrize("count", [0, -1])
+def test_first_streams_rejects_non_positive_count(count):
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST,
+        config=_CONFIG,
+        catalog=None,
+        state=None,
     )
+
+    with pytest.raises(ValueError, match="count must be >= 1"):
+        source._first_streams(count)
+
+
+def test_initialize_cache_for_parent_streams_reads_all_configs_without_mutating_them():
+    def stream_config(name: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "retriever": {"requester": {}},
+        }
+
+    partition_parent = stream_config("partition_parent")
+    partition_child = stream_config("partition_child")
+    partition_child["retriever"]["partition_router"] = [
+        {
+            "type": "UnionPartitionRouter",
+            "partition_routers": [
+                {
+                    "type": "GroupingPartitionRouter",
+                    "underlying_partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {
+                                "stream": partition_parent,
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    ]
+    incremental_child = stream_config("incremental_child")
+    incremental_child["incremental_sync"] = {
+        "parent_stream": {
+            "name": "incremental_parent",
+            "retriever": {"requester": {}},
+        }
+    }
+    all_stream_configs = [partition_parent, partition_child, incremental_child]
+    unchanged_configs = deepcopy(all_stream_configs)
+    selected_configs = deepcopy([partition_parent])
+
+    initialized = ConcurrentDeclarativeSource._initialize_cache_for_parent_streams(
+        selected_configs, all_stream_configs=all_stream_configs
+    )
+
+    assert initialized[0]["retriever"]["requester"]["use_cache"] is True
+    assert all_stream_configs == unchanged_configs
+    assert ConcurrentDeclarativeSource._parent_stream_names(all_stream_configs) == {
+        "partition_parent",
+        "incremental_parent",
+    }
+
+
+def test_streams_by_name_builds_a_checked_substream_without_returning_its_parent():
+    def stream_config(name: str, path: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "primary_key": [],
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": path,
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "paginator": {"type": "NoPagination"},
+            },
+        }
+
+    parent = stream_config("parent", "/parent")
+    child = stream_config("child", "/child")
+    child["retriever"]["partition_router"] = {
+        "type": "SubstreamPartitionRouter",
+        "parent_stream_configs": [
+            {
+                "stream": deepcopy(parent),
+                "parent_key": "id",
+                "partition_field": "parent_id",
+            }
+        ],
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config={
+            "version": "6.7.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["child"]},
+            "streams": [parent, child],
+        },
+        config={},
+        catalog=None,
+        state=None,
+    )
+
+    streams = source._streams_by_name(["child"])
+
+    assert streams is not None
+    assert [stream.name for stream in streams] == ["child"]
+    child_stream = streams[0]
+    parent_streams = child_stream._stream_partition_generator._stream_slicer.parent_stream_configs
+    assert [parent_config.stream.name for parent_config in parent_streams] == ["parent"]
 
 
 def test_dynamic_stream_discovery_http_requests_use_api_budget():
@@ -6796,6 +6948,176 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
         "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
         "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
+
+
+def _single_use_refresh_token_manifest(include_check: bool = True) -> Dict[str, Any]:
+    manifest: Dict[str, Any] = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "items",
+                "primary_key": "id",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.example.com",
+                        "path": "/items",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "OAuthAuthenticator",
+                            "token_refresh_endpoint": "https://api.example.com/oauth/token",
+                            "client_id": "{{ config['credentials']['client_id'] }}",
+                            "client_secret": "{{ config['credentials']['client_secret'] }}",
+                            "refresh_token": "{{ config['credentials']['refresh_token'] }}",
+                            "refresh_token_updater": {},
+                        },
+                    },
+                },
+            }
+        ],
+    }
+    if include_check:
+        manifest["check"] = {"type": "CheckStream", "stream_names": ["items"]}
+    return manifest
+
+
+def _single_use_refresh_token_config() -> Dict[str, Any]:
+    return {
+        "credentials": {
+            "client_id": "client_id",
+            "client_secret": "client_secret",
+            "refresh_token": "old_refresh",
+        }
+    }
+
+
+def _single_use_refresh_token_catalog() -> ConfiguredAirbyteCatalog:
+    return ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="items",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+
+
+def _mock_single_use_refresh_token_requests(http_mocker: HttpMocker) -> None:
+    http_mocker.post(
+        HttpRequest(
+            "https://api.example.com/oauth/token",
+            body="grant_type=refresh_token&client_id=client_id&client_secret=client_secret&refresh_token=old_refresh",
+        ),
+        HttpResponse(
+            json.dumps(
+                {
+                    "access_token": "new_access",
+                    "refresh_token": "new_refresh",
+                    "expires_in": 3600,
+                }
+            )
+        ),
+    )
+    http_mocker.get(
+        HttpRequest("https://api.example.com/items"),
+        HttpResponse(json.dumps([{"id": "item-1"}])),
+    )
+
+
+def _connector_config_lines(output: str) -> List[Dict[str, Any]]:
+    parsed = [json.loads(line) for line in output.splitlines() if line.strip()]
+    return [message for message in parsed if message.get("type") == "CONTROL"]
+
+
+def test_given_refresh_token_updater_when_read_then_exactly_one_connector_config_message_on_stdout(
+    capsys,
+):
+    config = _single_use_refresh_token_config()
+    catalog = _single_use_refresh_token_catalog()
+    source = ConcurrentDeclarativeSource(
+        source_config=_single_use_refresh_token_manifest(),
+        config=config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_single_use_refresh_token_requests(http_mocker)
+        messages = list(source.read(logger, config, catalog, []))
+
+    assert not any(message.type == Type.CONTROL for message in messages)
+    assert any(message.type == Type.RECORD for message in messages)
+    connector_config_messages = _connector_config_lines(capsys.readouterr().out)
+    assert len(connector_config_messages) == 1
+    assert (
+        connector_config_messages[0]["control"]["connectorConfig"]["config"]["credentials"][
+            "refresh_token"
+        ]
+        == "new_refresh"
+    )
+
+
+def test_given_refresh_token_updater_and_connector_builder_mode_when_read_then_control_message_yielded_once(
+    capsys,
+):
+    config = _single_use_refresh_token_config()
+    catalog = _single_use_refresh_token_catalog()
+    source = ConcurrentDeclarativeSource(
+        source_config=_single_use_refresh_token_manifest(),
+        config=config,
+        catalog=catalog,
+        state=None,
+        emit_connector_builder_messages=True,
+        limits=TestLimits(max_records=10, max_pages_per_slice=10, max_slices=10, max_streams=10),
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_single_use_refresh_token_requests(http_mocker)
+        messages = list(source.read(logger, config, catalog, []))
+
+    yielded_control_messages = [message for message in messages if message.type == Type.CONTROL]
+    assert len(yielded_control_messages) == 1
+    assert yielded_control_messages[0].control.type == OrchestratorType.CONNECTOR_CONFIG
+    connector_config_messages = _connector_config_lines(capsys.readouterr().out)
+    assert len(connector_config_messages) == 1
+
+
+def test_given_refresh_token_updater_when_check_then_connector_config_message_on_stdout(capsys):
+    config = _single_use_refresh_token_config()
+    source = ConcurrentDeclarativeSource(
+        source_config=_single_use_refresh_token_manifest(),
+        config=config,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_single_use_refresh_token_requests(http_mocker)
+        connection_status = source.check(logger, config)
+
+    assert connection_status.status == Status.SUCCEEDED
+    connector_config_messages = _connector_config_lines(capsys.readouterr().out)
+    assert len(connector_config_messages) == 1
 
 
 def _validation_messages(error: ValidationError) -> Iterable[str]:
@@ -6964,3 +7286,143 @@ def test_combined_extractor_skipping_empty_records_reads_every_page(
         6,
         7,
     ]
+
+
+def two_stream_schema_validation_manifest() -> Dict[str, Any]:
+    def stream(name: str) -> Dict[str, Any]:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "primary_key": [],
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": f"/{name}",
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+            },
+        }
+
+    return {
+        "version": "6.0.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["a"]},
+        "streams": [stream("a"), stream("b")],
+    }
+
+
+def test_invalid_manifest_raises_the_best_match_error_not_the_first():
+    manifest = two_stream_schema_validation_manifest()
+    manifest["streams"][0]["primary_key"] = 5
+    manifest["streams"][1]["retriever"]["requester"]["http_method"] = "FETCH"
+    schema = get_declarative_component_schema()
+
+    first = next(Draft7Validator(schema).iter_errors(manifest))
+
+    with pytest.raises(ValidationError) as expected_error:
+        validate(manifest, schema)
+    expected = expected_error.value
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("a"), state=None
+        )
+
+    assert (
+        exc_info.value.message
+        == "Validation against json schema defined in declarative_component_schema.yaml schema failed"
+    )
+    cause = exc_info.value.__cause__
+    assert cause is not None
+    assert cause.__traceback__ is not None
+    assert cause.message == expected.message
+    assert cause.json_path == expected.json_path
+    assert list(cause.schema_path) == list(expected.schema_path)
+    assert cause.validator == expected.validator
+    assert cause.validator_value == expected.validator_value
+    assert cause.json_path != first.json_path
+
+
+@pytest.mark.parametrize("migrate_manifest", [False, True])
+def test_building_a_source_does_not_check_the_component_schema(migrate_manifest):
+    with patch.object(
+        validator_for(get_declarative_component_schema()),
+        "check_schema",
+        side_effect=AssertionError("check_schema must not run at source build"),
+    ) as check_schema:
+        ConcurrentDeclarativeSource(
+            source_config=two_stream_schema_validation_manifest(),
+            config={},
+            catalog=create_catalog("a"),
+            state=None,
+            migrate_manifest=migrate_manifest,
+        )
+        check_schema.assert_not_called()
+
+
+def test_a_broken_component_schema_that_fails_the_manifest_raises_schema_error():
+    manifest = two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["required"] = "type"
+
+    assert list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(SchemaError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("a"), state=None
+            )
+
+
+def test_a_component_schema_that_passes_check_schema_but_breaks_validation_reraises():
+    manifest = two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["properties"]["path"] = {
+        "$ref": "#/definitions/DoesNotExist"
+    }
+
+    Draft7Validator.check_schema(broken)
+    with pytest.raises(Exception) as expected:
+        list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(type(expected.value)) as exc_info:
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("a"), state=None
+            )
+
+    assert type(exc_info.value) is type(expected.value)
+
+
+def test_a_broken_component_schema_that_breaks_validation_raises_schema_error():
+    manifest = two_stream_schema_validation_manifest()
+    broken = copy.deepcopy(get_declarative_component_schema())
+    broken["definitions"]["HttpRequester"]["properties"]["path"]["type"] = "strng"
+
+    with pytest.raises(UnknownType):
+        list(Draft7Validator(broken).iter_errors(manifest))
+
+    with patch(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.get_declarative_component_schema",
+        return_value=broken,
+    ):
+        with pytest.raises(SchemaError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("a"), state=None
+            )

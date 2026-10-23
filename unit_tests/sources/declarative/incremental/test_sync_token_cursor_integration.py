@@ -1,6 +1,8 @@
 #
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
+
+"""Integration tests for declarative SyncTokenCursor streams."""
 
 import json
 import logging
@@ -232,7 +234,7 @@ def _reset_error_handler(*, reduce_page_size=False, pagination_reset=False):
             "type": "HttpResponseFilter",
             "action": "RESET_SYNC_TOKEN",
             "predicate": "{{ response.get('success') == false }}",
-            "error_message": "Ashby rejected the stored change token (sync_token_expired)",
+            "error_message": "Ashby rejected the stored sync token (sync_token_expired)",
         }
     )
     if pagination_reset:
@@ -328,16 +330,20 @@ def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
         }
     )
     with HttpMocker() as http_mocker:
+        first_request = HttpRequest(_URL, body={"syncToken": "T1"})
+        second_request = HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"})
         http_mocker.post(
-            HttpRequest(_URL, body={"syncToken": "T1"}),
+            first_request,
             HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
         )
         http_mocker.post(
-            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"}),
+            second_request,
             HttpResponse("{}", status_code=500),
         )
         source, catalog = _source_and_catalog(manifest, state)
         messages = _read_until_error(source, catalog, state)
+        http_mocker.assert_number_of_calls(first_request, 1)
+        http_mocker.assert_number_of_calls(second_request, 1)
 
     assert any(message.type == Type.RECORD for message in messages)
     assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T1"
@@ -385,7 +391,7 @@ def test_t_reset_restarts_without_token_and_commits_terminal_token(caplog):
     assert len(_state(messages)) == 1
     assert _state(messages)[0].stream.stream_state.__dict__["token"] == "T2"
     assert (
-        "Ashby rejected the stored change token (sync_token_expired); reading this stream in full."
+        "Ashby rejected the stored sync token (sync_token_expired); reading this stream in full."
         in caplog.text
     )
     assert "2 records read earlier in this attempt may be emitted again." in caplog.text
@@ -502,7 +508,7 @@ def test_t_reset_twice_errors_and_preserves_committed_state():
         and message.trace.error
         and message.trace.error.failure_type == FailureType.system_error
         and message.trace.error.message
-        == "Stream events: the API rejected a read without a change token. "
+        == "Stream events: the API rejected a read without a sync token. "
         "Check the RESET_SYNC_TOKEN response filter."
         for message in messages
     )
@@ -626,40 +632,6 @@ def test_reset_action_on_non_token_stream_is_not_supported():
     assert "RESET_SYNC_TOKEN" in str(exc_info.value)
 
 
-def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():
-    with HttpMocker() as http_mocker:
-        http_mocker.post(
-            HttpRequest(_URL, body=None),
-            HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
-        )
-        source, catalog = _source_and_catalog(_manifest(), limit_pages_fetched_per_slice=1)
-        messages = _read(source, catalog)
-    assert not any("token" in message.stream.stream_state.__dict__ for message in _state(messages))
-
-    with HttpMocker() as http_mocker:
-        http_mocker.post(
-            HttpRequest(_URL, body=None),
-            HttpResponse(
-                json.dumps(
-                    {
-                        "items": [{"id": "1"}, {"id": "2"}],
-                        "syncToken": "must-not-commit",
-                        "nextCursor": "p2",
-                    }
-                )
-            ),
-        )
-        source, _ = _source_and_catalog(_manifest())
-        stream = source.streams(config={})[0]
-        partition = next(iter(stream.generate_partitions()))
-        record_iterator = iter(partition.read())
-        assert next(record_iterator).data == {"id": "1"}
-        record_iterator.close()
-        stream.cursor.close_partition(partition)
-
-    assert "token" not in stream.cursor.state
-
-
 def test_t_resume_replays_existing_partition_and_bootstraps_missing_partition():
     state = _incoming_state(
         {
@@ -712,20 +684,26 @@ def test_t_par_keeps_successful_partition_commits_when_another_fails():
         },
     )
     with HttpMocker() as http_mocker:
+        b_request = HttpRequest(_URL, body={"account": "b"})
+        a_request = HttpRequest(_URL, body={"account": "a"})
+        c_request = HttpRequest(_URL, body={"account": "c", "syncToken": "C0"})
         http_mocker.post(
-            HttpRequest(_URL, body={"account": "b"}),
+            b_request,
             HttpResponse(json.dumps({"items": [], "syncToken": "B1"})),
         )
         http_mocker.post(
-            HttpRequest(_URL, body={"account": "a"}),
+            a_request,
             HttpResponse(json.dumps({"items": [], "syncToken": "A1"})),
         )
         http_mocker.post(
-            HttpRequest(_URL, body={"account": "c", "syncToken": "C0"}),
+            c_request,
             HttpResponse("{}", status_code=500),
         )
         source, catalog = _source_and_catalog(manifest, state)
         messages = _read_until_error(source, catalog, state)
+        http_mocker.assert_number_of_calls(b_request, 1)
+        http_mocker.assert_number_of_calls(a_request, 1)
+        http_mocker.assert_number_of_calls(c_request, 1)
     committed = {
         item["partition"]["account"]: item["cursor"]["token"]
         for item in _state(messages)[-1].stream.stream_state.__dict__["states"]

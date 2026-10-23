@@ -91,10 +91,6 @@ class DefaultStream(AbstractStream):
             stream.is_resumable = True
             stream.supported_sync_modes.append(SyncMode.incremental)
             stream.default_cursor_field = []
-        if self._source_defined_incremental and self._cursor_field:
-            stream.source_defined_cursor = True
-            stream.is_resumable = True
-
         keys = self._primary_key
         if keys and len(keys) > 0:
             stream.source_defined_primary_key = [[key] for key in keys]
@@ -128,11 +124,9 @@ class DefaultStream(AbstractStream):
         if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
             return None
         stream_slicer = self._stream_partition_generator._stream_slicer
-        if isinstance(stream_slicer, SyncTokenCursor):
-            return stream_slicer._partition_router
-        if not isinstance(stream_slicer, ConcurrentPerPartitionCursor):
-            return None
-        return stream_slicer._partition_router
+        if isinstance(stream_slicer, (SyncTokenCursor, ConcurrentPerPartitionCursor)):
+            return stream_slicer.partition_router
+        return None
 
     def check_availability(self) -> StreamAvailability:
         """

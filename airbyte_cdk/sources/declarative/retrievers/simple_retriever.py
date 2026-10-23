@@ -86,6 +86,8 @@ _MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
 
 @dataclass(frozen=True)
 class PageCompleted:
+    """Describe a completed response page observed by an incremental cursor."""
+
     stream_slice: StreamSlice
     response: requests.Response
     pagination_exhausted: bool
@@ -128,6 +130,8 @@ class SimpleRetriever(Retriever):
         request_window_splitter: Bound method - normally the stream's own cursor's `split_request_window` -
             asked to replace a failing `StreamSlice` with smaller children. `None` has the same effect as
             `request_window_splitting` being `None`.
+        page_observer (Optional[Callable[[PageCompleted], None]]): Observes completed response pages; set
+            only on streams using `SyncTokenCursor` and `None` otherwise.
     """
 
     requester: Requester
