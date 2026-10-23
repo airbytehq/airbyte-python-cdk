@@ -442,6 +442,11 @@ class ConcurrentDeclarativeSource(Source):
         In both case, we will assume that calling the DeclarativeStream is perfectly fine as the result for these is the same regardless of if it is a DeclarativeStream or a DefaultStream (concurrent). This should simply be removed once we have moved away from the mentioned code paths above.
         """
 
+        self._prepare_for_stream_build()
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
+        return self._create_streams(stream_configs, stream_configs)
+
+    def _prepare_for_stream_build(self) -> None:
         if self._spec_component:
             self._spec_component.validate_config(self._config_for_validation)
 
@@ -449,9 +454,14 @@ class ConcurrentDeclarativeSource(Source):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, self._config)
 
-        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
-
-        prepared_configs = self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
+    def _create_streams(
+        self,
+        selected_configs: List[Dict[str, Any]],
+        all_configs: List[Dict[str, Any]],
+    ) -> List[AbstractStream]:
+        prepared_configs = self._initialize_cache_for_parent_streams(
+            deepcopy(selected_configs), all_stream_configs=all_configs
+        )
 
         source_streams = [
             self._constructor.create_component(
@@ -467,11 +477,62 @@ class ConcurrentDeclarativeSource(Source):
             for stream_config in prepared_configs
         ]
 
-        self._apply_stream_groups(source_streams)
+        top_level_stream_names: Set[str] = set()
+        for stream_config in all_configs:
+            stream_name = stream_config.get("name")
+            if isinstance(stream_name, str):
+                top_level_stream_names.add(stream_name)
+        self._apply_stream_groups(source_streams, top_level_stream_names)
 
         return source_streams
 
-    def _apply_stream_groups(self, streams: List[AbstractStream]) -> None:
+    def _uses_default_streams(self) -> bool:
+        """A subclass that overrides `streams()` must keep going through it during check."""
+        return type(self).streams is ConcurrentDeclarativeSource.streams
+
+    def _streams_by_name(self, stream_names: List[str]) -> Optional[List[AbstractStream]]:
+        """Build the named static streams plus every dynamic stream.
+
+        Return None when the names are empty, any name isn't static, or `streams()` is overridden.
+        """
+        if not self._uses_default_streams():
+            return None
+        try:
+            static_configs = self._stream_configs(self._source_config)
+        except Exception:
+            return None
+        static_stream_names = {stream_config.get("name") for stream_config in static_configs}
+        if not stream_names or any(name not in static_stream_names for name in stream_names):
+            return None
+
+        self._prepare_for_stream_build()
+        dynamic_configs = self.dynamic_streams
+        selected_names = set(stream_names)
+        selected_configs = [
+            stream_config
+            for stream_config in static_configs
+            if stream_config.get("name") in selected_names
+        ] + dynamic_configs
+        return self._create_streams(selected_configs, static_configs + dynamic_configs)
+
+    def _first_streams(self, count: int) -> Optional[List[AbstractStream]]:
+        """Build the first `count` streams, static then dynamic, in `streams()` order.
+
+        `count` must be at least 1. Return None when `streams()` is overridden.
+        """
+        if not self._uses_default_streams():
+            return None
+        if count < 1:
+            raise ValueError("count must be >= 1")
+        self._prepare_for_stream_build()
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
+        return self._create_streams(stream_configs[:count], stream_configs)
+
+    def _apply_stream_groups(
+        self,
+        streams: List[AbstractStream],
+        top_level_stream_names: Optional[Set[str]] = None,
+    ) -> None:
         """Set block_simultaneous_read on streams based on the manifest's stream_groups config.
 
         Iterates over the resolved manifest's stream_groups and matches group membership
@@ -494,10 +555,15 @@ class ConcurrentDeclarativeSource(Source):
         # Validate no stream shares a group with any of its ancestor streams
         stream_name_to_instance: Dict[str, AbstractStream] = {s.name: s for s in streams}
 
-        def _collect_all_ancestor_names(stream_name: str) -> Set[str]:
+        def _collect_all_ancestor_names(
+            stream_name: str, inline_instance: Optional[AbstractStream] = None
+        ) -> Set[str]:
             """Recursively collect all ancestor stream names."""
             ancestors: Set[str] = set()
             inst = stream_name_to_instance.get(stream_name)
+            if inst is None and stream_name in (top_level_stream_names or set()):
+                # A top-level stream that this call did not build: walk the copy inlined in the child
+                inst = inline_instance
             if not isinstance(inst, DefaultStream):
                 return ancestors
             partition_router = inst.get_partition_router()
@@ -514,7 +580,9 @@ class ConcurrentDeclarativeSource(Source):
                     for parent_config in router.parent_stream_configs:
                         parent_name = parent_config.stream.name
                         ancestors.add(parent_name)
-                        ancestors.update(_collect_all_ancestor_names(parent_name))
+                        ancestors.update(
+                            _collect_all_ancestor_names(parent_name, parent_config.stream)
+                        )
             return ancestors
 
         for stream in streams:
@@ -535,8 +603,36 @@ class ConcurrentDeclarativeSource(Source):
                 stream.block_simultaneous_read = stream_name_to_group[stream.name]
 
     @staticmethod
+    def _parent_stream_names(stream_configs: List[Dict[str, Any]]) -> Set[str]:
+        parent_stream_names: Set[str] = set()
+        for stream_config in stream_configs:
+            parent_stream = stream_config.get("incremental_sync", {}).get("parent_stream")
+            if parent_stream:
+                parent_stream_names.add(parent_stream["name"])
+            elif stream_config.get("retriever", {}).get("partition_router", {}):
+                partition_router = stream_config["retriever"]["partition_router"]
+                routers = (
+                    list(partition_router)
+                    if isinstance(partition_router, list)
+                    else [partition_router]
+                )
+                while routers:
+                    router = routers.pop()
+                    if not isinstance(router, dict):
+                        continue
+                    parent_stream_names.update(
+                        parent_config["stream"]["name"]
+                        for parent_config in router.get("parent_stream_configs") or []
+                    )
+                    routers.extend(router.get("partition_routers") or [])
+                    if router.get("underlying_partition_router"):
+                        routers.append(router["underlying_partition_router"])
+        return parent_stream_names
+
+    @staticmethod
     def _initialize_cache_for_parent_streams(
         stream_configs: List[Dict[str, Any]],
+        all_stream_configs: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """Enable caching for parent streams unless explicitly disabled.
 
@@ -545,7 +641,10 @@ class ConcurrentDeclarativeSource(Source):
         settings are respected for streams that cannot use caching (e.g., scroll-based pagination
         APIs where caching causes duplicate records).
         """
-        parent_streams = set()
+        parent_streams = ConcurrentDeclarativeSource._parent_stream_names(stream_configs)
+        parent_streams.update(
+            ConcurrentDeclarativeSource._parent_stream_names(all_stream_configs or [])
+        )
 
         def _set_cache_if_not_disabled(requester: Dict[str, Any]) -> None:
             """Set use_cache to True only if not explicitly disabled."""
@@ -556,7 +655,6 @@ class ConcurrentDeclarativeSource(Source):
             parent_configs: list[dict[str, Any]],
         ) -> None:
             for parent_config in parent_configs:
-                parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["type"] == "StateDelegatingStream":
                     _set_cache_if_not_disabled(
                         parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"]
@@ -569,7 +667,6 @@ class ConcurrentDeclarativeSource(Source):
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
-                parent_streams.add(stream_config["incremental_sync"]["parent_stream"]["name"])
                 _set_cache_if_not_disabled(
                     stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"]
                 )
