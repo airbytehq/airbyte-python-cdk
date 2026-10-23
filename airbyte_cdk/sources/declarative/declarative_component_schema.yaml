@@ -1428,6 +1428,69 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  SyncTokenCursor:
+    title: Sync Token Cursor
+    description: >-
+      Incremental sync driven by a sync token that the API returns at the end of a pagination
+      pass. The token is opaque. It is committed to state only after the pass's records are
+      emitted and sent back on the next sync. Tokens are never parsed, compared or derived
+      from records.
+    type: object
+    required: [type, token_path, token_option]
+    additionalProperties: true
+    properties:
+      type:
+        type: string
+        enum: [SyncTokenCursor]
+      token_path:
+        title: Token Path
+        description: >-
+          Path to the next token in the decoded response that ends a pagination pass. The
+          value must be a string or an integer, and is stored and sent as a string. A missing,
+          null or empty value means the response carried no token.
+        type: array
+        items:
+          type: string
+        interpolation_context: [config]
+        examples:
+          - ["syncToken"]
+          - ["nextSyncToken"]
+          - ["meta", "sync_token"]
+      token_option:
+        title: Send Token In
+        description: >-
+          Where to send the stored token on each request of a pass: the JSON body, the query
+          string, a header or the form body.
+        "$ref": "#/definitions/RequestOption"
+      completion_condition:
+        title: Completion Condition
+        description: >-
+          Must be true on the last response of a pass for its token to be committed. Defaults
+          to a token being present at token_path. Set it when the API repeats the old token on
+          intermediate pages or returns a position on every page.
+        type: string
+        interpolation_context: [config, headers, response, stream_partition, stream_slice]
+        examples:
+          - "{{ not response.moreDataAvailable }}"
+      initial_token:
+        title: Initial Token
+        description: >-
+          Value to send when no token is stored, for an API that needs one to start a full
+          pass, such as Todoist's "*". When unset, nothing is sent.
+        type: string
+        interpolation_context: [config]
+        examples: ["*"]
+      cursor_field:
+        title: Destination Cursor Field
+        description: >-
+          Optional top-level record field advertised as the stream's cursor, so destinations
+          can order versions of a record when deduplicating. It is never used to filter
+          records or to build state.
+        type: string
+        interpolation_context: [config]
+      $parameters:
+        type: object
+        additionalProperties: true
   JwtAuthenticator:
     title: JWT Authenticator
     description: Authenticator for requests using JWT authentication flow.
@@ -1845,6 +1908,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
+          - "$ref": "#/definitions/SyncTokenCursor"
       primary_key:
         title: Primary Key
         "$ref": "#/definitions/PrimaryKey"
