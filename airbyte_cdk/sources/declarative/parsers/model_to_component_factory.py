@@ -2199,7 +2199,7 @@ class ModelToComponentFactory:
                 PerPartitionRequestOptionsProvider(
                     partition_router, sync_token_request_options_provider
                 )
-                if isinstance(concurrent_cursor, SyncTokenCursor) and concurrent_cursor._partitioned
+                if isinstance(concurrent_cursor, SyncTokenCursor) and concurrent_cursor.partitioned
                 else sync_token_request_options_provider
             )
         elif model.incremental_sync and isinstance(
@@ -2358,7 +2358,11 @@ class ModelToComponentFactory:
             "global_substream_cursor",
             "clamping",
         }
-        unsupported = sorted(datetime_only_keys.intersection(cursor_model.__dict__))
+        unsupported = sorted(
+            datetime_only_keys.intersection(cursor_model.__dict__).difference(
+                cursor_model.parameters or {}
+            )
+        )
         if unsupported:
             raise ValueError(
                 f"Stream {stream_name}: SyncTokenCursor does not support datetime-only setting(s): "
@@ -2372,7 +2376,7 @@ class ModelToComponentFactory:
         if isinstance(retriever_model, CustomRetrieverModel):
             LOGGER.warning(
                 "Stream %s: CustomRetriever does not expose response pages to SyncTokenCursor; "
-                "no change token will be captured.",
+                "no sync token will be captured.",
                 stream_name,
             )
 
@@ -2622,9 +2626,20 @@ class ModelToComponentFactory:
         decoder_model = getattr(retriever_model, "decoder", None)
         decoder = (
             self._create_component_from_model(model=decoder_model, config=config)
-            if decoder_model
+            if isinstance(decoder_model, BaseModel)
             else JsonDecoder(parameters={})
         )
+        if self._decoder_streams_in_production(decoder):
+            raise AirbyteTracedException(
+                message=f"Stream {stream_name}: SyncTokenCursor is not supported with a streaming decoder.",
+                internal_message=(
+                    f"Stream {stream_name} uses {type(decoder).__name__}, which streams the response "
+                    f"and can only read it once. SyncTokenCursor reads the token from the response "
+                    f"after the record selector has consumed it. Use a non-streaming decoder such "
+                    f"as JsonDecoder or XmlDecoder."
+                ),
+                failure_type=FailureType.config_error,
+            )
         return SyncTokenCursor(
             stream_name=stream_name,
             stream_namespace=None,
@@ -2637,7 +2652,13 @@ class ModelToComponentFactory:
             config=config or {},
             parameters=model.parameters or {},
             completion_condition=model.completion_condition,
-            cursor_field=model.cursor_field,
+            cursor_field=(
+                InterpolatedString.create(
+                    model.cursor_field, parameters=model.parameters or {}
+                ).eval(config=config)
+                if model.cursor_field
+                else None
+            ),
         )
 
     def create_default_error_handler(
@@ -2739,6 +2760,20 @@ class ModelToComponentFactory:
             decoder.parser, (CsvParser, JsonLineParser, JsonItemsParser, GzipParser)
         )
 
+    def _decoder_streams_in_production(self, decoder: Decoder) -> bool:
+        """Can this decoder read a response body only once in production?
+
+        True for decoders that stream (`is_stream_response()`), and, in the Connector Builder, for
+        the buffered stand-ins it builds for them (`_is_decoder_downgraded_by_connector_builder`).
+        """
+        inner_decoder = (
+            decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
+        )
+        return inner_decoder.is_stream_response() or (
+            self._emit_connector_builder_messages
+            and self._is_decoder_downgraded_by_connector_builder(inner_decoder)
+        )
+
     def _reject_combined_extractor_over_streaming_decoder(self, decoder: Optional[Decoder]) -> None:
         """Refuse to build a `CombinedExtractor` whose response body can only be read once.
 
@@ -2752,17 +2787,11 @@ class ModelToComponentFactory:
         read can be replayed, which would let a manifest look correct in the Builder and lose
         records once published. The downgraded decoders are therefore rejected in the Builder too.
         """
-        if decoder is None:
+        if decoder is None or not self._decoder_streams_in_production(decoder):
             return
         inner_decoder = (
             decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
         )
-        streams_in_production = inner_decoder.is_stream_response() or (
-            self._emit_connector_builder_messages
-            and self._is_decoder_downgraded_by_connector_builder(inner_decoder)
-        )
-        if not streams_in_production:
-            return
         raise AirbyteTracedException(
             message="CombinedExtractor is not supported with a streaming decoder.",
             internal_message=(
@@ -3955,7 +3984,7 @@ class ModelToComponentFactory:
             )
 
         decoder = (
-            cursor._decoder
+            cursor.decoder
             if isinstance(cursor, SyncTokenCursor)
             else (
                 self._create_component_from_model(model=model.decoder, config=config)
@@ -4035,15 +4064,6 @@ class ModelToComponentFactory:
                 model=model.requester.query_properties,
                 stream_name=name,
                 config=config,
-            )
-
-        if (
-            isinstance(cursor, SyncTokenCursor)
-            and query_properties
-            and query_properties.property_chunking
-        ):
-            raise ValueError(
-                f"Stream {name}: query property chunking is not supported with SyncTokenCursor."
             )
 
         requester = self._create_component_from_model(
@@ -4800,6 +4820,12 @@ class ModelToComponentFactory:
                         f"Stream '{model.name}' uses IncrementingCountCursor which is not supported "
                         f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
                         f"cursors, so cursor age validation cannot be performed."
+                    )
+                if isinstance(stream_model.incremental_sync, SyncTokenCursorModel):
+                    raise ValueError(
+                        f"Stream '{model.name}' uses SyncTokenCursor which is not supported "
+                        f"with api_retention_period. A sync token has no datetime cursor, so "
+                        f"cursor age validation cannot be performed."
                     )
 
         stream_state = self._connector_state_manager.get_stream_state(model.name, None)

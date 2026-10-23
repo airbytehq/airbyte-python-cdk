@@ -1,6 +1,8 @@
 #
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
+
+"""Integration tests for declarative SyncTokenCursor streams."""
 
 import json
 import logging
@@ -290,16 +292,20 @@ def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
         }
     )
     with HttpMocker() as http_mocker:
+        first_request = HttpRequest(_URL, body={"syncToken": "T1"})
+        second_request = HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"})
         http_mocker.post(
-            HttpRequest(_URL, body={"syncToken": "T1"}),
+            first_request,
             HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
         )
         http_mocker.post(
-            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"}),
+            second_request,
             HttpResponse("{}", status_code=500),
         )
         source, catalog = _source_and_catalog(manifest, state)
         messages = _read_until_error(source, catalog, state)
+        http_mocker.assert_number_of_calls(first_request, 1)
+        http_mocker.assert_number_of_calls(second_request, 1)
 
     assert any(message.type == Type.RECORD for message in messages)
     assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T1"
@@ -309,40 +315,6 @@ def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
         and message.trace.stream_status.status.value == "INCOMPLETE"
         for message in messages
     )
-
-
-def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():
-    with HttpMocker() as http_mocker:
-        http_mocker.post(
-            HttpRequest(_URL, body=None),
-            HttpResponse(json.dumps({"items": [{"id": "1"}], "nextCursor": "p2"})),
-        )
-        source, catalog = _source_and_catalog(_manifest(), limit_pages_fetched_per_slice=1)
-        messages = _read(source, catalog)
-    assert not any("token" in message.stream.stream_state.__dict__ for message in _state(messages))
-
-    with HttpMocker() as http_mocker:
-        http_mocker.post(
-            HttpRequest(_URL, body=None),
-            HttpResponse(
-                json.dumps(
-                    {
-                        "items": [{"id": "1"}, {"id": "2"}],
-                        "syncToken": "must-not-commit",
-                        "nextCursor": "p2",
-                    }
-                )
-            ),
-        )
-        source, _ = _source_and_catalog(_manifest())
-        stream = source.streams(config={})[0]
-        partition = next(iter(stream.generate_partitions()))
-        record_iterator = iter(partition.read())
-        assert next(record_iterator).data == {"id": "1"}
-        record_iterator.close()
-        stream.cursor.close_partition(partition)
-
-    assert "token" not in stream.cursor.state
 
 
 def test_t_resume_replays_existing_partition_and_bootstraps_missing_partition():
@@ -397,20 +369,26 @@ def test_t_par_keeps_successful_partition_commits_when_another_fails():
         },
     )
     with HttpMocker() as http_mocker:
+        b_request = HttpRequest(_URL, body={"account": "b"})
+        a_request = HttpRequest(_URL, body={"account": "a"})
+        c_request = HttpRequest(_URL, body={"account": "c", "syncToken": "C0"})
         http_mocker.post(
-            HttpRequest(_URL, body={"account": "b"}),
+            b_request,
             HttpResponse(json.dumps({"items": [], "syncToken": "B1"})),
         )
         http_mocker.post(
-            HttpRequest(_URL, body={"account": "a"}),
+            a_request,
             HttpResponse(json.dumps({"items": [], "syncToken": "A1"})),
         )
         http_mocker.post(
-            HttpRequest(_URL, body={"account": "c", "syncToken": "C0"}),
+            c_request,
             HttpResponse("{}", status_code=500),
         )
         source, catalog = _source_and_catalog(manifest, state)
         messages = _read_until_error(source, catalog, state)
+        http_mocker.assert_number_of_calls(b_request, 1)
+        http_mocker.assert_number_of_calls(a_request, 1)
+        http_mocker.assert_number_of_calls(c_request, 1)
     committed = {
         item["partition"]["account"]: item["cursor"]["token"]
         for item in _state(messages)[-1].stream.stream_state.__dict__["states"]

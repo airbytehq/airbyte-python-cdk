@@ -1487,6 +1487,7 @@ definitions:
           can order versions of a record when deduplicating. It is never used to filter
           records or to build state.
         type: string
+        interpolation_context: [config]
       $parameters:
         type: object
         additionalProperties: true
