@@ -4,7 +4,7 @@
 
 """The shipped manifest schema has to parse, and only 194 unrelated failures said so.
 
-`_get_declarative_component_schema()` runs before any low-code source is built, so a malformed
+`get_declarative_component_schema()` runs before any low-code source is built, so a malformed
 `declarative_component_schema.yaml` fails every declarative connector at startup. It is also easy
 to break from a documentation edit alone: the descriptions are plain YAML scalars, so a `": "` in
 prose ends the scalar and the file stops being a mapping. That happened in this file's history and
@@ -12,18 +12,21 @@ surfaced as 194 unrelated test failures rather than as one obvious error -- the 
 at the wrong layer and with unreadable output. What these guards add is not coverage but a named
 failure in milliseconds.
 
-Two guards, because the two ways prose breaks a plain scalar look nothing alike. A `": "` is loud:
-the file stops parsing, so loading it is enough to catch it. A `" #"` is silent: YAML reads the
-rest of the line as a comment, the value keeps parsing as a shorter string, and nothing in the
+Three guards, because the two ways prose breaks a plain scalar look nothing alike. A `": "` is
+loud: the file stops parsing, so loading it is enough to catch it. A `" #"` is silent: YAML reads
+the rest of the line as a comment, the value keeps parsing as a shorter string, and nothing in the
 parsed tree records that a sentence went missing. Only the source text knows, so the second guard
-reads that instead of the loaded schema.
+reads that instead of the loaded schema. The third validates the parsed schema against Draft 7,
+since `_validate_source` checks it only when a manifest fails validation.
 """
 
 import pkgutil
 import re
 
+from jsonschema.validators import Draft7Validator, validator_for
+
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
-    _get_declarative_component_schema,
+    get_declarative_component_schema,
 )
 
 # A plain scalar is one not opened with a quote, a block indicator or a flow collection, and it is
@@ -45,10 +48,18 @@ _SCANS = (
 
 
 def test_the_shipped_component_schema_parses():
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
 
     assert schema["title"] == "DeclarativeSource"
     assert "HttpRequester" in schema["definitions"]
+
+
+def test_the_shipped_component_schema_is_a_valid_draft_7_schema():
+    """`_validate_source` runs `check_schema` only when a manifest fails validation, so a malformed schema that still accepts manifests is caught only here."""
+    schema = get_declarative_component_schema()
+    validator_class = validator_for(schema)
+    assert validator_class is Draft7Validator
+    validator_class.check_schema(schema)
 
 
 def test_no_plain_scalar_carries_yaml_punctuation():

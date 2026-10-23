@@ -20,6 +20,15 @@ RUN poetry config virtualenvs.create false \
 # Build and install the package
 RUN pip install dist/*.whl
 
+# pandas is imported lazily by the CDK, so verify it is importable at build time
+RUN python -c "import pandas"
+
+# Precompile bytecode for installed packages, skipping test directories. `poetry install` does not
+# compile it, and the runtime `airbyte` user cannot write to the root-owned site-packages, so without
+# this every connector process recompiles its dependencies on start.
+RUN python -m compileall -q -j 0 -x '/tests?/' /usr/local/lib/python3.13/site-packages \
+    || echo "WARNING: some files failed to compile (see errors above); continuing without their bytecode"
+
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
     && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \

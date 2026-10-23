@@ -189,6 +189,7 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
     WaitTimeFromHeaderBackoffStrategy,
+    WaitTimeFromResponseBackoffStrategy,
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
@@ -2895,6 +2896,44 @@ requester:
     backoff_strategy = requester.error_handler.backoff_strategies[0]
     assert isinstance(backoff_strategy, expected_backoff_strategy_type)
     assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
+
+
+def test_create_requester_with_wait_time_from_response_strategy():
+    content = """
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  url_base: "https://api.sendgrid.com"
+  error_handler:
+    backoff_strategies:
+      - type: WaitTimeFromResponse
+        wait_time_in_seconds: "{{ response[parameters.wait_field] }}"
+        max_waiting_time_in_seconds: 30
+        $parameters:
+          wait_field: retry_after_seconds
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester.error_handler, DefaultErrorHandler)
+    backoff_strategy = requester.error_handler.backoff_strategies[0]
+    assert isinstance(backoff_strategy, WaitTimeFromResponseBackoffStrategy)
+    assert backoff_strategy.max_waiting_time_in_seconds == 30
+    rate_limited = requests.Response()
+    rate_limited.status_code = 429
+    rate_limited._content = b'{"retry_after_seconds": 12}'
+    assert backoff_strategy.backoff_time(rate_limited, 1) == 12
 
 
 @pytest.mark.parametrize(

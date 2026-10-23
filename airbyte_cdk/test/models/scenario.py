@@ -17,12 +17,12 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from airbyte_cdk.test.models.outcome import ExpectedOutcome
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Mapping
+    from collections.abc import Generator, Iterable, Mapping
 
 
 ScenarioCommand = Literal["spec", "check", "discover", "read"]
@@ -63,6 +63,124 @@ ALL_COMMANDS: frozenset[ScenarioCommand] = frozenset(
 )
 """Every command; what a scenario built by hand (no `sections`) runs."""
 
+_NO_RECORD_COMPARISON = (
+    "it configured the Connector Acceptance Tests' comparison of the records read against "
+    "recorded ones, which the standard tests do not run"
+)
+
+REMOVED_ENTRY_KEYS: Mapping[str, str] = MappingProxyType(
+    {
+        "expect_records": _NO_RECORD_COMPARISON,
+        "exact_order": _NO_RECORD_COMPARISON,
+        "ignored_fields": (
+            "it listed the fields the Connector Acceptance Tests skipped when they compared "
+            "records, against `expect_records` or between two consecutive full-refresh reads; "
+            "the standard tests run neither comparison"
+        ),
+        "fail_on_extra_columns": (
+            "the Connector Acceptance Tests accepted it but never enforced it, and the standard "
+            "tests have no such check"
+        ),
+        "timeout_seconds": "the standard tests have no per-config timeout",
+        "file_types": "the standard tests have no check that every supported file type is read",
+    }
+)
+"""Keys an `acceptance-test-config.yml` entry can no longer set, with why they are not read.
+
+They configured checks of the retired Connector Acceptance Tests (CAT) that the standard tests do
+not run. `ConnectorTestScenario` declared some of them and ignored them; an entry that still sets
+one is now rejected, so a config cannot look like it asks for a check that never runs.
+"""
+
+LEGACY_ENTRY_KEYS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "spec": frozenset({"spec_path", "backward_compatibility_tests_config", "deployment_mode"}),
+        "connection": frozenset({"deployment_mode"}),
+        "discovery": frozenset({"backward_compatibility_tests_config"}),
+        "basic_read": frozenset(
+            {
+                "client_container_config",
+                "expect_trace_message_on_failure",
+                "validate_state_messages",
+            }
+        ),
+        "full_refresh": frozenset({"client_container_config"}),
+    }
+)
+"""CAT keys that an entry of each section may still set, although the scenario does not read them.
+
+`backward_compatibility_tests_config` of a `spec` entry is read from the file itself by the spec
+backward-compatibility test (`disable_for_version`). The others configure CAT checks that have no
+standard-test counterpart yet, and connectors still set them. They are accepted, and dropped, only
+in the section CAT read them from. Every other key that is not a field of `ConnectorTestScenario`
+is rejected (see `entry_key_problems`).
+"""
+
+
+POPULATED_FIELDS: Mapping[str, str] = MappingProxyType(
+    {
+        "sections": "the standard tests set it from the section that lists the entry",
+        "test_strictness_level": (
+            "it is read only at the top level of `acceptance-test-config.yml`"
+        ),
+    }
+)
+"""Fields of `ConnectorTestScenario` that `get_scenarios()` fills in, so an entry cannot set them.
+
+An entry that set one would be overwritten without a word, so it is rejected, with the reason.
+"""
+
+
+def entry_key_problems(
+    entry: Mapping[str, Any],
+    sections: Iterable[str],
+    *,
+    from_file: bool = True,
+) -> list[str]:
+    """Return one message per key of an `acceptance-test-config.yml` entry that is not accepted.
+
+    An entry may set the fields of `ConnectorTestScenario`, except the `POPULATED_FIELDS`, and the
+    `LEGACY_ENTRY_KEYS` of the section that lists it. A key of `REMOVED_ENTRY_KEYS` is reported as
+    no longer read, and a key of `POPULATED_FIELDS` as not an entry key, with the reason; any
+    other key as unknown. Each message names the key, the section and the entry's `config_path`,
+    never a value.
+
+    `from_file=False` checks the data a scenario is built from (by `get_scenarios()` or by hand),
+    where the `POPULATED_FIELDS` are accepted.
+    """
+    sections = tuple(sections)
+    accepted = set(ConnectorTestScenario.model_fields)
+    if from_file:
+        accepted -= set(POPULATED_FIELDS)
+    for section in sections:
+        accepted |= LEGACY_ENTRY_KEYS.get(section, frozenset())
+    where = (f"the `{'`/`'.join(sections)}` entry" if sections else "the scenario") + (
+        f" for config `{entry['config_path']}`"
+        if entry.get("config_path")
+        else " without a `config_path`"
+    )
+    listed = sorted(accepted - set(POPULATED_FIELDS))
+
+    problems: list[str] = []
+    for key in entry:
+        if key in accepted:
+            continue
+        if key in REMOVED_ENTRY_KEYS:
+            problems.append(
+                f"`{key}` in {where} is no longer read: {REMOVED_ENTRY_KEYS[key]}. Remove the key."
+            )
+        elif key in POPULATED_FIELDS:
+            problems.append(
+                f"`{key}` in {where} is not an entry key: {POPULATED_FIELDS[key]}. "
+                "Remove it from the entry."
+            )
+        else:
+            problems.append(
+                f"`{key}` in {where} is not a key the standard tests read. Remove it, or fix "
+                f"its spelling (accepted: {', '.join(f'`{k}`' for k in listed)})."
+            )
+    return problems
+
 
 class ConnectorTestScenario(BaseModel):
     """Acceptance test scenario, as a Pydantic model.
@@ -70,21 +188,22 @@ class ConnectorTestScenario(BaseModel):
     This class represents an acceptance test scenario, which is a single test case
     that can be run against a connector. It is used to deserialize and validate the
     acceptance test configuration file.
+
+    Every field is read by the standard tests (a unit test enforces it). An entry that sets a key
+    that is not a field is rejected, except for the `LEGACY_ENTRY_KEYS` of its section; a key the
+    standard tests used to accept and ignore is reported as no longer read (`REMOVED_ENTRY_KEYS`).
+    `get_scenarios()` also rejects an entry that sets one of the `POPULATED_FIELDS`, which it fills
+    in itself.
     """
 
     # Allows the class to be hashable, which PyTest will require
     # when we use to parameterize tests.
-    model_config = ConfigDict(frozen=True)
-
-    class AcceptanceTestExpectRecords(BaseModel):
-        path: Path
-        exact_order: bool = False
-
-    class AcceptanceTestFileTypes(BaseModel):
-        skip_test: bool
-        bypass_reason: str
+    # `hide_input_in_errors`: a validation error must not print config values.
+    model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
     class AcceptanceTestEmptyStream(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         name: str
         bypass_reason: str | None = None
 
@@ -99,10 +218,10 @@ class ConnectorTestScenario(BaseModel):
 
     configured_catalog_path: Path | None = None
     empty_streams: list[AcceptanceTestEmptyStream] | None = None
-    timeout_seconds: int | None = None
-    expect_records: AcceptanceTestExpectRecords | None = None
-    file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
+    # Why the entry tests nothing. Read by the zero-scenario rule (a connector without test
+    # scenarios must declare why, airbyte-internal-issues#17131), which is not implemented yet.
+    bypass_reason: str | None = None
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
     # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
@@ -111,6 +230,21 @@ class ConnectorTestScenario(BaseModel):
     # The sections of `acceptance-test-config.yml` that list this config. Populated by
     # `get_scenarios()`; empty for scenarios built by hand, which run every command.
     sections: tuple[str, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_keys_not_read(cls, data: Any) -> Any:
+        """Reject keys that are not read, and drop the `LEGACY_ENTRY_KEYS` of the entry's section."""
+        if not isinstance(data, dict):
+            return data
+        sections = data.get("sections") or ()
+        if isinstance(sections, str):
+            sections = (sections,)
+        problems = entry_key_problems(data, sections, from_file=False)
+        if problems:
+            raise ValueError("\n".join(problems))
+        legacy = {key for section in sections for key in LEGACY_ENTRY_KEYS.get(section, ())}
+        return {key: value for key, value in data.items() if key not in legacy}
 
     @field_validator("sections")
     @classmethod
