@@ -614,6 +614,7 @@ class Action(Enum):
     RETRY = "RETRY"
     IGNORE = "IGNORE"
     RESET_PAGINATION = "RESET_PAGINATION"
+    RESET_SYNC_TOKEN = "RESET_SYNC_TOKEN"
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
     REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
@@ -637,6 +638,7 @@ class HttpResponseFilter(BaseModel):
             "RETRY",
             "IGNORE",
             "RESET_PAGINATION",
+            "RESET_SYNC_TOKEN",
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
             "REDUCE_PAGE_SIZE",

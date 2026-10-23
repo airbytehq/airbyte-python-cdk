@@ -13,6 +13,7 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
+    FailureType,
     SyncMode,
     Type,
 )
@@ -215,6 +216,43 @@ def _incoming_state(stream_state):
     return [state_manager.create_state_message("events", None).state]
 
 
+def _reset_error_handler(*, reduce_page_size=False, pagination_reset=False):
+    response_filters = []
+    if reduce_page_size:
+        response_filters.append(
+            {
+                "type": "HttpResponseFilter",
+                "action": "REDUCE_PAGE_SIZE",
+                "http_codes": [413],
+                "error_message": "page too large",
+            }
+        )
+    response_filters.append(
+        {
+            "type": "HttpResponseFilter",
+            "action": "RESET_SYNC_TOKEN",
+            "predicate": "{{ response.get('success') == false }}",
+            "error_message": "Ashby rejected the stored change token (sync_token_expired)",
+        }
+    )
+    if pagination_reset:
+        response_filters.append(
+            {
+                "type": "HttpResponseFilter",
+                "action": "RESET_PAGINATION",
+                "http_codes": [400],
+                "failure_type": "system_error",
+                "error_message": "The page cursor expired",
+            }
+        )
+    return {
+        "type": "DefaultErrorHandler",
+        "max_retries": 0,
+        "backoff_strategies": [],
+        "response_filters": response_filters,
+    }
+
+
 def test_t_boot_commits_after_three_pages_and_records():
     with HttpMocker() as http_mocker:
         http_mocker.post(
@@ -309,6 +347,283 @@ def test_t_fail_preserves_committed_token_and_emits_incomplete_status():
         and message.trace.stream_status.status.value == "INCOMPLETE"
         for message in messages
     )
+
+
+def test_t_reset_restarts_without_token_and_commits_terminal_token(caplog):
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
+    manifest = _manifest(error_handler=_reset_error_handler())
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            HttpResponse(json.dumps({"items": [{"id": "old-1"}], "nextCursor": "old-p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "old-p2"}),
+            HttpResponse(json.dumps({"items": [{"id": "old-2"}], "nextCursor": "old-p3"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "old-p3"}),
+            HttpResponse(json.dumps({"success": False, "error": "sync_token_expired"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(json.dumps({"items": [{"id": "new-1"}], "nextCursor": "new-p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "new-p2"}),
+            HttpResponse(json.dumps({"items": [{"id": "new-2"}], "syncToken": "T2"})),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read(source, catalog, state)
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [
+        "old-1",
+        "old-2",
+        "new-1",
+        "new-2",
+    ]
+    assert len(_state(messages)) == 1
+    assert _state(messages)[0].stream.stream_state.__dict__["token"] == "T2"
+    assert (
+        "Ashby rejected the stored change token (sync_token_expired); reading this stream in full."
+        in caplog.text
+    )
+    assert "2 records read earlier in this attempt may be emitted again." in caplog.text
+
+
+def test_t_reset_context_is_fresh_after_page_size_reduction(caplog):
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
+    manifest = _manifest(error_handler=_reset_error_handler(reduce_page_size=True))
+    stream = manifest["streams"][0]
+    stream["retriever"]["paginator"]["page_size_option"] = {
+        "type": "RequestOption",
+        "field_name": "pageSize",
+        "inject_into": "body_json",
+    }
+    stream["retriever"]["paginator"]["pagination_strategy"]["page_size"] = 8
+    stream["retriever"]["page_size_reduction"] = {
+        "type": "PageSizeReduction",
+        "minimum_page_size": 1,
+        "backoff_seconds": 0,
+    }
+    stream["retriever"]["record_selector"]["record_filter"] = {
+        "type": "RecordFilter",
+        "condition": "{{ record['expected_token'] == stream_interval.get('token', 'none') }}",
+    }
+    stream["transformations"] = [
+        {
+            "type": "AddFields",
+            "fields": [
+                {
+                    "path": ["slice_token"],
+                    "value": "{{ stream_interval.get('token', 'none') }}",
+                }
+            ],
+        }
+    ]
+    stream["schema_loader"]["schema"]["properties"].update(
+        {"expected_token": {"type": "string"}, "slice_token": {"type": "string"}}
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "pageSize": 8}),
+            HttpResponse("{}", status_code=413),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "pageSize": 4}),
+            HttpResponse(
+                json.dumps(
+                    {
+                        "items": [{"id": "old", "expected_token": "T1"}],
+                        "nextCursor": "old-p2",
+                    }
+                )
+            ),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "old-p2", "pageSize": 4}),
+            HttpResponse(json.dumps({"success": False, "error": "sync_token_expired"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"pageSize": 8}),
+            HttpResponse(
+                json.dumps(
+                    {
+                        "items": [{"id": "new", "expected_token": "none"}],
+                        "nextCursor": "new-p2",
+                    }
+                )
+            ),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "new-p2", "pageSize": 8}),
+            HttpResponse(json.dumps({"items": [], "syncToken": "T2"})),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read(source, catalog, state)
+
+    records = [message.record.data for message in messages if message.type == Type.RECORD]
+    assert records == [
+        {"id": "old", "expected_token": "T1", "slice_token": "T1"},
+        {"id": "new", "expected_token": "none", "slice_token": "none"},
+    ]
+    assert _state(messages)[0].stream.stream_state.__dict__["token"] == "T2"
+    assert "sync_token_expired" in caplog.text
+
+
+def test_t_reset_twice_errors_and_preserves_committed_state():
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
+    manifest = _manifest(error_handler=_reset_error_handler())
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            HttpResponse(json.dumps({"items": [{"id": "old"}], "nextCursor": "old-p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "old-p2"}),
+            HttpResponse(json.dumps({"success": False, "error": "sync_token_expired"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(json.dumps({"items": [{"id": "new"}], "nextCursor": "new-p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "new-p2"}),
+            HttpResponse(json.dumps({"success": False, "error": "sync_token_expired"})),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read_until_error(source, catalog, state)
+
+    assert any(message.type == Type.RECORD for message in messages)
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T1"
+    assert any(
+        message.type == Type.TRACE
+        and message.trace.error
+        and message.trace.error.failure_type == FailureType.system_error
+        and message.trace.error.message
+        == "Stream events: the API rejected a read without a change token. "
+        "Check the RESET_SYNC_TOKEN response filter."
+        for message in messages
+    )
+
+
+def test_t_rpag_reset_replays_resumed_page_one_with_the_same_token():
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
+    manifest = _manifest(error_handler=_reset_error_handler(pagination_reset=True))
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            [
+                HttpResponse(json.dumps({"items": [{"id": "page-1"}], "nextCursor": "old-p2"})),
+                HttpResponse(
+                    json.dumps({"items": [{"id": "replayed-page-1"}], "nextCursor": "new-p2"})
+                ),
+            ],
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "old-p2"}),
+            HttpResponse("{}", status_code=400),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "new-p2"}),
+            HttpResponse(json.dumps({"items": [{"id": "replayed-page-2"}], "syncToken": "T2"})),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read(source, catalog, state)
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [
+        "page-1",
+        "replayed-page-1",
+        "replayed-page-2",
+    ]
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T2"
+
+
+def test_t_rpag_reset_after_token_reset_replays_tokenless_page_one():
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
+    manifest = _manifest(error_handler=_reset_error_handler(pagination_reset=True))
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            HttpResponse(json.dumps({"items": [{"id": "old-page-1"}], "nextCursor": "old-p2"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "old-p2"}),
+            HttpResponse(json.dumps({"success": False, "error": "sync_token_expired"})),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            [
+                HttpResponse(json.dumps({"items": [{"id": "page-1"}], "nextCursor": "p2"})),
+                HttpResponse(
+                    json.dumps({"items": [{"id": "replayed-page-1"}], "nextCursor": "new-p2"})
+                ),
+            ],
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "p2"}),
+            HttpResponse("{}", status_code=400),
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"nextCursor": "new-p2"}),
+            HttpResponse(json.dumps({"items": [{"id": "replayed-page-2"}], "syncToken": "T2"})),
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read(source, catalog, state)
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [
+        "old-page-1",
+        "page-1",
+        "replayed-page-1",
+        "replayed-page-2",
+    ]
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T2"
+
+
+def test_t_rpag_second_pagination_reset_is_system_error():
+    state = _incoming_state({"state_type": "sync_token", "token": "T1"})
+    manifest = _manifest(error_handler=_reset_error_handler(pagination_reset=True))
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1"}),
+            [
+                HttpResponse(json.dumps({"items": [{"id": "page-1"}], "nextCursor": "p2"})),
+                HttpResponse(
+                    json.dumps({"items": [{"id": "replayed-page-1"}], "nextCursor": "p2"})
+                ),
+            ],
+        )
+        http_mocker.post(
+            HttpRequest(_URL, body={"syncToken": "T1", "nextCursor": "p2"}),
+            [HttpResponse("{}", status_code=400), HttpResponse("{}", status_code=400)],
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read_until_error(source, catalog, state)
+
+    assert any(
+        message.type == Type.TRACE
+        and message.trace.error
+        and message.trace.error.failure_type == FailureType.system_error
+        for message in messages
+    )
+    assert _state(messages)[-1].stream.stream_state.__dict__["token"] == "T1"
+
+
+def test_reset_action_on_non_token_stream_is_not_supported():
+    manifest = _manifest(error_handler=_reset_error_handler())
+    del manifest["streams"][0]["incremental_sync"]
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(_URL, body=None),
+            HttpResponse(json.dumps({"success": False, "error": "unexpected_reset"})),
+        )
+        source, catalog = _source_and_catalog(manifest, sync_mode=SyncMode.full_refresh)
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            _read(source, catalog)
+
+    assert exc_info.value.failure_type.value == "config_error"
+    assert "RESET_SYNC_TOKEN" in str(exc_info.value)
 
 
 def test_t_builder_page_limit_and_max_records_do_not_commit_tokens():
