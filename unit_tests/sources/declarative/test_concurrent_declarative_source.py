@@ -6649,13 +6649,16 @@ def test_get_partition_router(stream_factory, expected_type):
         assert isinstance(router, GroupingPartitionRouter)
 
 
-def test_api_budget_is_set_before_dynamic_streams_evaluated():
-    """Verify that set_api_budget is called before dynamic_streams is accessed in streams().
-
-    This is a regression test for https://github.com/airbytehq/oncall/issues/11954
-    where dynamic stream discovery HTTP requests bypassed the configured rate limiter
-    because set_api_budget was called after self.dynamic_streams was evaluated.
-    """
+@pytest.mark.parametrize(
+    "build_path",
+    [
+        pytest.param("streams", id="streams"),
+        pytest.param("_streams_by_name", id="streams_by_name"),
+        pytest.param("_first_streams", id="first_streams"),
+    ],
+)
+def test_api_budget_is_set_before_dynamic_streams_evaluated(build_path):
+    """Verify all stream-building paths set the API budget before dynamic discovery."""
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
     )
@@ -6673,7 +6676,6 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated():
         call_order.append("dynamic_stream_configs")
         return original_dynamic_stream_configs(*args, **kwargs)
 
-    # Add an api_budget to the source config so set_api_budget is actually called
     source._source_config["api_budget"] = {
         "type": "HTTPAPIBudget",
         "policies": [
@@ -6691,13 +6693,32 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated():
             source, "_dynamic_stream_configs", side_effect=tracking_dynamic_stream_configs
         ),
     ):
-        source.streams(config=_CONFIG)
+        if build_path == "streams":
+            source.streams(config=_CONFIG)
+        elif build_path == "_streams_by_name":
+            stream_name = source._stream_configs(source._source_config)[0]["name"]
+            source._streams_by_name([stream_name])
+        else:
+            source._first_streams(1)
 
     assert "set_api_budget" in call_order, "set_api_budget was never called"
     assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
     assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
         f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
     )
+
+
+@pytest.mark.parametrize("count", [0, -1])
+def test_first_streams_rejects_non_positive_count(count):
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST,
+        config=_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    with pytest.raises(ValueError, match="count must be >= 1"):
+        source._first_streams(count)
 
 
 def test_initialize_cache_for_parent_streams_reads_all_configs_without_mutating_them():
@@ -6803,7 +6824,7 @@ def test_streams_by_name_builds_a_checked_substream_without_returning_its_parent
         state=None,
     )
 
-    streams = source.streams_by_name(["child"])
+    streams = source._streams_by_name(["child"])
 
     assert streams is not None
     assert [stream.name for stream in streams] == ["child"]

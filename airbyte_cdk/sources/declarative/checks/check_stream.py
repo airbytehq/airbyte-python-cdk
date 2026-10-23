@@ -120,7 +120,7 @@ class CheckStream(ConnectionChecker):
             isinstance(source, ConcurrentDeclarativeSource)
             and not self.dynamic_streams_check_configs
         ):
-            streams = source.streams_by_name(stream_names)
+            streams = source._streams_by_name(stream_names)
             if streams is not None:
                 return cast(List[Union[Stream, AbstractStream]], streams)
 

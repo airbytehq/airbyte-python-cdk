@@ -198,10 +198,19 @@ def _static_stream(name: str) -> dict:
     }
 
 
-def test_check_dynamic_stream_builds_only_the_first_stream_count_in_order(mocker):
+@pytest.mark.parametrize(
+    "stream_count, expected_stream_names",
+    [
+        pytest.param(1, ["first_static"], id="one-stream"),
+        pytest.param(3, ["first_static", "second_static", "item_1"], id="three-streams"),
+    ],
+)
+def test_check_dynamic_stream_builds_only_the_first_stream_count_in_order(
+    mocker, stream_count, expected_stream_names
+):
     manifest = deepcopy(_MANIFEST)
     manifest["streams"] = [_static_stream("first_static"), _static_stream("second_static")]
-    manifest["check"]["stream_count"] = 3
+    manifest["check"]["stream_count"] = stream_count
     source = ConcurrentDeclarativeSource(
         source_config=manifest,
         config={**_CONFIG, "api_key": "test"},
@@ -236,7 +245,50 @@ def test_check_dynamic_stream_builds_only_the_first_stream_count_in_order(mocker
         and getattr(component_call.args[0], "__name__", "")
         in {"DeclarativeStream", "StateDelegatingStream"}
     ]
-    assert created_stream_names == ["first_static", "second_static", "item_1"]
+    assert created_stream_names == expected_stream_names
+
+
+def test_check_dynamic_stream_uses_streams_override_for_concurrent_source():
+    class StreamsOverrideSource(ConcurrentDeclarativeSource):
+        def __init__(self, *args, **kwargs):
+            self.streams_call_count = 0
+            super().__init__(*args, **kwargs)
+
+        def streams(self, config):
+            self.streams_call_count += 1
+            if config.get("end_date") == "":
+                config.pop("end_date")
+            return super().streams(config=config)
+
+    stream = _static_stream("selected")
+    stream["incremental_sync"] = {
+        "type": "DatetimeBasedCursor",
+        "start_datetime": "2024-01-01",
+        "end_datetime": "{{ config.get('end_date', today_utc()) }}",
+        "datetime_format": "%Y-%m-%d",
+        "cursor_datetime_formats": ["%Y-%m-%d"],
+        "cursor_field": "updated_at",
+    }
+    source = StreamsOverrideSource(
+        source_config={
+            "version": "6.7.0",
+            "type": "DeclarativeSource",
+            "streams": [stream],
+            "check": {"type": "CheckDynamicStream", "stream_count": 1},
+        },
+        config={"end_date": ""},
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/selected"),
+            HttpResponse(body=json.dumps([])),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+
+    assert source.streams_call_count == 1
 
 
 @pytest.mark.parametrize(
@@ -246,7 +298,7 @@ def test_check_dynamic_stream_builds_only_the_first_stream_count_in_order(mocker
 def test_check_dynamic_stream_uses_streams_for_non_positive_count_or_disabled_availability(
     stream_count, use_check_availability
 ):
-    source = MagicMock()
+    source = MagicMock(spec=ConcurrentDeclarativeSource)
     source.streams.return_value = []
     checker = CheckDynamicStream(
         stream_count=stream_count,
@@ -257,6 +309,7 @@ def test_check_dynamic_stream_uses_streams_for_non_positive_count_or_disabled_av
     checker.check_connection(source, logger, {})
 
     source.streams.assert_called_once_with(config={})
+    source._first_streams.assert_not_called()
 
 
 def test_check_dynamic_stream_uses_streams_for_legacy_manifest_source():
