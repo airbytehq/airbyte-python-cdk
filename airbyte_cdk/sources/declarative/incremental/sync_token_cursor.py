@@ -218,6 +218,30 @@ class SyncTokenCursor(Cursor):
                 .replace("+00:00", "Z"),
             }
 
+    def restart_without_token(
+        self, stream_slice: StreamSlice, reason: Optional[str] = None
+    ) -> StreamSlice:
+        if "token" not in stream_slice.cursor_slice:
+            message = (
+                f"Stream {self._stream_name}: the API rejected a read without a sync token. "
+                "Check the RESET_SYNC_TOKEN response filter."
+            )
+            raise AirbyteTracedException(
+                internal_message=message,
+                message=message,
+                failure_type=FailureType.system_error,
+            )
+
+        partition_key = self._serializer.to_partition_key(stream_slice.partition or {})
+        with self._lock:
+            self._pending.pop(partition_key, None)
+
+        return StreamSlice(
+            partition=stream_slice.partition,
+            cursor_slice={},
+            extra_fields=stream_slice.extra_fields,
+        )
+
     def _coerce_token(self, value: Any, path: list[str]) -> Optional[str]:
         if value is None or value == "":
             return None
