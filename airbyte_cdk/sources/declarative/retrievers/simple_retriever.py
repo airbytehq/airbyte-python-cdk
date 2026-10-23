@@ -717,7 +717,7 @@ class SimpleRetriever(Retriever):
                 raise SyncTokenResetNotSupportedException(stream_name=self.name) from exception
 
             reset_slice = self.token_reset_handler(stream_slice, exception.error_message)
-            reason = exception.error_message or "the API rejected the stored change token"
+            reason = exception.error_message or "the API rejected the stored sync token"
             LOGGER.warning(
                 f"Stream {self.name}: {reason}; reading this stream in full. "
                 f"{emitted_count} records read earlier in this attempt may be emitted again."
