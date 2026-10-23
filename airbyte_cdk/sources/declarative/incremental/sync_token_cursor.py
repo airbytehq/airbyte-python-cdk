@@ -42,6 +42,7 @@ logger = logging.getLogger("airbyte")
 
 class SyncTokenCursor(Cursor):
     STATE_TYPE = "sync_token"
+    DEFAULT_MAX_STATE_BYTES = 4 * 1024 * 1024
 
     def __init__(
         self,
@@ -59,6 +60,7 @@ class SyncTokenCursor(Cursor):
         completion_condition: Optional[str] = None,
         cursor_field: Optional[str] = None,
         max_partitions: int = ConcurrentPerPartitionCursor.DEFAULT_MAX_PARTITIONS_NUMBER,
+        max_state_bytes: int = DEFAULT_MAX_STATE_BYTES,
     ) -> None:
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
@@ -78,8 +80,10 @@ class SyncTokenCursor(Cursor):
         )
         self.cursor_field = CursorField(cursor_field) if cursor_field else None
         self._max_partitions = max_partitions
+        self._max_state_bytes = max_state_bytes
         self._serializer = PerPartitionKeySerializer()
         self._committed: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._committed_bytes = 0
         self._pending: dict[str, dict[str, Any]] = {}
         self._page_counts: dict[str, int] = {}
         self._lock = threading.RLock()
@@ -88,8 +92,9 @@ class SyncTokenCursor(Cursor):
         self._state_is_foreign = False
         self._state_emitted = False
         self._warned_no_token = False
-        self._warned_cap = False
+        self._warned_limit = False
         self._partitions_over_cap: set[str] = set()
+        self._partitions_over_state_size: set[str] = set()
         self._load_state(stream_state or {})
 
     @property
@@ -132,6 +137,9 @@ class SyncTokenCursor(Cursor):
                 elif at_partition_cap:
                     self._partitions_over_cap.add(partition_key)
                     self._log_bootstrap("partition cap")
+                elif self._committed_bytes >= self._max_state_bytes:
+                    self._partitions_over_state_size.add(partition_key)
+                    self._log_bootstrap("state size limit")
                 elif not self._state_is_foreign:
                     self._log_bootstrap("none")
             yield StreamSlice(
@@ -144,6 +152,9 @@ class SyncTokenCursor(Cursor):
             with self._lock:
                 vanished = set(self._committed) - seen_partitions
                 for partition_key in vanished:
+                    self._committed_bytes -= self._entry_bytes(
+                        partition_key, self._committed[partition_key]
+                    )
                     del self._committed[partition_key]
                 if vanished:
                     logger.info(
@@ -330,9 +341,13 @@ class SyncTokenCursor(Cursor):
             pending = self._pending.pop(partition_key, None)
             page_count = self._page_counts.pop(partition_key, 0)
             if pending is not None:
-                if partition_key in self._committed or len(self._committed) < self._max_partitions:
+                existing = self._committed.get(partition_key)
+                if existing is not None:
+                    self._committed_bytes -= self._entry_bytes(partition_key, existing)
+                    self._committed_bytes += self._entry_bytes(partition_key, pending)
                     self._committed[partition_key] = pending
                     self._partitions_over_cap.discard(partition_key)
+                    self._partitions_over_state_size.discard(partition_key)
                     logger.debug(
                         "Stream %s: committed change token %s for partition %s after %s pages.",
                         self._stream_name,
@@ -340,8 +355,25 @@ class SyncTokenCursor(Cursor):
                         self._serializer.to_partition(partition_key),
                         page_count,
                     )
-                else:
+                elif (
+                    len(self._committed) < self._max_partitions
+                    and self._committed_bytes < self._max_state_bytes
+                ):
+                    self._committed[partition_key] = pending
+                    self._committed_bytes += self._entry_bytes(partition_key, pending)
+                    self._partitions_over_cap.discard(partition_key)
+                    self._partitions_over_state_size.discard(partition_key)
+                    logger.debug(
+                        "Stream %s: committed change token %s for partition %s after %s pages.",
+                        self._stream_name,
+                        pending["token"],
+                        self._serializer.to_partition(partition_key),
+                        page_count,
+                    )
+                elif len(self._committed) >= self._max_partitions:
                     self._partitions_over_cap.add(partition_key)
+                else:
+                    self._partitions_over_state_size.add(partition_key)
             if not self._partitioned:
                 self._emit_state_message()
             elif time.time() - self._last_emission_time > 600:
@@ -362,14 +394,25 @@ class SyncTokenCursor(Cursor):
     def ensure_at_least_one_state_emitted(self) -> None:
         if self._partitioned or not self._state_emitted:
             self._emit_state_message()
-        if self._partitions_over_cap and not self._warned_cap:
-            logger.warning(
-                "Stream %s: %s partitions already store tokens; %s more read in full on every sync.",
-                self._stream_name,
-                len(self._committed),
-                len(self._partitions_over_cap),
-            )
-            self._warned_cap = True
+        if not self._warned_limit:
+            if self._partitions_over_state_size:
+                logger.warning(
+                    "Stream %s: stored tokens reached the %s state limit at %s partitions; "
+                    "%s more read in full on every sync.",
+                    self._stream_name,
+                    self._human_readable_bytes(self._max_state_bytes),
+                    f"{len(self._committed):,}",
+                    f"{len(self._partitions_over_state_size):,}",
+                )
+                self._warned_limit = True
+            elif self._partitions_over_cap:
+                logger.warning(
+                    "Stream %s: %s partitions already store tokens; %s more read in full on every sync.",
+                    self._stream_name,
+                    len(self._committed),
+                    len(self._partitions_over_cap),
+                )
+                self._warned_limit = True
 
     def observe(self, record: Record) -> None:
         return
@@ -409,6 +452,10 @@ class SyncTokenCursor(Cursor):
                 else:
                     self._log_bootstrap("foreign state")
             self._committed.update(committed)
+            self._committed_bytes += sum(
+                self._entry_bytes(partition_key, cursor)
+                for partition_key, cursor in committed.items()
+            )
         else:
             if "states" in stream_state:
                 self._log_foreign_state()
@@ -419,5 +466,19 @@ class SyncTokenCursor(Cursor):
                     "token": token,
                     "committed_at": stream_state.get("committed_at", ""),
                 }
+                self._committed_bytes += self._entry_bytes("{}", self._committed["{}"])
             elif token is not None:
                 self._log_foreign_state()
+
+    @staticmethod
+    def _entry_bytes(partition_key: str, cursor: Mapping[str, Any]) -> int:
+        return len(partition_key.encode()) + len(cursor["token"].encode())
+
+    @staticmethod
+    def _human_readable_bytes(size: int) -> str:
+        if size < 1024:
+            return f"{size:,} bytes"
+        size_in_kib = size / 1024
+        if size_in_kib < 1024:
+            return f"{size_in_kib:g} KB"
+        return f"{size_in_kib / 1024:g} MB"

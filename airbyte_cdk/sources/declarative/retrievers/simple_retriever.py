@@ -20,6 +20,7 @@ from typing import (
     Tuple,
     Union,
 )
+from urllib.parse import urlsplit
 
 import requests
 from typing_extensions import deprecated
@@ -159,6 +160,7 @@ class SimpleRetriever(Retriever):
     ] = None
     page_observer: Optional[Callable[["PageCompleted"], None]] = None
     token_reset_handler: Optional[Callable[[StreamSlice, Optional[str]], StreamSlice]] = None
+    first_request_path: Optional[Callable[[StreamSlice], Optional[str]]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -326,10 +328,53 @@ class SimpleRetriever(Retriever):
         :param next_page_token:
         :return:
         """
-        return self._paginator.path(
+        path = self._paginator.path(
             next_page_token=next_page_token,
             stream_state={},  # stream_state as an interpolation context is deprecated
             stream_slice=stream_slice,
+        )
+        if (
+            path is None
+            and not next_page_token
+            and self.first_request_path
+            and stream_slice is not None
+        ):
+            token_url = self.first_request_path(stream_slice)
+            if token_url:
+                self._check_token_host(token_url, stream_slice)
+                return token_url
+        return path
+
+    def _check_token_host(self, token_url: str, stream_slice: StreamSlice) -> None:
+        token = urlsplit(token_url)
+        if not token.netloc:
+            return
+
+        base_url = self.requester.get_url_base(
+            stream_state=None, stream_slice=stream_slice, next_page_token=None
+        ) or self.requester.get_url(
+            stream_state=None, stream_slice=stream_slice, next_page_token=None
+        )
+        base = urlsplit(base_url)
+        same_scheme = token.scheme in ("", base.scheme)
+        same_origin = same_scheme and token.netloc.lower() == base.netloc.lower()
+        if same_origin:
+            return
+
+        if same_scheme:
+            token_origin = token.netloc
+            base_origin = base.netloc
+        else:
+            token_origin = f"{token.scheme}://{token.netloc}"
+            base_origin = f"{base.scheme}://{base.netloc}"
+        message = (
+            f"Stream {self.name}: the stored sync token points at {token_origin}, "
+            f"not the API host {base_origin}. Clear this stream's state to start over."
+        )
+        raise AirbyteTracedException(
+            internal_message=message,
+            message=message,
+            failure_type=FailureType.config_error,
         )
 
     def _parse_response(

@@ -2340,6 +2340,51 @@ class ModelToComponentFactory:
                         )
         if not isinstance(cursor_model, SyncTokenCursorModel):
             return
+        if isinstance(retriever_model, SimpleRetrieverModel) and isinstance(
+            retriever_model.paginator, DefaultPaginatorModel
+        ):
+            token_option = cursor_model.token_option
+            ignore_stream_slicer_parameters = (
+                retriever_model.ignore_stream_slicer_parameters_on_paginated_requests is True
+            )
+            if isinstance(token_option, RequestOptionModel) and not ignore_stream_slicer_parameters:
+                for page_option in (
+                    retriever_model.paginator.page_token_option,
+                    retriever_model.paginator.page_size_option,
+                ):
+                    if (
+                        isinstance(page_option, RequestOptionModel)
+                        and token_option.inject_into == page_option.inject_into
+                    ):
+                        matching_field = None
+                        if token_option.field_name is not None and (
+                            token_option.field_name == page_option.field_name
+                        ):
+                            matching_field = token_option.field_name
+                        elif token_option.field_path is not None and (
+                            token_option.field_path == page_option.field_path
+                        ):
+                            matching_field = ".".join(token_option.field_path)
+                        if matching_field is not None:
+                            raise ValueError(
+                                f"Stream {stream_name}: token_option and the paginator both set "
+                                f'{token_option.inject_into.value} "{matching_field}". Set '
+                                "ignore_stream_slicer_parameters_on_paginated_requests: true on "
+                                "the retriever so the stored token is sent only on the first "
+                                "request of each pass."
+                            )
+
+            strategy = retriever_model.paginator.pagination_strategy
+            if (
+                isinstance(token_option, RequestPathModel) or ignore_stream_slicer_parameters
+            ) and isinstance(strategy, (PageIncrementModel, OffsetIncrementModel)):
+                if strategy.inject_on_first_request is True:
+                    raise ValueError(
+                        f"Stream {stream_name}: {strategy.type} with inject_on_first_request: "
+                        "true sends a page token on the first request, so the stored sync token "
+                        "would never be sent. Set inject_on_first_request: false or use "
+                        "CursorPagination."
+                    )
         datetime_only_keys = {
             "start_datetime",
             "end_datetime",
@@ -4061,6 +4106,18 @@ class ModelToComponentFactory:
             partition_router, PartitionRouter
         ):
             request_options_provider = partition_router
+        token_request_options_provider = (
+            request_options_provider._cursor_provider
+            if isinstance(request_options_provider, PerPartitionRequestOptionsProvider)
+            else request_options_provider
+        )
+        first_request_path = (
+            token_request_options_provider.get_request_path
+            if isinstance(incremental_sync, SyncTokenCursorModel)
+            and isinstance(token_request_options_provider, SyncTokenRequestOptionsProvider)
+            and isinstance(token_request_options_provider.token_option, RequestPath)
+            else None
+        )
 
         paginator = (
             self._create_component_from_model(
@@ -4146,6 +4203,7 @@ class ModelToComponentFactory:
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 post_pagination_filter=post_pagination_filter,
+                first_request_path=first_request_path,
                 parameters=model.parameters or {},
             )
 
@@ -4190,6 +4248,7 @@ class ModelToComponentFactory:
             token_reset_handler=(
                 cursor.restart_without_token if isinstance(cursor, SyncTokenCursor) else None
             ),
+            first_request_path=first_request_path,
             parameters=model.parameters or {},
         )
 
