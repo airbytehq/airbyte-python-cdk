@@ -28,6 +28,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
     _PROVIDER_ERROR_DETAIL_MAX_LENGTH,
+    AbstractOauth2Authenticator,
     ResponseKeysMaxRecurtionReached,
 )
 from airbyte_cdk.utils import AirbyteTracedException
@@ -1228,7 +1229,7 @@ class TestOauth2Authenticator:
     def test_abstract_authenticator_positional_init_still_supported(self):
         class PositionalInitAuthenticator(Oauth2Authenticator):
             def __init__(self):
-                super(Oauth2Authenticator, self).__init__((400,), "error", ("invalid_grant",))
+                AbstractOauth2Authenticator.__init__(self, (400,), "error", ("invalid_grant",))
 
         authenticator = PositionalInitAuthenticator()
         assert authenticator._refresh_token_error_status_codes == (400,)
