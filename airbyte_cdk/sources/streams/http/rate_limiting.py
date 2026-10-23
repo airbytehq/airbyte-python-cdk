@@ -108,14 +108,24 @@ def user_defined_backoff_handler(
         if isinstance(exc, UserDefinedBackoffException):
             retry_after = exc.backoff
             sleep_time = retry_after + 1  # extra second to cover any fractions of second
-            if exc.response is not None:
-                logger.info(
-                    f"UserDefinedBackoffException: Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {sleep_time} seconds."
+            attempt = details["tries"]
+            wait = f"{sleep_time:.1f}"
+            if exc.response is not None and exc.response.status_code == codes.too_many_requests:
+                message = (
+                    f"Rate limit exceeded (HTTP 429). Backing off for {wait} seconds "
+                    f"(attempt {attempt}), then retrying."
+                )
+            elif exc.response is not None:
+                message = (
+                    f"Backing off for {wait} seconds after HTTP {exc.response.status_code} "
+                    f"response (attempt {attempt}), then retrying."
                 )
             else:
-                logger.info(
-                    f"UserDefinedBackoffException: Rate limit exceeded. Retrying in {sleep_time} seconds."
+                message = (
+                    f"Backing off for {wait} seconds after a request error "
+                    f"(attempt {attempt}), then retrying."
                 )
+            logger.info(message)
             time.sleep(sleep_time)
 
     def log_give_up(details: Mapping[str, Any]) -> None:
