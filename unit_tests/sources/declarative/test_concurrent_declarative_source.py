@@ -6650,14 +6650,16 @@ def test_get_partition_router(stream_factory, expected_type):
 
 
 @pytest.mark.parametrize(
-    "build_path",
+    "build_path, expect_dynamic_stream_configs",
     [
-        pytest.param("streams", id="streams"),
-        pytest.param("_streams_by_name", id="streams_by_name"),
-        pytest.param("_first_streams", id="first_streams"),
+        pytest.param("streams", True, id="streams"),
+        pytest.param("_streams_by_name", False, id="streams_by_name"),
+        pytest.param("_first_streams", True, id="first_streams"),
     ],
 )
-def test_api_budget_is_set_before_dynamic_streams_evaluated(build_path):
+def test_api_budget_is_set_before_dynamic_streams_evaluated(
+    build_path, expect_dynamic_stream_configs
+):
     """Verify all stream-building paths set the API budget before dynamic discovery."""
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
@@ -6702,10 +6704,13 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated(build_path):
             source._first_streams(1)
 
     assert "set_api_budget" in call_order, "set_api_budget was never called"
-    assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
-    assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
-        f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
-    )
+    if expect_dynamic_stream_configs:
+        assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
+        assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
+            f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
+        )
+    else:
+        assert "dynamic_stream_configs" not in call_order
 
 
 @pytest.mark.parametrize("count", [0, -1])

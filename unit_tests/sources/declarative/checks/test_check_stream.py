@@ -1235,6 +1235,42 @@ def test_check_dynamic_stream_configs_are_not_evaluated_when_only_static_streams
     dynamic_configs_spy.assert_not_called()
 
 
+def test_check_with_streams_override_resolves_http_dynamic_streams():
+    class StreamsOverrideSource(ConcurrentDeclarativeSource):
+        def __init__(self, *args, **kwargs):
+            self.streams_call_count = 0
+            super().__init__(*args, **kwargs)
+
+        def streams(self, config):
+            self.streams_call_count += 1
+            return super().streams(config=config)
+
+    manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
+    manifest["dynamic_streams"] = [manifest["dynamic_streams"][0]]
+    manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
+    source = StreamsOverrideSource(
+        source_config=manifest,
+        config={**_CONFIG, "api_key": "test"},
+        catalog=None,
+        state=None,
+    )
+    resolver_request = HttpRequest(url="https://api.test.com/items")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/static"),
+            HttpResponse(body=json.dumps([])),
+        )
+        http_mocker.get(
+            resolver_request,
+            HttpResponse(body=json.dumps([{"id": 3, "name": "item_3"}])),
+        )
+        assert source.check(logger, source._config).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(resolver_request, 1)
+
+    assert source.streams_call_count == 1
+
+
 def test_check_builds_a_named_state_delegating_stream(mocker):
     stream = _stream_config("state_stream")
     incremental_stream = deepcopy(stream)
@@ -1415,7 +1451,7 @@ def test_streams_by_name_enables_cache_for_checked_parent_without_mutating_manif
     assert source.resolved_manifest == manifest_before
 
 
-def test_check_still_fails_when_a_dynamic_stream_cannot_be_built(mocker):
+def test_static_check_succeeds_when_a_dynamic_stream_cannot_be_built(mocker):
     manifest = deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT)
     manifest["dynamic_streams"] = [manifest["dynamic_streams"][1]]
     manifest["check"] = {"type": "CheckStream", "stream_names": ["static_stream"]}
@@ -1446,8 +1482,10 @@ def test_check_still_fails_when_a_dynamic_stream_cannot_be_built(mocker):
         )
         status = source.check(logger, source._config)
 
-    assert status.status == Status.FAILED
-    assert "Encountered an error while discovering streams" in status.message
+    assert status.status == Status.SUCCEEDED
+
+    with pytest.raises(ValueError, match="bad dynamic stream"):
+        source.discover(logger=source.logger, config=source._config)
 
 
 def _stream_group_manifest(streams: list[dict], check_stream_name: str) -> dict:
