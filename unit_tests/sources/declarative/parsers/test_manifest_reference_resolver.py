@@ -3,6 +3,7 @@
 #
 
 import pytest
+import yaml
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
@@ -14,6 +15,25 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 )
 
 resolver = ManifestReferenceResolver()
+
+
+def test_config_overrides_break_yaml_aliases():
+    manifest = yaml.safe_load("""
+check:
+  type: CheckStream
+  stream_names: [s]
+  config_overrides:
+    a: &x {type: oauth, $parameters: {region: eu}}
+    b: {nested: *x}
+""")
+    overrides = ManifestReferenceResolver().preprocess_manifest(manifest)["check"][
+        "config_overrides"
+    ]
+    assert overrides == manifest["check"]["config_overrides"]
+    assert overrides["a"] == overrides["b"]["nested"]
+    assert overrides["a"] is not overrides["b"]["nested"]
+    assert overrides["a"]["$parameters"] is not overrides["b"]["nested"]["$parameters"]
+    assert overrides["a"] is not manifest["check"]["config_overrides"]["a"]
 
 
 def test_refer():

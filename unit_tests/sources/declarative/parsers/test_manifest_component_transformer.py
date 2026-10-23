@@ -2,11 +2,308 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import copy
+
 import pytest
 
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
 )
+
+LIST_PARAMETER_CASE = (
+    {
+        "$parameters": {
+            "name": "users",
+            "transformations": [{"fields": [], "type": "AddFields"}],
+        },
+        "streams": [{"transformations": [], "retriever": {}}],
+        "type": "DeclarativeSource",
+    },
+    {},
+    None,
+    {
+        "$parameters": {
+            "name": "users",
+            "transformations": [
+                {
+                    "$parameters": {"name": "users"},
+                    "fields": [],
+                    "name": "users",
+                    "type": "AddFields",
+                }
+            ],
+        },
+        "name": "users",
+        "streams": [
+            {
+                "$parameters": {
+                    "name": "users",
+                    "transformations": [
+                        {
+                            "$parameters": {"name": "users"},
+                            "fields": [],
+                            "name": "users",
+                            "type": "AddFields",
+                        }
+                    ],
+                },
+                "name": "users",
+                "retriever": {
+                    "$parameters": {
+                        "name": "users",
+                        "transformations": [
+                            {
+                                "$parameters": {"name": "users"},
+                                "fields": [],
+                                "name": "users",
+                                "type": "AddFields",
+                            }
+                        ],
+                    },
+                    "name": "users",
+                    "transformations": [
+                        {
+                            "$parameters": {"name": "users"},
+                            "fields": [],
+                            "name": "users",
+                            "type": "AddFields",
+                        }
+                    ],
+                    "type": "SimpleRetriever",
+                },
+                "transformations": [
+                    {
+                        "$parameters": {"name": "users"},
+                        "fields": [],
+                        "name": "users",
+                        "type": "AddFields",
+                    }
+                ],
+                "type": "DeclarativeStream",
+            }
+        ],
+        "transformations": [
+            {
+                "$parameters": {"name": "users"},
+                "fields": [],
+                "name": "users",
+                "type": "AddFields",
+            }
+        ],
+        "type": "DeclarativeSource",
+    },
+)
+
+PROPAGATION_CASES = [
+    pytest.param(
+        {
+            "type": "DeclarativeStream",
+            "$parameters": {"primary_key": ["param_pk"]},
+            "primary_key": ["own_pk"],
+            "retriever": {},
+        },
+        {},
+        None,
+        {
+            "$parameters": {"primary_key": ["param_pk"]},
+            "primary_key": ["own_pk"],
+            "retriever": {
+                "$parameters": {"primary_key": ["param_pk"]},
+                "primary_key": ["param_pk"],
+                "type": "SimpleRetriever",
+            },
+            "type": "DeclarativeStream",
+        },
+        id="list-param-existing-truthy-field",
+    ),
+    pytest.param(
+        {
+            "$parameters": {"limit": 10, "name": "root"},
+            "streams": [
+                {
+                    "$parameters": {"name": "users"},
+                    "retriever": {"$parameters": {"limit": 20}, "requester": {}},
+                }
+            ],
+            "type": "DeclarativeSource",
+        },
+        {},
+        None,
+        {
+            "$parameters": {"limit": 10, "name": "root"},
+            "limit": 10,
+            "name": "root",
+            "streams": [
+                {
+                    "$parameters": {"limit": 10, "name": "users"},
+                    "limit": 10,
+                    "name": "users",
+                    "retriever": {
+                        "$parameters": {"limit": 20, "name": "users"},
+                        "limit": 20,
+                        "name": "users",
+                        "requester": {
+                            "$parameters": {"limit": 20, "name": "users"},
+                            "limit": 20,
+                            "name": "users",
+                            "type": "HttpRequester",
+                        },
+                        "type": "SimpleRetriever",
+                    },
+                    "type": "DeclarativeStream",
+                }
+            ],
+            "type": "DeclarativeSource",
+        },
+        id="parameters-multiple-levels",
+    ),
+    pytest.param(
+        {"$parameters": {"name": "child"}, "retriever": {}, "type": "DeclarativeStream"},
+        {"name": "parent"},
+        True,
+        {
+            "$parameters": {"name": "parent"},
+            "name": "parent",
+            "retriever": {
+                "$parameters": {"name": "parent"},
+                "name": "parent",
+                "type": "SimpleRetriever",
+            },
+            "type": "DeclarativeStream",
+        },
+        id="parent-parameters-win",
+    ),
+    pytest.param(
+        {
+            "$parameters": {"discard": 1},
+            "properties": {"type": {"type": "string"}},
+            "type": "object",
+        },
+        {},
+        None,
+        {"properties": {"type": {"type": "string"}}, "type": "object"},
+        id="json-schema-object",
+    ),
+    pytest.param(
+        {
+            "$parameters": {"discard": 1},
+            "properties": {"type": {"type": "string"}},
+            "type": ["null", "object"],
+        },
+        {},
+        None,
+        {"properties": {"type": {"type": "string"}}, "type": ["null", "object"]},
+        id="json-schema-union",
+    ),
+    pytest.param(
+        {
+            "$parameters": {"name": "users"},
+            "request_parameters": {"query": {"type": "QueryProperties"}},
+            "type": "HttpRequester",
+        },
+        {},
+        None,
+        {
+            "$parameters": {"name": "users"},
+            "name": "users",
+            "request_parameters": {
+                "query": {
+                    "$parameters": {"name": "users"},
+                    "name": "users",
+                    "type": "QueryProperties",
+                }
+            },
+            "type": "HttpRequester",
+        },
+        id="untyped-nested-component",
+    ),
+    pytest.param(*LIST_PARAMETER_CASE, id="list-param-falsy-field"),
+    pytest.param({}, {}, None, {}, id="empty"),
+]
+
+
+@pytest.mark.parametrize(
+    "component, parameters, use_parent_parameters, expected", PROPAGATION_CASES
+)
+def test_propagation_preserves_original_semantics(
+    component, parameters, use_parent_parameters, expected
+):
+    original_component = copy.deepcopy(component)
+    original_parameters = copy.deepcopy(parameters)
+    transformer = ManifestComponentTransformer()
+    result = transformer.propagate_types_and_parameters(
+        "", component, parameters, use_parent_parameters
+    )
+    assert result == expected
+    assert component == original_component
+    assert parameters == original_parameters
+    assert (
+        transformer._propagate_in_place(
+            "", copy.deepcopy(component), copy.deepcopy(parameters), use_parent_parameters
+        )
+        == result
+    )
+
+
+def test_list_parameter_fills_missing_stream_field():
+    component, parameters, use_parent_parameters, expected = copy.deepcopy(LIST_PARAMETER_CASE)
+    del component["streams"][0]["transformations"]
+    original = copy.deepcopy(component)
+    assert (
+        ManifestComponentTransformer().propagate_types_and_parameters(
+            "", component, parameters, use_parent_parameters
+        )
+        == expected
+    )
+    assert component == original
+
+
+def test_propagate_in_place_reuses_the_input_tree():
+    stream = {"type": "DeclarativeStream", "retriever": {"requester": {}}}
+    tree = {"type": "DeclarativeSource", "streams": [stream]}
+    retriever = stream["retriever"]
+    requester = retriever["requester"]
+    out = ManifestComponentTransformer()._propagate_in_place("", tree, {})
+    assert out is tree
+    assert out["streams"][0] is stream
+    assert out["streams"][0]["retriever"] is retriever
+    assert out["streams"][0]["retriever"]["requester"] is requester
+
+
+def _container_ids(value):
+    if isinstance(value, (dict, list)):
+        yield id(value)
+        for child in value.values() if isinstance(value, dict) else value:
+            yield from _container_ids(child)
+
+
+def test_propagation_breaks_shared_input_containers():
+    shared = {"type": "DeclarativeStream", "retriever": {}}
+    component = {
+        "type": "DeclarativeSource",
+        "$parameters": {"options": {"values": [1]}},
+        "streams": [shared, shared],
+    }
+    parameters = {"extra": [2]}
+    original = copy.deepcopy(component)
+    output = ManifestComponentTransformer().propagate_types_and_parameters(
+        "", component, parameters
+    )
+    ids = list(_container_ids(output))
+    assert len(ids) == len(set(ids))
+    assert not set(ids).intersection(_container_ids(component))
+    assert not set(ids).intersection(_container_ids(parameters))
+    output["streams"][0]["$parameters"]["options"]["values"].append(3)
+    assert output["streams"][1]["$parameters"]["options"]["values"] == [1]
+    assert component == original
+
+
+def test_propagation_invalid_parameters_preserves_input():
+    component = {"type": "DeclarativeSource", "streams": [{"$parameters": 1}]}
+    original = copy.deepcopy(component)
+    with pytest.raises(TypeError):
+        ManifestComponentTransformer().propagate_types_and_parameters("", component, {})
+    assert component == original
 
 
 @pytest.mark.parametrize(
