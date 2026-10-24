@@ -462,3 +462,5 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
 
     assert scenario.sections == ("spec", "connection", "discovery", "basic_read", "full_refresh")
     assert scenario.validate_schema is False
+    assert scenario.expect_trace_message_on_failure is False
+    assert scenario.validate_state_messages is False

@@ -266,6 +266,14 @@ _SPEC_FAILED_SKIP_REASON = (
     "the check outcome is not asserted without it. The spec tests report the `spec` failure."
 )
 
+_READ_CHECK_OPT_OUTS = (
+    "validate_schema",
+    "validate_primary_keys_data_type",
+    "validate_state_messages",
+    "expect_trace_message_on_failure",
+)
+"""The `basic_read` opt-outs that a config keeps if any of its entries declares them `false`."""
+
 
 class DockerConnectorTestSuite:
     """Base class for connector test suites."""
@@ -332,7 +340,9 @@ class DockerConnectorTestSuite:
         `discovery` and `basic_read` runs both `discover` and `read` (see
         `ConnectorTestScenario.commands`).
 
-        A `validate_schema: false` opt-out declared by any entry for the config is kept.
+        An opt-out (`validate_schema`, `validate_primary_keys_data_type`,
+        `validate_state_messages` or `expect_trace_message_on_failure` set to `false`) declared
+        by any entry for the config is kept.
 
         A config is read once, however many read sections (`basic_read`, `full_refresh`) list it.
         It keeps a `configured_catalog_path` only when every read entry for it declares that same
@@ -371,8 +381,11 @@ class DockerConnectorTestSuite:
                         update={
                             "empty_streams": list(set(all_empty_streams)),
                             "status": existing_scenario.status or scenario.status,
-                            "validate_schema": existing_scenario.validate_schema
-                            and scenario.validate_schema,
+                            **{
+                                opt_out: getattr(existing_scenario, opt_out)
+                                and getattr(scenario, opt_out)
+                                for opt_out in _READ_CHECK_OPT_OUTS
+                            },
                             "sections": tuple(
                                 dict.fromkeys(existing_scenario.sections + scenario.sections)
                             ),
