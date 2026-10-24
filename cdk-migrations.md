@@ -2,6 +2,14 @@
 
 ## Upgrading to the next minor release (unreleased)
 
+### The in-process Standard Tests build sources whose constructor requires `catalog`, `config` and `state`
+
+Previously the in-process Standard Tests (`SourceTestSuiteBase`, which `airbyte-cdk connector test` and the suite from `create_connector_test_suite()` use) called the connector class with no arguments. Python sources built on `YamlDeclarativeSource`, `FileBasedSource` or `ConcurrentSourceAdapter` require `catalog`, `config` and `state`, so every test failed with a `TypeError` before reaching the connector. `create_connector()` now passes the arguments the class or factory requires: `config` receives the scenario's config (an empty dict when the scenario has none, for example for `spec`), and `catalog` and `state` receive `None`, as the connector's `run.py` passes them when it launches without a catalog or state. A class or factory with an optional `config` also receives the scenario's config, when the scenario has one, since `run.py` passes `--config`. When the class or factory accepts `catalog`, `config` or `state`, required or optional, its `read` is done by a source built with the catalog, config and state of the `read` command, as `run.py` builds it: a file-based source takes its stream schemas from the catalog it is built with, and a declarative Python source whose constructor takes an optional `config` evaluates that config in its components when it is built. A class that requires any other argument (a `FileBasedSource` used directly also needs `stream_reader` and `spec_class`) fails with a `TypeError` that names the argument.
+
+No action is needed for connectors whose constructor takes no required arguments. A connector that worked around the old behaviour by overriding `create_connector()` in its own test suite can drop the override once it pins this release, unless the source needs more than `catalog`, `config` and `state`. A source whose constructor requires other arguments keeps overriding `create_connector()`, or exports a factory function under the connector class name.
+
+## Upgrading to 7.39.0
+
 ### `acceptance-test-config.yml` keys the Standard Tests do not read fail collection
 
 `ConnectorTestScenario` declared `expect_records` (with `exact_order`), `timeout_seconds` and `file_types`, and no test read them: they parsed, and the check they configured in the retired Connector Acceptance Tests (CAT) never ran. They are removed. Any other key that the model did not declare was dropped without a word, so a misspelled key (`empty_stream` for `empty_streams`) was ignored as well.

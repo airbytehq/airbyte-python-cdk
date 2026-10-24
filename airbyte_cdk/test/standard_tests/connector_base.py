@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from boltons.typeutils import classproperty
@@ -28,8 +29,15 @@ from airbyte_cdk.test.standard_tests.docker_base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    import logging
+    from collections.abc import Callable, Iterable, Mapping
 
+    from airbyte_cdk.models import (
+        AirbyteMessage,
+        AirbyteStateMessage,
+        ConfiguredAirbyteCatalog,
+    )
+    from airbyte_cdk.sources.source import Source
     from airbyte_cdk.test import entrypoint_wrapper
 
 
@@ -96,12 +104,33 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         cls,
         scenario: ConnectorTestScenario | None,
     ) -> IConnector:
-        """Instantiate the connector class."""
+        """Instantiate the connector class.
+
+        A connector class or factory that requires `catalog`, `config` or `state` (the
+        constructor of a Python source built on `YamlDeclarativeSource`, `FileBasedSource` or
+        `ConcurrentSourceAdapter` usually does) receives the scenario's config, no catalog and no
+        state, as the connector's `run.py` passes them when it launches without a catalog or
+        state. An optional `config` also receives the scenario's config, when the scenario has one.
+        When the class or factory accepts any of these arguments, required or optional, its
+        `read` is done by a source built with the catalog, config and state of the `read` command,
+        as `run.py` builds it: a file-based source takes its stream schemas from the catalog it is
+        built with, and a declarative source evaluates the config in its components when it is
+        built.
+        """
         connector = cls.connector  # type: ignore
         if connector:
             if callable(connector) or isinstance(connector, type):
                 # If the connector is a class or factory function, instantiate it:
-                return cast(IConnector, connector())  # type: ignore [redundant-cast]
+                init_kwargs = _source_init_kwargs(
+                    connector,
+                    scenario=scenario,
+                    connector_root=cls.get_connector_root_dir(),
+                )
+                instance = connector(**init_kwargs)
+                read_args = _source_read_args(connector)
+                if read_args:
+                    _read_with_source_built_for_the_command(instance, connector, read_args)
+                return cast(IConnector, instance)  # type: ignore [redundant-cast]
 
         # Otherwise, we can't instantiate the connector. Fail with a clear error message.
         raise NotImplementedError(
@@ -199,3 +228,129 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             connector_name=connector_root.absolute().name,
             scenario_id=scenario.id,
         )
+
+
+_SOURCE_INIT_ARGS = ("catalog", "config", "state")
+"""Constructor arguments the test suite can supply to a connector class or factory."""
+
+
+def _source_init_kwargs(
+    factory: object,
+    *,
+    scenario: ConnectorTestScenario | None,
+    connector_root: Path,
+) -> dict[str, object]:
+    """Return the keyword arguments to build the connector class or factory with.
+
+    Only `catalog`, `config` and `state` can be supplied: `config` is the scenario's config (an
+    empty dict when the scenario has none, or for `spec`), `catalog` and `state` are `None`. Any
+    other required argument raises a `TypeError` naming it, since the suite cannot guess it.
+
+    An optional `config` (accepted by keyword) also receives the scenario's config when the
+    scenario has one, as `run.py` passes the `--config` it launches with: a declarative Python
+    source evaluates its config in its components when it is built.
+    """
+    try:
+        signature = inspect.signature(factory)  # type: ignore [arg-type]
+    except (TypeError, ValueError):
+        # Builtins and some C extensions have no signature; call them without arguments.
+        return {}
+
+    required = [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.default is inspect.Parameter.empty
+        and parameter.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+    unsupported = [
+        parameter.name
+        for parameter in required
+        if parameter.name not in _SOURCE_INIT_ARGS
+        or parameter.kind is inspect.Parameter.POSITIONAL_ONLY
+    ]
+    if unsupported:
+        factory_name = getattr(factory, "__name__", repr(factory))
+        raise TypeError(
+            f"The standard tests cannot instantiate `{factory_name}`: it requires the "
+            f"argument(s) {', '.join(f'`{name}`' for name in unsupported)}, and the suite can "
+            f"only supply {', '.join(f'`{name}`' for name in _SOURCE_INIT_ARGS)}. Give those "
+            "arguments defaults, export a factory function under the connector class name, or "
+            "override `create_connector()` in a test suite subclass."
+        )
+
+    kwargs: dict[str, object] = {}
+    for parameter in required:
+        if parameter.name == "config":
+            kwargs["config"] = _scenario_config_or_empty(scenario, connector_root=connector_root)
+        else:
+            kwargs[parameter.name] = None
+
+    optional_config = signature.parameters.get("config")
+    if (
+        "config" not in kwargs
+        and optional_config is not None
+        and optional_config.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    ):
+        config = _scenario_config_or_empty(scenario, connector_root=connector_root)
+        if config:
+            kwargs["config"] = config
+    return kwargs
+
+
+def _scenario_config_or_empty(
+    scenario: ConnectorTestScenario | None,
+    *,
+    connector_root: Path,
+) -> dict[str, object]:
+    """Return the scenario's config, or an empty dict when there is none or its file is missing.
+
+    A missing config file is reported by the test that runs the command, not here.
+    """
+    if scenario is None:
+        return {}
+    try:
+        return scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True)
+    except FileNotFoundError:
+        return {}
+
+
+def _source_read_args(factory: object) -> tuple[str, ...]:
+    """Return the names among `catalog`, `config` and `state` that the factory accepts by keyword."""
+    try:
+        signature = inspect.signature(factory)  # type: ignore [arg-type]
+    except (TypeError, ValueError):
+        return ()
+    return tuple(
+        parameter.name
+        for parameter in signature.parameters.values()
+        if parameter.name in _SOURCE_INIT_ARGS
+        and parameter.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    )
+
+
+def _read_with_source_built_for_the_command(
+    source: object,
+    factory: Callable[..., object],
+    read_args: tuple[str, ...],
+) -> None:
+    """Make `source.read` read with a source built from the `read` command's arguments.
+
+    The suite builds the source before it knows the catalog and state of a `read`, while the
+    connector's `run.py` builds it with them.
+    """
+    if not callable(getattr(source, "read", None)):
+        return
+
+    def read(
+        logger: logging.Logger,
+        config: Mapping[str, Any],
+        catalog: ConfiguredAirbyteCatalog,
+        state: list[AirbyteStateMessage] | None = None,
+    ) -> Iterable[AirbyteMessage]:
+        command_args: dict[str, object] = {"catalog": catalog, "config": config, "state": state}
+        launched = cast("Source", factory(**{name: command_args[name] for name in read_args}))
+        return launched.read(logger, config, catalog, state)
+
+    setattr(source, "read", read)
