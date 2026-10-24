@@ -29,7 +29,7 @@ jobs:
           app-id: ${{ secrets.OCTAVIA_BOT_APP_ID }}
           private-key: ${{ secrets.OCTAVIA_BOT_PRIVATE_KEY }}
       - name: Run Poe Slash Command Processor
-        uses: aaronsteers/poe-command-processor@v1
+        uses: airbytehq/poe-command-processor@v1
         with:
           pr: ${{ github.event.inputs.pr }}
           comment-id: ${{ github.event.inputs.comment-id }}
