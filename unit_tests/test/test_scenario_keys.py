@@ -34,9 +34,7 @@ SECRET = "hunter2-do-not-print"
 
 # Fields with no reader yet, each with the change that adds the reader. The guard below fails once
 # such a field is read, so the entry is removed by the change that starts reading it.
-AWAITING_READER: dict[str, str] = {
-    "bypass_reason": "the zero-scenario rule, airbyte-internal-issues#17131",
-}
+AWAITING_READER: dict[str, str] = {}
 
 
 # --- Guard: every field is read outside the model --------------------------------------------
