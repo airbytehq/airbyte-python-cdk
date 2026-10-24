@@ -2,6 +2,47 @@
 
 ## Upgrading to the next minor release (unreleased)
 
+This release adds structural lints to the spec tests (`test_spec` and `test_docker_image_build_and_spec`), ported from the spec checks of the Connector Acceptance Tests (CAT). They run on the spec that `spec` emits, need no credentials, and report every problem with the JSON pointer of the place in the spec, never a value. The release is a minor one, since only the test harness changes. The monorepo connectors whose CI runs the CDK spec tests and that failed an enforced lint were fixed before this release, with these known exceptions:
+
+- `destination-timeplus` fails `additionalProperties is true`. It is archived and disabled in both registries, so nobody ships it. Its tests fail only when a pull request edits it.
+- `source-mssql` (Java) fails `additionalProperties is true`: it emits a map property whose `additionalProperties` is a schema. It fails the `airbyte-cdk image test` step of airbyte's Dockerfile Tests workflow, which runs only when a pull request changes the Java connector Dockerfiles.
+- `source-tplcentral` fails `additionalProperties is true` until its spec fix merges. Its legacy top-level `tests:` layout in `acceptance-test-config.yml` fails test collection, so the lints do not run on it until that config is converted.
+
+### Enforced spec lints
+
+The spec tests now fail when the emitted spec breaks one of these rules. Each failure names the lint, its rule and the pointer of every problem, and links the [connector specification reference](https://docs.airbyte.com/platform/connector-development/connector-specification-reference).
+
+| Lint | Rule | How to fix it |
+|---|---|---|
+| valid JSON Schema | `connectionSpecification` is valid against the meta-schema of the draft it declares in `$schema`, draft 7 by default. | Fix the reported keyword, such as a `type` that is not a JSON Schema type or a `required` that is not a list. |
+| refs resolved | The emitted spec contains no `$ref`, in `connectionSpecification` or `advanced_auth`. | Emit the spec with every reference resolved (pydantic: resolve `$defs` before emitting it). |
+| additionalProperties is true | `additionalProperties` is `true` wherever it is set. With `false` or a schema, removing a property later invalidates every saved config that sets it. | Set it to `true`, or remove it. Relaxing `false` to `true` is backward compatible. |
+| oneOf usage | A schema with `oneOf` is `type: object`, every variant has `properties`, and the variants share exactly one discriminator: a property that sets `const` in every variant or, failing that, a single-item `enum` with that item as `default`. A `const` discriminator may set `default` and `enum` only to its `const`, and no two variants share a discriminator value. | Add a shared `const` property, such as `auth_type`, to each variant. |
+| enum usage | An `enum` does not list the same value twice. | Remove the duplicate. |
+| array items | An array's `items` is one schema, of type `object`, `string`, `number` or `integer` (a single type, not a list such as `[string, null]`), or with an `enum`. | Change the item type. |
+| property types | A property whose `type` is a list holds one type, or one type followed by `null`. The setup form renders the first type only. | Reorder `[null, string]` to `[string, null]`. |
+| display_type | `display_type` is set only on a field with `oneOf` variants, to `dropdown` or `radio`. | Remove it or fix its value. |
+| duplicate order | No two properties of one object (and one `group`) share an `order`. | Give each property a unique `order`. `order` is an annotation, so changing it is backward compatible. |
+| nested group | `group` is set only on top-level properties. | Move the `group` to the top-level property. |
+| OAuth config paths | `advanced_auth.predicate_key` and every `path_in_connector_config` in `oauth_config_specification` name a property of `connectionSpecification` (through `oneOf` variants; `[]` for array items). | Fix the path, or add the property. |
+
+### Advisory spec lints
+
+These lints are reported as a `SpecLintWarning` and do not fail the test yet; a later release will enforce them:
+
+- **forbidden keywords**: the spec uses a keyword the setup form cannot render: `not`, `anyOf`, `allOf`, `patternProperties`, `prefixItems`, `if`, `then`, `else`, `dependentSchemas` or `dependentRequired`. Pydantic emits `allOf` for a field typed as an enum and `anyOf` for an `Optional` field (pydantic v2); inline the referenced schema. For an `Optional` field, replace `anyOf: [X, {type: null}]` with `X`'s keywords on the property and a `type` that lists `X`'s type followed by `null`, for example `type: [string, "null"]`. Keep the `null`: dropping it rejects every saved config that sets the field to `null`.
+- **object not empty**: a nested `type: object` declares no `properties` and no `oneOf`, so the setup form shows nothing for it. Declare its properties, or remove it.
+
+To make the warnings fail the test now, run `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.SpecLintWarning`, or pass `-W error::airbyte_cdk.test.standard_tests.SpecLintWarning` to `pytest`.
+
+### CAT spec checks that are not ported
+
+- `test_date_pattern` (CAT only warned) is dropped: it asked for `MM-DD-YYYY` on `format: date` fields, which contradicts the setup form's date picker, and adding a `pattern` narrows the accepted configs.
+- `test_date_format` and `test_oauth_is_default_method` are handed to the connector QA checks (`airbyte-ops local connector qa`): each has a known violator that cannot be fixed compatibly or chose its default deliberately, so it needs a per-connector exception that the standard tests do not offer.
+- `test_image_labels` and `test_image_environment_variables` are dropped: `airbyte-cdk image build` sets the `io.airbyte.name` and `io.airbyte.version` labels from `metadata.yaml`, and the shared connector Dockerfiles set `AIRBYTE_ENTRYPOINT` to the entrypoint, so a connector cannot get them wrong.
+
+## Upgrading to 7.39.0
+
 ### `acceptance-test-config.yml` keys the Standard Tests do not read fail collection
 
 `ConnectorTestScenario` declared `expect_records` (with `exact_order`), `timeout_seconds` and `file_types`, and no test read them: they parsed, and the check they configured in the retired Connector Acceptance Tests (CAT) never ran. They are removed. Any other key that the model did not declare was dropped without a word, so a misspelled key (`empty_stream` for `empty_streams`) was ignored as well.
