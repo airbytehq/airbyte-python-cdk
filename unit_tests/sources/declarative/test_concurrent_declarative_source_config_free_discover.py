@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Mapping
+from typing import Any, List, Mapping
 
 import pytest
 
@@ -12,6 +12,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     MissingConfigValueError,
 )
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 
 _RETRIEVER = {
     "type": "SimpleRetriever",
@@ -264,6 +265,18 @@ def test_config_free_discover_streams_cannot_be_read() -> None:
 
     with pytest.raises(RuntimeError, match="discover only"):
         list(stream.generate_partitions())
+
+
+def test_config_free_discover_uses_overridden_streams() -> None:
+    class _SourceWithStreamsOverride(ConcurrentDeclarativeSource):
+        def streams(self, config: Mapping[str, Any]) -> List[AbstractStream]:
+            return []
+
+    source = _SourceWithStreamsOverride(
+        source_config=_manifest([_stream("items", _INLINE_SCHEMA_LOADER)]), config={}
+    )
+
+    assert source.discover(source.logger, {}).streams == []
 
 
 def test_discover_without_config_fails_for_config_dependent_cursor_without_catalog_streams() -> (

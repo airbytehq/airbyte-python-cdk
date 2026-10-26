@@ -431,7 +431,7 @@ class ConcurrentDeclarativeSource(Source):
     def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
         streams = (
             self._catalog_streams()
-            if not config and not self.check_config_during_discover
+            if not config and not self.check_config_during_discover and self._uses_default_streams()
             else self.streams(config=self._config)
         )
         return AirbyteCatalog(streams=[stream.as_airbyte_stream() for stream in streams])
