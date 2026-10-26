@@ -5,7 +5,7 @@
 import logging
 import traceback
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union, cast
 
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
@@ -74,7 +74,9 @@ class CheckStream(ConnectionChecker):
         """Checks the connection to the source and its streams."""
         stream_names = self._get_stream_names(config)
         try:
-            streams: List[Union[Stream, AbstractStream]] = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
+            streams: List[Union[Stream, AbstractStream]] = self._build_streams(
+                source, config, stream_names
+            )
             if not streams:
                 return False, f"No streams to connect to from source {source}"
         except Exception as error:
@@ -94,15 +96,35 @@ class CheckStream(ConnectionChecker):
                 return stream_availability, message
 
         should_check_dynamic_streams = (
-            hasattr(source, "resolved_manifest")
+            self.dynamic_streams_check_configs
+            and hasattr(source, "resolved_manifest")
             and hasattr(source, "dynamic_streams")
-            and self.dynamic_streams_check_configs
         )
 
         if should_check_dynamic_streams:
             return self._check_dynamic_streams_availability(source, stream_name_to_stream, logger)
 
         return True, None
+
+    def _build_streams(
+        self,
+        source: Source,
+        config: Mapping[str, Any],
+        stream_names: List[str],
+    ) -> List[Union[Stream, AbstractStream]]:
+        from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+            ConcurrentDeclarativeSource,
+        )
+
+        if (
+            isinstance(source, ConcurrentDeclarativeSource)
+            and not self.dynamic_streams_check_configs
+        ):
+            streams = source._streams_by_name(stream_names)
+            if streams is not None:
+                return cast(List[Union[Stream, AbstractStream]], streams)
+
+        return source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
 
     def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
         if (
