@@ -4,7 +4,7 @@
 
 
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
-    _get_declarative_component_schema,
+    get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_normalizer import (
     ManifestNormalizer,
@@ -25,7 +25,7 @@ def test_when_multiple_url_base_are_resolved_and_most_frequent_is_shared(
     and the most frequent one is shared.
     """
 
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     resolved_manifest = resolver.preprocess_manifest(manifest_with_multiple_url_base)
     normalized_manifest = ManifestNormalizer(resolved_manifest, schema).normalize()
 
@@ -41,7 +41,7 @@ def test_with_shared_definitions_url_base_are_present(
     between the definitions and the `url_base` is present in the manifest.
     """
 
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     resolved_manifest = resolver.preprocess_manifest(manifest_with_url_base_linked_definition)
     normalized_manifest = ManifestNormalizer(resolved_manifest, schema).normalize()
 
@@ -75,7 +75,7 @@ def test_clean_dangling_fields_removes_unreferenced_definitions() -> None:
             }
         ],
     }
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._clean_dangling_fields()
     assert normalizer._normalized_manifest == expected
@@ -100,7 +100,7 @@ def test_clean_dangling_fields_removes_unreferenced_schemas() -> None:
             {"name": "stream1", "schema_loader": {"schema": {"$ref": "#/schemas/referenced"}}}
         ],
     }
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._clean_dangling_fields()
     assert normalizer._normalized_manifest == expected
@@ -134,7 +134,7 @@ def test_clean_dangling_fields_keeps_parent_paths() -> None:
             }
         ],
     }
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._clean_dangling_fields()
     assert normalizer._normalized_manifest == expected
@@ -150,7 +150,7 @@ def test_clean_dangling_fields_removes_empty_sections() -> None:
         "streams": [{"name": "stream1", "type": "object", "properties": {}}],
     }
     expected = {"streams": [{"name": "stream1", "type": "object", "properties": {}}]}
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._clean_dangling_fields()
     assert normalizer._normalized_manifest == expected
@@ -220,7 +220,7 @@ def test_replace_parent_streams_with_refs_replaces_with_ref():
             },
         ]
     }
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._replace_parent_streams_with_refs()
     assert normalizer._normalized_manifest == expected
@@ -276,7 +276,7 @@ def test_replace_parent_streams_with_refs_no_match():
             },
         ]
     }
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._replace_parent_streams_with_refs()
     assert normalizer._normalized_manifest == expected
@@ -360,7 +360,7 @@ def test_replace_parent_streams_with_refs_handles_multiple_partition_routers():
             },
         ]
     }
-    schema = _get_declarative_component_schema()
+    schema = get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._replace_parent_streams_with_refs()
     assert normalizer._normalized_manifest == expected
