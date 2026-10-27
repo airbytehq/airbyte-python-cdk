@@ -2319,12 +2319,40 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
+    def _flatten_partition_router_models(router_model: Any) -> list[Any]:
+        if router_model is None:
+            return []
+        if isinstance(router_model, list):
+            return [
+                nested_router
+                for router in router_model
+                for nested_router in ModelToComponentFactory._flatten_partition_router_models(
+                    router
+                )
+            ]
+        if isinstance(router_model, UnionPartitionRouterModel):
+            return [
+                router_model,
+                *ModelToComponentFactory._flatten_partition_router_models(
+                    getattr(router_model, "partition_routers", None)
+                ),
+            ]
+        if isinstance(router_model, GroupingPartitionRouterModel):
+            return [
+                router_model,
+                *ModelToComponentFactory._flatten_partition_router_models(
+                    getattr(router_model, "underlying_partition_router", None)
+                ),
+            ]
+        return [router_model]
+
+    @staticmethod
     def _validate_sync_token_stream(model: DeclarativeStreamModel) -> None:
         cursor_model = model.incremental_sync
         stream_name = model.name or ""
         retriever_model = model.retriever
         router_model = getattr(retriever_model, "partition_router", None)
-        routers = router_model if isinstance(router_model, list) else [router_model]
+        routers = ModelToComponentFactory._flatten_partition_router_models(router_model)
         for router in routers:
             if isinstance(router, SubstreamPartitionRouterModel):
                 for parent in router.parent_stream_configs:
