@@ -41,9 +41,9 @@ def requested_section(config: Mapping[str, Any], spec: ConnectorSpecification) -
     Raises a config error when the key is not a string, when the specification declares no sections, or when the
     section is not one of the declared ones.
     """
-    section = config.get(CHECK_SECTION_KEY)
-    if section is None:
+    if CHECK_SECTION_KEY not in config:
         return None
+    section = config[CHECK_SECTION_KEY]
     if not isinstance(section, str) or not section.strip():
         raise _config_error(f"'{CHECK_SECTION_KEY}' must be a non-empty string.")
     declared = declared_sections(spec)
