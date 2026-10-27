@@ -1182,3 +1182,44 @@ def test_run_check_section_rejects_a_connector_without_sections(
         )
     ]
     check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config_mock", [{"check-section": "connection", "host": "localhost"}], indirect=True
+)
+def test_run_check_section_is_not_blocked_by_a_dependency_on_a_later_section(
+    entrypoint: AirbyteEntrypoint, mocker, config_mock
+):
+    spec = ConnectorSpecification(
+        connectionSpecification={
+            **SECTIONED_SPEC.connectionSpecification,
+            "dependentRequired": {"host": ["username"]},
+        }
+    )
+    mocker.patch.object(MockSource, "spec", MagicMock(return_value=spec))
+    check_section = mocker.patch.object(
+        MockSource, "check_section", return_value=AirbyteConnectionStatus(status=Status.SUCCEEDED)
+    )
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [(Status.SUCCEEDED.value, None)]
+    check_section.assert_called_once_with(entrypoint.logger, "connection", {"host": "localhost"})
+
+
+@pytest.mark.parametrize(
+    "config_mock", [{"check-section": None, "host": "localhost"}], indirect=True
+)
+def test_run_check_with_a_null_section_is_rejected(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock
+):
+    check = mocker.patch.object(MockSource, "check")
+    check_section = mocker.patch.object(MockSource, "check_section")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [
+        (Status.FAILED.value, "'check-section' must be a non-empty string.")
+    ]
+    check.assert_not_called()
+    check_section.assert_not_called()

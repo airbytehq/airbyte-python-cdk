@@ -7,6 +7,7 @@ import pytest
 from airbyte_cdk.models import ConnectorSpecification, FailureType
 from airbyte_cdk.sources.utils.check_section import (
     CHECK_SECTION_KEY,
+    CROSS_PROPERTY_KEYWORDS,
     declared_sections,
     is_last_section,
     requested_section,
@@ -55,6 +56,13 @@ def test_declared_sections_is_empty_without_sections():
 
 def test_requested_section_is_none_without_the_key():
     assert requested_section({"host": "h"}, SECTIONED_SPEC) is None
+
+
+def test_requested_section_rejects_a_null_section():
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        requested_section({CHECK_SECTION_KEY: None, "host": "h"}, SECTIONED_SPEC)
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert exc_info.value.message == "'check-section' must be a non-empty string."
 
 
 @pytest.mark.parametrize("section", ["connection", "credentials", "review"])
@@ -136,3 +144,38 @@ def test_section_spec_keeps_the_other_spec_fields():
     narrowed = section_spec(spec, "connection")
 
     assert narrowed.documentationUrl == spec.documentationUrl
+
+
+CROSS_PROPERTY_SCHEMA = {
+    **SECTIONED_SCHEMA,
+    "dependentRequired": {"host": ["username"]},
+    "dependencies": {"port": ["password"]},
+    "allOf": [{"required": ["password"]}],
+    "anyOf": [{"required": ["username"]}, {"required": ["password"]}],
+    "oneOf": [{"required": ["username"]}],
+    "not": {"required": ["ssl"]},
+    "if": {"properties": {"host": {"const": "h"}}},
+    "then": {"required": ["password"]},
+    "else": {"required": ["username"]},
+    "dependentSchemas": {"host": {"required": ["password"]}},
+}
+CROSS_PROPERTY_SPEC = ConnectorSpecification(connectionSpecification=CROSS_PROPERTY_SCHEMA)
+
+
+def test_section_spec_drops_root_constraints_which_can_require_later_fields():
+    from jsonschema import validate
+
+    narrowed = section_spec(CROSS_PROPERTY_SPEC, "connection").connectionSpecification
+
+    assert not set(narrowed) & set(CROSS_PROPERTY_KEYWORDS)
+    assert narrowed["required"] == ["host"]
+    # The partial config of the first section passes, while its own fields are still validated.
+    validate(instance={"host": "h", "port": 5432}, schema=narrowed)
+    with pytest.raises(Exception, match="'port'|not of type"):
+        validate(instance={"host": "h", "port": "not-a-port"}, schema=narrowed)
+    # The full specification keeps every constraint.
+    assert all(
+        keyword in CROSS_PROPERTY_SPEC.connectionSpecification
+        for keyword in CROSS_PROPERTY_KEYWORDS
+    )
+    assert section_spec(CROSS_PROPERTY_SPEC, "review") is CROSS_PROPERTY_SPEC

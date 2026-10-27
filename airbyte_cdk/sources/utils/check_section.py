@@ -38,8 +38,8 @@ def requested_section(config: Mapping[str, Any], spec: ConnectorSpecification) -
     """
     The section named by `check-section` in the config, or None for a full check.
 
-    Raises a config error when the key is not a string, when the specification declares no sections, or when the
-    section is not one of the declared ones.
+    Raises a config error when the key is present but not a non-empty string (a null value included), when the
+    specification declares no sections, or when the section is not one of the declared ones.
     """
     if CHECK_SECTION_KEY not in config:
         return None
@@ -70,16 +70,39 @@ def strip_check_section(config: Mapping[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in config.items() if key != CHECK_SECTION_KEY}
 
 
+CROSS_PROPERTY_KEYWORDS = (
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependencies",
+    "dependentRequired",
+    "dependentSchemas",
+)
+"""
+Root-level JSON Schema keywords which can require properties of later sections (for instance a `dependentRequired`
+tying a connection field to a credentials field). A section check drops them, see `section_spec`.
+"""
+
+
 def section_spec(spec: ConnectorSpecification, section: str) -> ConnectorSpecification:
     """
-    The specification narrowed to what the form has collected by `section`: `required` only keeps the properties
-    whose `group` belongs to that section or to an earlier one. Every property keeps its own schema, so the fields
-    which are present are still validated in full. The last section completes the configuration, so its specification
-    is the full one.
+    The specification narrowed to what the form has collected by `section`:
+    - `required` only keeps the properties whose `group` belongs to that section or to an earlier one;
+    - the root-level cross-property keywords (`CROSS_PROPERTY_KEYWORDS`) are dropped, since they can require
+      properties of later sections.
+    Every property keeps its own schema, so the fields which are present are still validated in full, and the dropped
+    constraints apply again in the full check. The last section completes the configuration, so its specification is
+    the full one.
     """
     if is_last_section(spec, section):
         return spec
     schema = copy.deepcopy(spec.connectionSpecification)
+    for keyword in CROSS_PROPERTY_KEYWORDS:
+        schema.pop(keyword, None)
     collected_groups: Set[str] = set()
     for declared_section in schema.get("sections") or []:
         collected_groups.update(declared_section.get("groups") or [])
