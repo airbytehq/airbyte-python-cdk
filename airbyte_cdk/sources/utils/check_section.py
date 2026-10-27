@@ -5,11 +5,13 @@
 Section-aware CHECK for the stepped setup form.
 
 A connector whose specification declares `sections` (each listing the `groups` of properties it shows, in form order)
-can be checked one section at a time. The configuration JSON then carries a top-level `check-section` key naming the
-section, and only holds the fields of that section and of the sections before it. The entrypoint validates that much of
-the configuration against the specification, runs the full check for the last section (the configuration is complete by
-then) and delegates every other section to the connector's `check_section`. Without the key, CHECK validates the complete
-configuration, exactly as before.
+can be checked one section at a time. A section which declares `"check": true` tells the platform to run a CHECK when
+the user completes it; the configuration JSON then carries a top-level `check-section` key naming the section, and only
+holds the fields of that section and of the sections before it. The entrypoint validates that much of the configuration
+against the specification, runs the full check for the last section (the configuration is complete by then) and
+delegates every other section to the connector's `check_section`. A section without `"check": true` is never checked
+on its own; the last one is covered by the full check the platform runs before creating the source. Without the key,
+CHECK validates the complete configuration, exactly as before.
 """
 
 from __future__ import annotations
@@ -24,14 +26,23 @@ CHECK_SECTION_KEY = "check-section"
 """The optional top-level key of the configuration JSON object which turns a CHECK into a section check."""
 
 
-def declared_sections(spec: ConnectorSpecification) -> List[str]:
-    """The `sections[].id` values of the specification, in form order; empty when the specification declares none."""
-    sections = spec.connectionSpecification.get("sections") or []
+def _sections(spec: ConnectorSpecification) -> List[Mapping[str, Any]]:
+    """The `sections` of the specification which have a string `id`, in form order."""
     return [
-        section["id"]
-        for section in sections
+        section
+        for section in spec.connectionSpecification.get("sections") or []
         if isinstance(section, Mapping) and isinstance(section.get("id"), str)
     ]
+
+
+def declared_sections(spec: ConnectorSpecification) -> List[str]:
+    """The `sections[].id` values of the specification, in form order; empty when the specification declares none."""
+    return [section["id"] for section in _sections(spec)]
+
+
+def checkable_sections(spec: ConnectorSpecification) -> List[str]:
+    """The ids of the sections which declare `"check": true`, the only ones a `check-section` may name."""
+    return [section["id"] for section in _sections(spec) if section.get("check") is True]
 
 
 def requested_section(config: Mapping[str, Any], spec: ConnectorSpecification) -> Optional[str]:
@@ -39,7 +50,8 @@ def requested_section(config: Mapping[str, Any], spec: ConnectorSpecification) -
     The section named by `check-section` in the config, or None for a full check.
 
     Raises a config error when the key is present but not a non-empty string (a null value included), when the
-    specification declares no sections, or when the section is not one of the declared ones.
+    specification declares no sections, when the section is not one of the declared ones, or when the section does not
+    declare `"check": true`.
     """
     if CHECK_SECTION_KEY not in config:
         return None
@@ -53,6 +65,11 @@ def requested_section(config: Mapping[str, Any], spec: ConnectorSpecification) -
         message = (
             f"Unknown {CHECK_SECTION_KEY} '{section}'; "
             f"the connector specification declares: {', '.join(declared)}."
+        )
+    elif section not in checkable_sections(spec):
+        message = (
+            f"Section '{section}' has no check: "
+            f'the connector specification does not declare "check": true for it.'
         )
     else:
         return section

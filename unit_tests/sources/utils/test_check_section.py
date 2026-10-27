@@ -8,6 +8,7 @@ from airbyte_cdk.models import ConnectorSpecification, FailureType
 from airbyte_cdk.sources.utils.check_section import (
     CHECK_SECTION_KEY,
     CROSS_PROPERTY_KEYWORDS,
+    checkable_sections,
     declared_sections,
     is_last_section,
     requested_section,
@@ -29,8 +30,20 @@ SECTIONED_SCHEMA = {
     "required": ["host", "username", "password", "legacy"],
     "groups": [{"id": "db"}, {"id": "security", "title": "Security"}, {"id": "auth"}],
     "sections": [
-        {"id": "connection", "title": "Connection", "order": 0, "groups": ["db", "security"]},
-        {"id": "credentials", "title": "Credentials", "order": 1, "groups": ["auth"]},
+        {
+            "id": "connection",
+            "title": "Connection",
+            "order": 0,
+            "groups": ["db", "security"],
+            "check": True,
+        },
+        {
+            "id": "credentials",
+            "title": "Credentials",
+            "order": 1,
+            "groups": ["auth"],
+            "check": True,
+        },
         {"id": "review", "title": "Review & set up", "order": 2, "groups": []},
     ],
 }
@@ -42,6 +55,11 @@ FLAT_SPEC = ConnectorSpecification(
 
 def test_declared_sections_are_in_form_order():
     assert declared_sections(SECTIONED_SPEC) == ["connection", "credentials", "review"]
+
+
+def test_checkable_sections_are_the_ones_declaring_check():
+    assert checkable_sections(SECTIONED_SPEC) == ["connection", "credentials"]
+    assert checkable_sections(FLAT_SPEC) == []
 
 
 def test_declared_sections_is_empty_without_sections():
@@ -65,9 +83,19 @@ def test_requested_section_rejects_a_null_section():
     assert exc_info.value.message == "'check-section' must be a non-empty string."
 
 
-@pytest.mark.parametrize("section", ["connection", "credentials", "review"])
-def test_requested_section_resolves_a_declared_section(section):
+@pytest.mark.parametrize("section", ["connection", "credentials"])
+def test_requested_section_resolves_a_checkable_section(section):
     assert requested_section({CHECK_SECTION_KEY: section, "host": "h"}, SECTIONED_SPEC) == section
+
+
+def test_requested_section_rejects_a_section_without_check():
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        requested_section({CHECK_SECTION_KEY: "review"}, SECTIONED_SPEC)
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert (
+        exc_info.value.message
+        == "Section 'review' has no check: the connector specification does not declare \"check\": true for it."
+    )
 
 
 def test_requested_section_rejects_an_unknown_section():

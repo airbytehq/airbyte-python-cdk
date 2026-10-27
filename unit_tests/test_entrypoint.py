@@ -1015,8 +1015,20 @@ SECTIONED_SPEC = ConnectorSpecification(
         "required": ["host", "username"],
         "groups": [{"id": "db"}, {"id": "auth"}],
         "sections": [
-            {"id": "connection", "title": "Connection", "order": 0, "groups": ["db"]},
-            {"id": "credentials", "title": "Credentials", "order": 1, "groups": ["auth"]},
+            {
+                "id": "connection",
+                "title": "Connection",
+                "order": 0,
+                "groups": ["db"],
+                "check": True,
+            },
+            {
+                "id": "credentials",
+                "title": "Credentials",
+                "order": 1,
+                "groups": ["auth"],
+                "check": True,
+            },
         ],
     }
 )
@@ -1224,6 +1236,39 @@ def test_run_check_with_a_null_section_is_rejected(
 
     assert _connection_statuses(messages) == [
         (Status.FAILED.value, "'check-section' must be a non-empty string.")
+    ]
+    check.assert_not_called()
+    check_section.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config_mock",
+    [{"check-section": "review", "host": "localhost", "username": "me"}],
+    indirect=True,
+)
+def test_run_check_section_rejects_a_section_without_check(
+    entrypoint: AirbyteEntrypoint, mocker, config_mock
+):
+    spec = ConnectorSpecification(
+        connectionSpecification={
+            **SECTIONED_SPEC.connectionSpecification,
+            "sections": [
+                *SECTIONED_SPEC.connectionSpecification["sections"],
+                {"id": "review", "title": "Review & set up", "order": 2, "groups": []},
+            ],
+        }
+    )
+    mocker.patch.object(MockSource, "spec", MagicMock(return_value=spec))
+    check = mocker.patch.object(MockSource, "check")
+    check_section = mocker.patch.object(MockSource, "check_section")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [
+        (
+            Status.FAILED.value,
+            "Section 'review' has no check: the connector specification does not declare \"check\": true for it.",
+        )
     ]
     check.assert_not_called()
     check_section.assert_not_called()
