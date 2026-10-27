@@ -1003,3 +1003,182 @@ def test_check_masks_secrets_in_a_config_error_raised_by_the_connector(
 
     assert "secretpw" not in "".join(messages)
     assert orjson.loads(messages[-1])["connectionStatus"]["message"] == "Login failed for ****"
+
+
+SECTIONED_SPEC = ConnectorSpecification(
+    connectionSpecification={
+        "type": "object",
+        "properties": {
+            "host": {"type": "string", "group": "db"},
+            "username": {"type": "string", "group": "auth"},
+        },
+        "required": ["host", "username"],
+        "groups": [{"id": "db"}, {"id": "auth"}],
+        "sections": [
+            {"id": "connection", "title": "Connection", "order": 0, "groups": ["db"]},
+            {"id": "credentials", "title": "Credentials", "order": 1, "groups": ["auth"]},
+        ],
+    }
+)
+
+
+@pytest.fixture
+def sectioned_spec_mock(mocker):
+    mock = MagicMock(return_value=SECTIONED_SPEC)
+    mocker.patch.object(MockSource, "spec", mock)
+    return mock
+
+
+def _connection_statuses(messages: List[str]) -> List[tuple]:
+    """The (status, message) pairs of the CONNECTION_STATUS messages, as plain values."""
+    return [
+        (status["status"], status.get("message"))
+        for status in (
+            orjson.loads(message).get("connectionStatus")
+            for message in messages
+            if orjson.loads(message)["type"] == Type.CONNECTION_STATUS.value
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "config_mock", [{"check-section": "connection", "host": "localhost"}], indirect=True
+)
+def test_run_check_section_delegates_to_check_section_with_the_partial_config(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock
+):
+    check_value = AirbyteConnectionStatus(status=Status.SUCCEEDED)
+    check = mocker.patch.object(MockSource, "check")
+    check_section = mocker.patch.object(MockSource, "check_section", return_value=check_value)
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [(Status.SUCCEEDED.value, None)]
+    check_section.assert_called_once_with(entrypoint.logger, "connection", {"host": "localhost"})
+    check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config_mock",
+    [{"check-section": "credentials", "host": "localhost", "username": "me"}],
+    indirect=True,
+)
+def test_run_check_section_runs_the_full_check_for_the_last_section(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock
+):
+    check_value = AirbyteConnectionStatus(status=Status.SUCCEEDED)
+    check = mocker.patch.object(MockSource, "check", return_value=check_value)
+    check_section = mocker.patch.object(MockSource, "check_section")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [(Status.SUCCEEDED.value, None)]
+    check.assert_called_once_with(entrypoint.logger, {"host": "localhost", "username": "me"})
+    check_section.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config_mock", [{"check-section": "connection", "host": "localhost"}], indirect=True
+)
+def test_run_check_section_reports_the_failure_of_check_section(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock
+):
+    exception = AirbyteTracedException(
+        message="Host 'localhost' cannot be reached.", failure_type=FailureType.config_error
+    )
+    mocker.patch.object(MockSource, "check_section", side_effect=exception)
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [
+        (Status.FAILED.value, "Host 'localhost' cannot be reached.")
+    ]
+
+
+@pytest.mark.parametrize(
+    "config_mock", [{"check-section": "connection", "host": "localhost"}], indirect=True
+)
+def test_run_check_section_raises_when_the_source_does_not_implement_it(
+    entrypoint: AirbyteEntrypoint, sectioned_spec_mock, config_mock
+):
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert "does not implement check_section" in exc_info.value.message
+
+
+@pytest.mark.parametrize("config_mock", [{"check-section": "connection"}], indirect=True)
+def test_run_check_section_still_validates_the_fields_of_the_section(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock
+):
+    check_section = mocker.patch.object(MockSource, "check_section")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [
+        (Status.FAILED.value, "Config validation error: 'host' is a required property")
+    ]
+    check_section.assert_not_called()
+
+
+@pytest.mark.parametrize("config_mock", [{"host": "localhost"}], indirect=True)
+def test_run_check_without_the_key_validates_the_full_spec(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock
+):
+    check = mocker.patch.object(MockSource, "check")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [
+        (Status.FAILED.value, "Config validation error: 'username' is a required property")
+    ]
+    check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config_mock, expected_message",
+    [
+        pytest.param(
+            {"check-section": "sync", "host": "localhost"},
+            "Unknown check-section 'sync'; the connector specification declares: connection, credentials.",
+            id="unknown-section",
+        ),
+        pytest.param(
+            {"check-section": 1, "host": "localhost"},
+            "'check-section' must be a non-empty string.",
+            id="non-string-section",
+        ),
+    ],
+    indirect=["config_mock"],
+)
+def test_run_check_section_rejects_an_invalid_section(
+    entrypoint: AirbyteEntrypoint, mocker, sectioned_spec_mock, config_mock, expected_message
+):
+    check = mocker.patch.object(MockSource, "check")
+    check_section = mocker.patch.object(MockSource, "check_section")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [(Status.FAILED.value, expected_message)]
+    check.assert_not_called()
+    check_section.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "config_mock", [{"check-section": "connection", "host": "localhost"}], indirect=True
+)
+def test_run_check_section_rejects_a_connector_without_sections(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    check = mocker.patch.object(MockSource, "check")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert _connection_statuses(messages) == [
+        (
+            Status.FAILED.value,
+            "'check-section' is not supported: the connector specification declares no sections.",
+        )
+    ]
+    check.assert_not_called()

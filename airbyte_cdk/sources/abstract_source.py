@@ -98,6 +98,32 @@ class AbstractSource(Source, ABC):
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
 
+    def check_section_connection(
+        self, logger: logging.Logger, section: str, config: Mapping[str, Any]
+    ) -> Tuple[bool, Optional[Any]]:
+        """
+        Section-aware counterpart of `check_connection`, for the stepped setup form
+        (see `airbyte_cdk.sources.utils.check_section`).
+
+        :param logger: source logger
+        :param section: one of the sections the specification declares, never the last one (the last section completes
+          the configuration and gets `check_connection`).
+        :param config: the fields of `section` and of the sections before it only.
+        :return: A tuple of (boolean, error), as `check_connection`.
+
+        A source which declares sections must override this method.
+        """
+        return super().check_section(logger, section, config)  # type: ignore[no-any-return]  # always raises
+
+    def check_section(
+        self, logger: logging.Logger, section: str, config: Mapping[str, Any]
+    ) -> AirbyteConnectionStatus:
+        """Section-aware CHECK, see `BaseConnector.check_section`; delegates to `check_section_connection`."""
+        check_succeeded, error = self.check_section_connection(logger, section, config)
+        if not check_succeeded:
+            return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
+        return AirbyteConnectionStatus(status=Status.SUCCEEDED)
+
     def read(
         self,
         logger: logging.Logger,
