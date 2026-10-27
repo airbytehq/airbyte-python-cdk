@@ -111,9 +111,9 @@ class AbstractSource(Source, ABC):
         :param config: the fields of `section` and of the sections before it only.
         :return: A tuple of (boolean, error), as `check_connection`.
 
-        A source which declares sections must override this method.
+        A source which declares sections must override this method; the default reports a failed check.
         """
-        return super().check_section(logger, section, config)  # type: ignore[no-any-return]  # always raises
+        return False, super().check_section(logger, section, config).message
 
     def check_section(
         self, logger: logging.Logger, section: str, config: Mapping[str, Any]

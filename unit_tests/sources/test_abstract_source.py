@@ -2078,12 +2078,10 @@ def test_failed_check_section(mocker):
     )
 
 
-def test_check_section_is_a_system_error_when_not_implemented():
-    with pytest.raises(AirbyteTracedException) as exc_info:
-        MockSource(check_lambda=lambda: (True, None)).check_section(logger, "connection", {})
+def test_check_section_fails_when_not_implemented():
+    status = MockSource(check_lambda=lambda: (True, None)).check_section(logger, "connection", {})
 
-    assert exc_info.value.failure_type == FailureType.system_error
-    assert (
-        exc_info.value.message
-        == "The connector specification declares sections but the connector does not implement check_section (section 'connection')."
+    assert status == AirbyteConnectionStatus(
+        status=Status.FAILED,
+        message="\"The connector specification declares sections but the connector does not implement check_section (section 'connection').\"",
     )

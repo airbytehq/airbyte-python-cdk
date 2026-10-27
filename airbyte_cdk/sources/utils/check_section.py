@@ -44,19 +44,21 @@ def requested_section(config: Mapping[str, Any], spec: ConnectorSpecification) -
     if CHECK_SECTION_KEY not in config:
         return None
     section = config[CHECK_SECTION_KEY]
-    if not isinstance(section, str) or not section.strip():
-        raise _config_error(f"'{CHECK_SECTION_KEY}' must be a non-empty string.")
     declared = declared_sections(spec)
-    if not declared:
-        raise _config_error(
-            f"'{CHECK_SECTION_KEY}' is not supported: the connector specification declares no sections."
-        )
-    if section not in declared:
-        raise _config_error(
+    if not isinstance(section, str) or not section.strip():
+        message = f"'{CHECK_SECTION_KEY}' must be a non-empty string."
+    elif not declared:
+        message = f"'{CHECK_SECTION_KEY}' is not supported: the connector specification declares no sections."
+    elif section not in declared:
+        message = (
             f"Unknown {CHECK_SECTION_KEY} '{section}'; "
             f"the connector specification declares: {', '.join(declared)}."
         )
-    return section
+    else:
+        return section
+    raise AirbyteTracedException(
+        internal_message=message, message=message, failure_type=FailureType.config_error
+    )
 
 
 def is_last_section(spec: ConnectorSpecification, section: str) -> bool:
@@ -118,9 +120,3 @@ def section_spec(spec: ConnectorSpecification, section: str) -> ConnectorSpecifi
     narrowed = copy.copy(spec)
     narrowed.connectionSpecification = schema
     return narrowed
-
-
-def _config_error(message: str) -> AirbyteTracedException:
-    return AirbyteTracedException(
-        internal_message=message, message=message, failure_type=FailureType.config_error
-    )

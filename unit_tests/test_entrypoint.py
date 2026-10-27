@@ -1098,14 +1098,18 @@ def test_run_check_section_reports_the_failure_of_check_section(
 @pytest.mark.parametrize(
     "config_mock", [{"check-section": "connection", "host": "localhost"}], indirect=True
 )
-def test_run_check_section_raises_when_the_source_does_not_implement_it(
+def test_run_check_section_fails_when_the_source_does_not_implement_it(
     entrypoint: AirbyteEntrypoint, sectioned_spec_mock, config_mock
 ):
-    with pytest.raises(AirbyteTracedException) as exc_info:
-        list(entrypoint.run(Namespace(command="check", config="config_path")))
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
 
-    assert exc_info.value.failure_type == FailureType.system_error
-    assert "does not implement check_section" in exc_info.value.message
+    assert _connection_statuses(messages) == [
+        (
+            Status.FAILED.value,
+            "The connector specification declares sections but the connector does not implement "
+            "check_section (section 'connection').",
+        )
+    ]
 
 
 @pytest.mark.parametrize("config_mock", [{"check-section": "connection"}], indirect=True)

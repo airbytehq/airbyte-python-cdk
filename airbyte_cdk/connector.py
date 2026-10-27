@@ -16,7 +16,7 @@ from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     ConnectorSpecification,
     ConnectorSpecificationSerializer,
-    FailureType,
+    Status,
 )
 
 
@@ -117,16 +117,14 @@ class BaseConnector(ABC, Generic[TConfig]):
         nothing beyond: the fields of the section, the fields of earlier sections it depends on, and the server-side
         prerequisites those fields describe. A missing or invalid field is reported through a config error naming it.
 
-        A connector which declares sections must override this method.
+        A connector which declares sections must override this method; the default reports a failed check.
         """
-        from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-
-        message = (
-            f"The connector specification declares sections but the connector does not implement "
-            f"check_section (section '{section}')."
-        )
-        raise AirbyteTracedException(
-            internal_message=message, message=message, failure_type=FailureType.system_error
+        return AirbyteConnectionStatus(
+            status=Status.FAILED,
+            message=(
+                f"The connector specification declares sections but the connector does not implement "
+                f"check_section (section '{section}')."
+            ),
         )
 
 
