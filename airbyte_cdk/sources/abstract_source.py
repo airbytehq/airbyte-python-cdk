@@ -17,6 +17,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.connector import CHECK_SECTION_NOT_IMPLEMENTED
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -102,23 +103,17 @@ class AbstractSource(Source, ABC):
         self, logger: logging.Logger, section: str, config: Mapping[str, Any]
     ) -> Tuple[bool, Optional[Any]]:
         """
-        Section-aware counterpart of `check_connection`, for the stepped setup form
-        (see `airbyte_cdk.sources.utils.check_section`).
+        `check_connection` for one section of the stepped setup form: `config` only holds the fields of `section`
+        and of the sections before it. Returns (True, None) when they are valid, (False, error) otherwise.
 
-        :param logger: source logger
-        :param section: one of the sections the specification declares, never the last one (the last section completes
-          the configuration and gets `check_connection`).
-        :param config: the fields of `section` and of the sections before it only.
-        :return: A tuple of (boolean, error), as `check_connection`.
-
-        A source which declares sections must override this method; the default reports a failed check.
+        Override it in a source whose specification declares sections.
         """
-        return False, super().check_section(logger, section, config).message
+        return False, CHECK_SECTION_NOT_IMPLEMENTED.format(section=section)
 
     def check_section(
         self, logger: logging.Logger, section: str, config: Mapping[str, Any]
     ) -> AirbyteConnectionStatus:
-        """Section-aware CHECK, see `BaseConnector.check_section`; delegates to `check_section_connection`."""
+        """Same as `check`, for one section: wraps `check_section_connection` into a connection status."""
         check_succeeded, error = self.check_section_connection(logger, section, config)
         if not check_succeeded:
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))

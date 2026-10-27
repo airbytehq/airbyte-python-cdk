@@ -2083,5 +2083,5 @@ def test_check_section_fails_when_not_implemented():
 
     assert status == AirbyteConnectionStatus(
         status=Status.FAILED,
-        message="\"The connector specification declares sections but the connector does not implement check_section (section 'connection').\"",
+        message="\"The connector specification declares sections but the connector does not implement a section check (section 'connection').\"",
     )

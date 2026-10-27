@@ -30,6 +30,11 @@ def load_optional_package_file(package: str, filename: str) -> Optional[bytes]:
 
 TConfig = TypeVar("TConfig", bound=Mapping[str, Any])
 
+CHECK_SECTION_NOT_IMPLEMENTED = (
+    "The connector specification declares sections but the connector does not implement "
+    "a section check (section '{section}')."
+)
+
 
 class BaseConnector(ABC, Generic[TConfig]):
     # configure whether the `check_config_against_spec_or_exit()` needs to be called
@@ -109,22 +114,15 @@ class BaseConnector(ABC, Generic[TConfig]):
         self, logger: logging.Logger, section: str, config: TConfig
     ) -> AirbyteConnectionStatus:
         """
-        Section-aware CHECK for the stepped setup form (see `airbyte_cdk.sources.utils.check_section`).
+        Checks the configuration up to `section` only, for the stepped setup form
+        (see `airbyte_cdk.sources.utils.check_section`). The entrypoint calls this instead of `check` when the config
+        carries a `check-section` key naming a declared section other than the last one; `config` then only holds
+        the fields of that section and of the sections before it.
 
-        Called by the entrypoint instead of `check` when the configuration carries a `check-section` key naming one of
-        the sections the specification declares, except for the last section which gets the full `check`. `config` only
-        holds the fields of `section` and of the sections before it, and the implementation must validate that much and
-        nothing beyond: the fields of the section, the fields of earlier sections it depends on, and the server-side
-        prerequisites those fields describe. A missing or invalid field is reported through a config error naming it.
-
-        A connector which declares sections must override this method; the default reports a failed check.
+        Override it in a connector whose specification declares sections.
         """
         return AirbyteConnectionStatus(
-            status=Status.FAILED,
-            message=(
-                f"The connector specification declares sections but the connector does not implement "
-                f"check_section (section '{section}')."
-            ),
+            status=Status.FAILED, message=CHECK_SECTION_NOT_IMPLEMENTED.format(section=section)
         )
 
 

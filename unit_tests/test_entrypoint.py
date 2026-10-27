@@ -1107,7 +1107,7 @@ def test_run_check_section_fails_when_the_source_does_not_implement_it(
         (
             Status.FAILED.value,
             "The connector specification declares sections but the connector does not implement "
-            "check_section (section 'connection').",
+            "a section check (section 'connection').",
         )
     ]
 
