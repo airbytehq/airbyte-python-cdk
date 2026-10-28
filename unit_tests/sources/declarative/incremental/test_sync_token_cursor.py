@@ -38,7 +38,17 @@ def _response(body):
     return response
 
 
-def _cursor(*, state=None, router=None, max_partitions=1000, completion_condition=None):
+def _cursor(
+    *,
+    state=None,
+    router=None,
+    max_partitions=1000,
+    completion_condition=None,
+    max_state_bytes=None,
+):
+    kwargs = {}
+    if max_state_bytes is not None:
+        kwargs["max_state_bytes"] = max_state_bytes
     return SyncTokenCursor(
         stream_name="events",
         stream_namespace=None,
@@ -52,6 +62,7 @@ def _cursor(*, state=None, router=None, max_partitions=1000, completion_conditio
         parameters={},
         completion_condition=completion_condition,
         max_partitions=max_partitions,
+        **kwargs,
     )
 
 
@@ -434,3 +445,41 @@ def test_t_valid_and_t_init_use_partition_router_and_initial_token_slice():
     slices = list(cursor.stream_slices())
     assert slices[0].partition == {"account": "a"}
     assert slices[0].cursor_slice == {}
+
+
+def test_t_bytes_caps_new_partitions_but_updates_existing_partitions(caplog):
+    partitions = [{"account": f"account-{index}"} for index in range(6)]
+    router = Router([StreamSlice(partition=partition, cursor_slice={}) for partition in partitions])
+    first_sync = _cursor(router=router, max_state_bytes=4096)
+
+    for partition in partitions:
+        stream_slice = StreamSlice(partition=partition, cursor_slice={})
+        first_sync.on_page_completed(
+            PageCompleted(stream_slice, _response({"syncToken": "A" * 1024}), True)
+        )
+        first_sync.close_partition(_partition(partition))
+
+    assert len(first_sync.state["states"]) == 4
+
+    second_sync = _cursor(state=first_sync.state, router=router, max_state_bytes=4096)
+    for stream_slice in second_sync.stream_slices():
+        partition = stream_slice.partition
+        token = "longer" * 300 if partition == partitions[0] else "B" * 1024
+        second_sync.on_page_completed(
+            PageCompleted(stream_slice, _response({"syncToken": token}), True)
+        )
+        second_sync.close_partition(_partition(partition))
+
+    with caplog.at_level(logging.WARNING):
+        second_sync.ensure_at_least_one_state_emitted()
+        second_sync.ensure_at_least_one_state_emitted()
+
+    committed = {
+        item["partition"]["account"]: item["cursor"]["token"]
+        for item in second_sync.state["states"]
+    }
+    assert len(committed) == 4
+    assert committed["account-0"] == "longer" * 300
+    assert "account-4" not in committed
+    assert caplog.text.count("Stream events: stored tokens reached the 4 KB state limit") == 1
+    assert "4 partitions; 2 more read in full on every sync." in caplog.text
