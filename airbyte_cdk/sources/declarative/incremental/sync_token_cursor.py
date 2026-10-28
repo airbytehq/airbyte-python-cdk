@@ -35,6 +35,7 @@ from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import 
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.analytics_message import create_analytics_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
@@ -97,6 +98,7 @@ class SyncTokenCursor(Cursor):
         self._warned_no_token = False
         self._warned_cap = False
         self._partitions_over_cap: set[str] = set()
+        self._reset_partitions: set[str] = set()
         self._invalid_state_reason: Optional[str] = None
         self._load_state(stream_state or {})
 
@@ -210,12 +212,17 @@ class SyncTokenCursor(Cursor):
             )
         else:
             complete = True
-        if not complete:
-            self._warn_missing_token()
-            return
-
-        token = self._coerce_token(token_value, path)
+        token = self._coerce_token(token_value, path) if complete else None
         if token is None:
+            if partition_key in self._reset_partitions:
+                message = (
+                    f"Stream {self._stream_name}: the full re-read after a sync token reset ended "
+                    "without a new token, so the next sync would be rejected the same way. "
+                    "Check token_path and completion_condition."
+                )
+                raise AirbyteTracedException(
+                    message=message, internal_message=message, failure_type=FailureType.system_error
+                )
             self._warn_missing_token()
             return
 
@@ -226,6 +233,8 @@ class SyncTokenCursor(Cursor):
                 .isoformat(timespec="milliseconds")
                 .replace("+00:00", "Z"),
             }
+            if partition_key in self._reset_partitions:
+                self._pending[partition_key]["after_reset"] = True
 
     def restart_without_token(
         self, stream_slice: StreamSlice, reason: Optional[str] = None
@@ -243,7 +252,21 @@ class SyncTokenCursor(Cursor):
 
         partition_key = self._serializer.to_partition_key(stream_slice.partition or {})
         with self._lock:
-            self._pending.pop(partition_key, None)
+            if (self._committed.get(partition_key) or {}).get("after_reset"):
+                message = (
+                    f"Stream {self._stream_name}: the API rejected the sync token that the previous "
+                    f"sync committed after a full re-read ({reason or 'no reason given'}). Two "
+                    "rejections in a row usually mean token_path, token_option or the "
+                    "RESET_SYNC_TOKEN predicate is wrong. Refresh the stream after fixing it."
+                )
+                raise AirbyteTracedException(
+                    message=message, internal_message=message, failure_type=FailureType.system_error
+                )
+            self._reset_partitions.add(partition_key)
+
+        self._message_repository.emit_message(
+            create_analytics_message("sync-token-reset", self._stream_name)
+        )
 
         return StreamSlice(
             partition=stream_slice.partition,
@@ -421,8 +444,16 @@ class SyncTokenCursor(Cursor):
             return
         if self._partitioned:
             states = stream_state.get("states")
-            if not isinstance(states, list) or "token" in stream_state:
-                if "token" not in stream_state and "states" not in stream_state:
+            if (
+                not isinstance(states, list)
+                or "token" in stream_state
+                or "after_reset" in stream_state
+            ):
+                if (
+                    "token" not in stream_state
+                    and "states" not in stream_state
+                    and "after_reset" not in stream_state
+                ):
                     self._log_bootstrap("none")
                 else:
                     self._invalid_state_reason = "unpartitioned shape on a partitioned stream"
@@ -434,18 +465,25 @@ class SyncTokenCursor(Cursor):
                     return
                 partition = state.get("partition")
                 cursor = state.get("cursor")
+                after_reset = cursor.get("after_reset") if isinstance(cursor, Mapping) else None
                 if (
                     isinstance(partition, Mapping)
                     and isinstance(cursor, Mapping)
                     and isinstance(cursor.get("token"), str)
                     and cursor.get("token")
+                    and ("after_reset" not in cursor or isinstance(after_reset, bool))
                 ):
-                    committed[self._serializer.to_partition_key(partition)] = {
+                    committed_state = {
                         "token": cursor["token"],
                         "committed_at": cursor.get("committed_at", ""),
                     }
+                    if "after_reset" in cursor:
+                        committed_state["after_reset"] = after_reset
+                    committed[self._serializer.to_partition_key(partition)] = committed_state
                 else:
-                    self._invalid_state_reason = "a partition entry has no valid token"
+                    self._invalid_state_reason = (
+                        "a partition entry has an invalid token or after_reset"
+                    )
                     return
             self._committed.update(committed)
         else:
@@ -453,10 +491,19 @@ class SyncTokenCursor(Cursor):
                 self._invalid_state_reason = "partitioned shape on an unpartitioned stream"
                 return
             token = stream_state.get("token")
+            after_reset = stream_state.get("after_reset")
+            if "after_reset" in stream_state and not isinstance(after_reset, bool):
+                self._invalid_state_reason = "after_reset is not a boolean"
+                return
             if isinstance(token, str) and token:
-                self._committed["{}"] = {
+                committed_state = {
                     "token": token,
                     "committed_at": stream_state.get("committed_at", ""),
                 }
+                if "after_reset" in stream_state:
+                    committed_state["after_reset"] = after_reset
+                self._committed["{}"] = committed_state
             elif "token" in stream_state:
                 self._invalid_state_reason = "the token is not a non-empty string"
+            elif "after_reset" in stream_state:
+                self._invalid_state_reason = "after_reset is present without a token"

@@ -631,7 +631,14 @@ class HttpResponseFilter(BaseModel):
     type: Literal["HttpResponseFilter"]
     action: Optional[Action] = Field(
         None,
-        description="Action to execute if a response matches the filter.",
+        description=(
+            "Action to execute if a response matches the filter. `RESET_SYNC_TOKEN` works only on streams whose "
+            "`incremental_sync` is a `SyncTokenCursor`. It drops the partition's stored token and re-reads the "
+            "partition from page 1 without it, at most once per attempt. The destination is not cleared: append "
+            "connections receive the partition's records again, and records the API deleted or hid while the token "
+            "was invalid stay in the destination. When the API requires the client to clear its copy (for example, "
+            "Google Calendar's HTTP 410), use `FAIL` with an instruction to refresh the stream instead."
+        ),
         examples=[
             "SUCCESS",
             "FAIL",

@@ -718,10 +718,16 @@ class SimpleRetriever(Retriever):
 
             reset_slice = self.token_reset_handler(stream_slice, exception.error_message)
             reason = exception.error_message or "the API rejected the stored sync token"
-            LOGGER.warning(
-                f"Stream {self.name}: {reason}; reading this stream in full. "
-                f"{emitted_count} records read earlier in this attempt may be emitted again."
-            )
+            if stream_slice.partition:
+                LOGGER.warning(
+                    f"Stream {self.name}: {reason}; re-reading partition {stream_slice.partition} in full "
+                    "without a sync token. All of its records will be emitted again."
+                )
+            else:
+                LOGGER.warning(
+                    f"Stream {self.name}: {reason}; re-reading the stream in full "
+                    "without a sync token. All of its records will be emitted again."
+                )
             yield from self._read_records_or_split_request_window(
                 records_schema, reset_slice, original_slice, depth + 1
             )

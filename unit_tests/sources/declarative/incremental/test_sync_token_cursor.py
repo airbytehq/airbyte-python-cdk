@@ -438,6 +438,10 @@ def test_t_valid_and_t_init_use_partition_router_and_initial_token_slice():
         pytest.param({"state_type": "sync_token", "token": ""}, id="empty-token"),
         pytest.param({"state_type": "sync_token", "token": None}, id="null-token"),
         pytest.param({"state_type": "sync_token", "states": []}, id="partitioned-shape"),
+        pytest.param(
+            {"state_type": "sync_token", "token": "T1", "after_reset": "true"},
+            id="invalid-after-reset",
+        ),
     ],
 )
 def test_malformed_sync_token_state_fails_the_stream_instead_of_reading_everything(state):
@@ -457,6 +461,18 @@ def test_malformed_sync_token_state_fails_the_stream_instead_of_reading_everythi
                 "states": [{"partition": {"account": "a"}, "cursor": {"token": 7}}],
             },
             id="integer-token-entry",
+        ),
+        pytest.param(
+            {
+                "state_type": "sync_token",
+                "states": [
+                    {
+                        "partition": {"account": "a"},
+                        "cursor": {"token": "A1", "after_reset": "true"},
+                    }
+                ],
+            },
+            id="invalid-after-reset-entry",
         ),
     ],
 )
