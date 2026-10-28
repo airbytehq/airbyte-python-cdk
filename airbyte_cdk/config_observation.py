@@ -87,12 +87,19 @@ def observe_connector_config(
 
 
 def emit_configuration_as_airbyte_control_message(config: MutableMapping[str, Any]) -> None:
-    """
-    WARNING: deprecated - emit_configuration_as_airbyte_control_message is being deprecated in favor of the MessageRepository mechanism.
-    See the airbyte_cdk.sources.message package
+    """Print the connector config as a CONNECTOR_CONFIG control message directly to stdout.
+
+    Single-use OAuth refresh token rotation relies on this direct emission: it reaches the
+    platform for every command (including `check` and `discover`) and does not depend on a
+    message repository being drained. The payload and its newline are written in one `write()`
+    call so a concurrent writer to the shared stdout buffer cannot split the JSON line.
     """
     airbyte_message = create_connector_config_control_message(config)
-    print(orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode())
+    print(
+        f"{orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()}\n",
+        end="",
+        flush=True,
+    )
 
 
 def create_connector_config_control_message(config: MutableMapping[str, Any]) -> AirbyteMessage:

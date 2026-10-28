@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
 import json
@@ -404,7 +404,7 @@ def test_bootstrap_and_replay_observability_are_deduplicated_and_aged(caplog):
     )
     with caplog.at_level(logging.INFO):
         list(replay.stream_slices())
-    assert "Stream events: replaying the change token committed " in caplog.text
+    assert "Stream events: replaying the sync token committed " in caplog.text
     assert " ago." in caplog.text
 
 
@@ -420,7 +420,7 @@ def test_commit_observability_counts_completed_pages_per_partition(caplog):
             cursor.on_page_completed(PageCompleted(stream_slice, _response(body), exhausted))
         cursor.close_partition(_partition({}))
 
-    assert "Stream events: committed change token T1 for partition {} after 3 pages." in caplog.text
+    assert "Stream events: committed sync token T1 for partition {} after 3 pages." in caplog.text
 
 
 def test_t_schema_ignores_incompatible_partition_state_shape():

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
 from dataclasses import InitVar, dataclass
@@ -19,6 +19,8 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 @dataclass
 class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
+    """Inject the stored sync token, or the configured initial token, into requests."""
+
     token_option: Union[RequestOption, RequestPath]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
@@ -36,7 +38,7 @@ class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
     ) -> Mapping[str, Any]:
         if isinstance(self.token_option, RequestPath):
             return {}
-        if not self.token_option or self.token_option.inject_into != option_type:
+        if self.token_option.inject_into != option_type:
             return {}
         token = self._get_token(stream_slice)
         if token is None:
@@ -52,7 +54,7 @@ class SyncTokenRequestOptionsProvider(RequestOptionsProvider):
             else None
         )
         if token is None and self._initial_token:
-            token = self._initial_token.eval(self.config)
+            token = self._initial_token.eval(self.config, valid_types=(str,))
         return token
 
     def get_request_path(self, stream_slice: Optional[StreamSlice]) -> Optional[str]:

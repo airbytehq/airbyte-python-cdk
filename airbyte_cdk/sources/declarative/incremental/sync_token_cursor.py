@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
 import copy
@@ -41,6 +41,13 @@ logger = logging.getLogger("airbyte")
 
 
 class SyncTokenCursor(Cursor):
+    """Track opaque API-issued sync tokens and commit them after a complete partition read.
+
+    Unpartitioned state is ``{"state_type": "sync_token", "token": "..."}``; partitioned
+    state stores a ``states`` list pairing each partition with its token. Tokens become committed
+    state only in ``close_partition``. Partitioned state is capped at 25,000 entries.
+    """
+
     STATE_TYPE = "sync_token"
     DEFAULT_MAX_STATE_BYTES = 4 * 1024 * 1024
 
@@ -98,6 +105,18 @@ class SyncTokenCursor(Cursor):
         self._load_state(stream_state or {})
 
     @property
+    def decoder(self) -> Decoder:
+        return self._decoder
+
+    @property
+    def partitioned(self) -> bool:
+        return self._partitioned
+
+    @property
+    def partition_router(self) -> PartitionRouter:
+        return self._partition_router
+
+    @property
     def state(self) -> MutableMapping[str, Any]:
         with self._lock:
             if not self._partitioned:
@@ -121,8 +140,11 @@ class SyncTokenCursor(Cursor):
         for stream_slice in self._partition_router.stream_slices():
             partition = dict(stream_slice.partition or {})
             if "token" in partition:
-                raise ValueError(
-                    f"Stream {self._stream_name}: partition router uses reserved key 'token'"
+                message = f"Stream {self._stream_name}: partition router uses reserved key 'token'"
+                raise AirbyteTracedException(
+                    message=message,
+                    internal_message=message,
+                    failure_type=FailureType.config_error,
                 )
             partition_key = self._serializer.to_partition_key(partition)
             if partition_key in seen_partitions:
@@ -181,11 +203,6 @@ class SyncTokenCursor(Cursor):
         )
         path = [str(part.eval(self._config)) for part in self._token_path]
         token_value = dpath.get(body, path, default=None) if isinstance(body, Mapping) else None
-        token = self._coerce_token(token_value, path)
-        if token is None:
-            self._warn_missing_token()
-            return
-
         if self._completion_condition is not None:
             complete = self._completion_condition.eval(
                 self._config,
@@ -199,7 +216,11 @@ class SyncTokenCursor(Cursor):
             self._warn_missing_token()
             return
 
-        partition_key = self._serializer.to_partition_key(page.stream_slice.partition or {})
+        token = self._coerce_token(token_value, path)
+        if token is None:
+            self._warn_missing_token()
+            return
+
         with self._lock:
             self._pending[partition_key] = {
                 "token": token,
@@ -213,7 +234,7 @@ class SyncTokenCursor(Cursor):
     ) -> StreamSlice:
         if "token" not in stream_slice.cursor_slice:
             message = (
-                f"Stream {self._stream_name}: the API rejected a read without a change token. "
+                f"Stream {self._stream_name}: the API rejected a read without a sync token. "
                 "Check the RESET_SYNC_TOKEN response filter."
             )
             raise AirbyteTracedException(
@@ -262,7 +283,7 @@ class SyncTokenCursor(Cursor):
     def _log_bootstrap(self, reason: str) -> None:
         if reason not in self._logged_bootstrap_reasons:
             logger.info(
-                "Stream %s: no stored change token (reason: %s); reading all records.",
+                "Stream %s: no stored sync token (reason: %s); reading all records.",
                 self._stream_name,
                 reason,
             )
@@ -276,14 +297,14 @@ class SyncTokenCursor(Cursor):
         age = self._human_age(committed.get("committed_at"))
         if self._partitioned:
             logger.debug(
-                "Stream %s: replaying the change token committed %s ago for partition %s.",
+                "Stream %s: replaying the sync token committed %s ago for partition %s.",
                 self._stream_name,
                 age,
                 dict(partition),
             )
         else:
             logger.info(
-                "Stream %s: replaying the change token committed %s ago.",
+                "Stream %s: replaying the sync token committed %s ago.",
                 self._stream_name,
                 age,
             )
@@ -323,7 +344,7 @@ class SyncTokenCursor(Cursor):
     def _warn_missing_token(self) -> None:
         if not self._warned_no_token:
             logger.warning(
-                "Stream %s: pagination ended without a new change token; kept the stored token. "
+                "Stream %s: pagination ended without a new sync token; kept the stored token. "
                 "The next sync re-reads from it.",
                 self._stream_name,
             )
@@ -349,7 +370,7 @@ class SyncTokenCursor(Cursor):
                     self._partitions_over_cap.discard(partition_key)
                     self._partitions_over_state_size.discard(partition_key)
                     logger.debug(
-                        "Stream %s: committed change token %s for partition %s after %s pages.",
+                        "Stream %s: committed sync token %s for partition %s after %s pages.",
                         self._stream_name,
                         pending["token"],
                         self._serializer.to_partition(partition_key),
@@ -364,7 +385,7 @@ class SyncTokenCursor(Cursor):
                     self._partitions_over_cap.discard(partition_key)
                     self._partitions_over_state_size.discard(partition_key)
                     logger.debug(
-                        "Stream %s: committed change token %s for partition %s after %s pages.",
+                        "Stream %s: committed sync token %s for partition %s after %s pages.",
                         self._stream_name,
                         pending["token"],
                         self._serializer.to_partition(partition_key),
