@@ -446,13 +446,26 @@ class DockerConnectorTestSuite:
         runnable config, or on an entry without `config_path`, bypasses that section or entry.
         `pytest_generate_tests` reports them as skipped tests, and accepts a connector with no
         scenario only when it declares at least one.
+
+        A suite that overrides `get_scenarios` supplies its own scenarios, so the file is not read
+        and nothing is bypassed.
         """
+        if cls._supplies_own_scenarios():
+            return []
         return cls._collect_scenarios().bypasses
 
     @classmethod
     def describe_empty_scenarios(cls) -> str:
         """Why `acceptance-test-config.yml` yields neither a scenario nor a bypass."""
+        if cls._supplies_own_scenarios():
+            return f"{cls.__name__}.get_scenarios() returned no test scenarios."
         return cls._collect_scenarios().describe_empty(cast(str, cls.connector_name))
+
+    @classmethod
+    def _supplies_own_scenarios(cls) -> bool:
+        """Whether the suite overrides `get_scenarios`, so its scenarios do not come from the file."""
+        subclasses = cls.__mro__[: cls.__mro__.index(DockerConnectorTestSuite)]
+        return any("get_scenarios" in vars(subclass) for subclass in subclasses)
 
     @classmethod
     def _connector_image(

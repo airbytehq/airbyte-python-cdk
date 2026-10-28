@@ -113,12 +113,14 @@ def test_every_scenario_field_is_read_outside_the_model() -> None:
     )
 
 
-@pytest.mark.parametrize("field", sorted(AWAITING_READER))
-def test_fields_awaiting_a_reader_are_still_unread(field: str) -> None:
-    assert field in ConnectorTestScenario.model_fields
-    assert field in _fields_without_reader(), (
-        f"`{field}` is read now ({AWAITING_READER[field]}): remove it from `AWAITING_READER`."
-    )
+def test_fields_awaiting_a_reader_are_still_unread() -> None:
+    # A plain loop, not a parametrization: an empty `AWAITING_READER` passes instead of skipping.
+    unread = _fields_without_reader()
+    for field, change in AWAITING_READER.items():
+        assert field in ConnectorTestScenario.model_fields
+        assert field in unread, (
+            f"`{field}` is read now ({change}): remove it from `AWAITING_READER`."
+        )
 
 
 def test_guard_detects_an_unread_field() -> None:

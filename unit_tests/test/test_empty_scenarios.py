@@ -121,7 +121,7 @@ def test_zero_scenarios_without_bypass_lists_why_each_part_produced_nothing(
     assert str(tmp_path / "source-test" / ACCEPTANCE_TEST_CONFIG) in message
     for expected in [
         "`acceptance_tests.spec.tests[0]`: no `config_path` and no `bypass_reason` "
-        "(keys: `spec_path`).",
+        + "(keys: `spec_path`).",
         "`acceptance_tests.connection.tests[0]`: an IAM-role config",
         "`acceptance_tests.basic_read.tests`: empty list.",
         "`acceptance_tests.incremental`: not a section the standard tests collect.",
@@ -399,12 +399,12 @@ def test_collection_fails_when_no_scenario_and_no_bypass(
     result.stdout.fnmatch_lines(
         [
             "*No test scenarios for connector 'source-test': *acceptance-test-config.yml lists no "
-            "config the standard tests can run, and declares no `bypass_reason`. Found:",
+            + "config the standard tests can run, and declares no `bypass_reason`. Found:",
             "*`acceptance_tests.spec.tests[[]0[]]`: no `config_path` and no `bypass_reason`*",
             "*1 error*",
         ]
     )
-    assert "Traceback" not in result.stdout.str(), "the message is reported without a traceback"
+    assert "pytest_hooks.py:" not in result.stdout.str(), "reported without a traceback"
 
 
 def test_collection_fails_on_a_missing_config(pytester: pytest.Pytester, tmp_path: Path) -> None:
@@ -417,6 +417,7 @@ def test_collection_fails_on_a_missing_config(pytester: pytest.Pytester, tmp_pat
     output = result.stdout.str()
     assert output.count("Acceptance test config file not found at:") == 1, "reported once"
     assert "During handling of the above exception" not in output
+    assert "pytest_hooks.py:" not in output, "reported without a traceback"
 
 
 def test_collection_fails_on_the_legacy_top_level_tests_key(
@@ -428,6 +429,7 @@ def test_collection_fails_on_the_legacy_top_level_tests_key(
 
     assert result.ret == pytest.ExitCode.INTERRUPTED
     result.stdout.fnmatch_lines(["*legacy layout with a top-level `tests:` key*", "*1 error*"])
+    assert "pytest_hooks.py:" not in result.stdout.str(), "reported without a traceback"
 
 
 def test_bypasses_are_reported_as_skipped_tests_and_at_collection(
@@ -474,7 +476,7 @@ def test_connector_wide_bypass_is_one_skipped_test(
         [
             "*test_with_scenario[[]bypassed-connector[]] SKIPPED*",
             "SKIPPED [[]1[]] *: acceptance-test-config.yml bypasses the connector: "
-            "No sandbox account",
+            + "No sandbox account",
         ]
     )
 
@@ -502,9 +504,138 @@ def test_bypasses_are_grouped_by_reason_and_name_their_entries(
     result.stdout.fnmatch_lines(
         [
             "source-test: acceptance-test-config.yml declares 3 bypass(es), reported as skipped "
-            "tests: connection.tests[[]1[]], basic_read: The GSM config fails check; "
-            "full_refresh: Covered by basic_read",
+            + "tests: connection.tests[[]1[]], basic_read: The GSM config fails check; "
+            + "full_refresh: Covered by basic_read",
             "*test_with_scenario[[]bypassed-connection-basic_read[]] SKIPPED*",
             "*test_with_scenario[[]bypassed-full_refresh[]] SKIPPED*",
         ]
     )
+
+
+# --- Suites that supply their own scenarios ----------------------------------------------------
+
+
+def _run_overriding_suite(
+    pytester: pytest.Pytester, root: Path, scenarios: str, *args: str
+) -> pytest.RunResult:
+    pytester.makepyfile(
+        test_standard=textwrap.dedent(
+            f"""
+            from pathlib import Path
+
+            from airbyte_cdk.test.models import ConnectorTestScenario
+            from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
+
+
+            class TestSuite(DockerConnectorTestSuite):
+                @classmethod
+                def get_connector_root_dir(cls) -> Path:
+                    return Path({str(root)!r})
+
+                @classmethod
+                def get_scenarios(cls) -> list[ConnectorTestScenario]:
+                    return {scenarios}
+
+                def test_with_scenario(self, scenario) -> None:
+                    pass
+            """
+        )
+    )
+    return pytester.runpytest_inprocess(
+        "-p",
+        "airbyte_cdk.test.standard_tests.pytest_hooks",
+        "-p",
+        "no:cacheprovider",
+        "-k",
+        "test_with_scenario",
+        *args,
+    )
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param(None, id="no-file"),
+        pytest.param({"tests": {"spec": []}}, id="legacy-top-level-tests"),
+        pytest.param("bypass_reason: No sandbox account\n", id="top-level-bypass"),
+    ],
+)
+def test_overridden_get_scenarios_does_not_read_the_config(
+    pytester: pytest.Pytester, tmp_path: Path, config: Any
+) -> None:
+    root = _write_connector(tmp_path / "source-test", config)
+
+    result = _run_overriding_suite(
+        pytester, root, "[ConnectorTestScenario(config_path='secrets/config.json')]", "-v"
+    )
+
+    assert result.ret == pytest.ExitCode.OK
+    result.assert_outcomes(passed=1)
+    assert "bypassed-" not in result.stdout.str()
+
+
+def test_overridden_get_scenarios_returning_nothing_fails(
+    pytester: pytest.Pytester, tmp_path: Path
+) -> None:
+    root = _write_connector(tmp_path / "source-test", None)
+
+    result = _run_overriding_suite(pytester, root, "[]")
+
+    assert result.ret == pytest.ExitCode.INTERRUPTED
+    result.stdout.fnmatch_lines(["*TestSuite.get_scenarios() returned no test scenarios.*"])
+
+
+# --- The suite `airbyte-cdk connector test` builds ---------------------------------------------
+
+
+def _run_generated_suite(pytester: pytest.Pytester, root: Path, *args: str) -> pytest.RunResult:
+    """Collect the suite `create_connector_test_suite` builds, as `airbyte-cdk connector test`."""
+    pytester.makepyfile(
+        test_airbyte_standards=textwrap.dedent(
+            f"""
+            from pathlib import Path
+
+            from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
+
+            TestSuite = create_connector_test_suite(connector_directory=Path({str(root)!r}))
+            """
+        )
+    )
+    return pytester.runpytest_inprocess(
+        "-p",
+        "airbyte_cdk.test.standard_tests.pytest_hooks",
+        "-p",
+        "no:cacheprovider",
+        "-rs",
+        *args,
+    )
+
+
+def test_generated_suite_reports_a_bypass_only_config_as_skipped(
+    pytester: pytest.Pytester, tmp_path: Path
+) -> None:
+    root = _write_connector(
+        tmp_path / "source-test", "bypass_reason: No sandbox account\n", language="python"
+    )
+
+    result = _run_generated_suite(pytester, root, "-k", "bypassed")
+
+    assert result.ret == pytest.ExitCode.OK
+    outcomes = result.parseoutcomes()
+    assert outcomes.get("skipped", 0) > 0
+    assert not {"passed", "failed", "errors"} & set(outcomes), outcomes
+    result.stdout.fnmatch_lines(
+        ["SKIPPED [[]*[]] *: acceptance-test-config.yml bypasses the connector: No sandbox account"]
+    )
+
+
+def test_generated_suite_fails_collection_without_scenarios(
+    pytester: pytest.Pytester, tmp_path: Path
+) -> None:
+    root = _write_connector(tmp_path / "source-test", ZERO_SCENARIOS_CONFIG, language="python")
+
+    result = _run_generated_suite(pytester, root, "--collect-only")
+
+    assert result.ret == pytest.ExitCode.INTERRUPTED
+    result.stdout.fnmatch_lines(["*No test scenarios for connector 'source-test': *"])
+    assert "pytest_hooks.py:" not in result.stdout.str(), "reported without a traceback"
