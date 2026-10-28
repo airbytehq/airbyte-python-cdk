@@ -15,6 +15,7 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
+    FailureType,
     SyncMode,
     Type,
 )
@@ -689,3 +690,21 @@ def test_t_inert_cursor_types_read_without_sync_page_observer(cursor_kind):
     retriever = generator._partition_factory._retriever
     assert isinstance(retriever, SimpleRetriever)
     assert retriever.page_observer is None
+
+
+def test_corrupt_incoming_token_fails_without_a_request_or_state_overwrite():
+    state = _incoming_state({"state_type": "sync_token", "token": 123})
+    with HttpMocker() as http_mocker:
+        source, catalog = _source_and_catalog(_manifest(), state)
+        messages = _read_until_error(source, catalog, state)
+
+    error_traces = [
+        message for message in messages if message.type == Type.TRACE and message.trace.error
+    ]
+    assert error_traces[-1].trace.error.failure_type == FailureType.system_error
+    assert error_traces[-1].trace.error.stream_descriptor.name == "events"
+    assert "saved sync token state is malformed" in error_traces[-1].trace.error.message
+    assert all(
+        message.stream.stream_state.__dict__ == {"state_type": "sync_token", "token": 123}
+        for message in _state(messages)
+    )

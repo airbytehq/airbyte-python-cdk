@@ -305,7 +305,7 @@ def test_t_foreign_datetime_and_missing_cursor_states_bootstrap(state):
     assert cursor.state["states"] == []
 
 
-def test_partition_state_load_skips_only_malformed_entries(caplog):
+def test_partition_state_load_fails_on_malformed_entries():
     router = Router(
         [
             StreamSlice(partition={"account": "a"}, cursor_slice={}),
@@ -330,14 +330,8 @@ def test_partition_state_load_skips_only_malformed_entries(caplog):
         },
     )
 
-    slices = list(cursor.stream_slices())
-
-    assert [stream_slice.cursor_slice for stream_slice in slices] == [
-        {"token": "A1"},
-        {},
-    ]
-    assert len(cursor.state["states"]) == 1
-    assert "reason: foreign state" in caplog.text
+    with pytest.raises(AirbyteTracedException):
+        list(cursor.stream_slices())
 
 
 def test_t_cap_warns_once_at_final_emission_with_over_cap_partition_count(caplog):
@@ -434,3 +428,104 @@ def test_t_valid_and_t_init_use_partition_router_and_initial_token_slice():
     slices = list(cursor.stream_slices())
     assert slices[0].partition == {"account": "a"}
     assert slices[0].cursor_slice == {}
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param({"state_type": "sync_token", "token": {"bad": "T1"}}, id="object-token"),
+        pytest.param({"state_type": "sync_token", "token": 123}, id="integer-token"),
+        pytest.param({"state_type": "sync_token", "token": ""}, id="empty-token"),
+        pytest.param({"state_type": "sync_token", "token": None}, id="null-token"),
+        pytest.param({"state_type": "sync_token", "states": []}, id="partitioned-shape"),
+    ],
+)
+def test_malformed_sync_token_state_fails_the_stream_instead_of_reading_everything(state):
+    cursor = _cursor(state=state)
+
+    with pytest.raises(AirbyteTracedException):
+        list(cursor.stream_slices())
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param({"state_type": "sync_token", "token": "T1"}, id="unpartitioned-shape"),
+        pytest.param(
+            {
+                "state_type": "sync_token",
+                "states": [{"partition": {"account": "a"}, "cursor": {"token": 7}}],
+            },
+            id="integer-token-entry",
+        ),
+    ],
+)
+def test_malformed_partitioned_sync_token_state_fails(state):
+    router = Router([StreamSlice(partition={"account": "a"}, cursor_slice={})])
+    cursor = _cursor(state=state, router=router)
+
+    with pytest.raises(AirbyteTracedException):
+        list(cursor.stream_slices())
+
+
+def test_malformed_sync_token_state_is_not_overwritten_when_the_stream_fails():
+    state = {"state_type": "sync_token", "token": 123}
+    cursor = _cursor(state=state)
+    with pytest.raises(AirbyteTracedException):
+        list(cursor.stream_slices())
+
+    # ConcurrentReadProcessor._on_stream_is_done calls this for failed streams too.
+    cursor.ensure_at_least_one_state_emitted()
+
+    emitted = [
+        message.state.stream.stream_state.__dict__
+        for message in cursor._message_repository.consume_queue()
+    ]
+    assert emitted in ([], [state])
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param(None, id="no-state"),
+        pytest.param({}, id="empty-state"),
+        pytest.param({"state_type": "sync_token"}, id="nothing-committed-yet"),
+    ],
+)
+def test_empty_state_still_bootstraps(state):
+    cursor = _cursor(state=state)
+
+    assert [stream_slice.cursor_slice for stream_slice in cursor.stream_slices()] == [{}]
+
+
+def test_empty_partitioned_state_still_bootstraps():
+    router = Router([StreamSlice(partition={"account": "a"}, cursor_slice={})])
+    cursor = _cursor(state={"state_type": "sync_token", "states": []}, router=router)
+
+    assert [stream_slice.cursor_slice for stream_slice in cursor.stream_slices()] == [{}]
+
+
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_state_without_token_or_states_bootstraps_for_either_partition_shape(partitioned):
+    router = (
+        Router([StreamSlice(partition={"account": "a"}, cursor_slice={})]) if partitioned else None
+    )
+    cursor = _cursor(state={"state_type": "sync_token"}, router=router)
+
+    assert [stream_slice.cursor_slice for stream_slice in cursor.stream_slices()] == [{}]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param({"updated_at": "2026-10-01T00:00:00Z"}, id="datetime-cursor"),
+        pytest.param({"state_type": "date-range", "slices": []}, id="concurrent-datetime-cursor"),
+        pytest.param({"state_type": "wrong_type", "token": "T1"}, id="unknown-state-type"),
+    ],
+)
+def test_state_from_another_cursor_type_bootstraps_with_a_warning(state, caplog):
+    caplog.set_level(logging.INFO)
+    cursor = _cursor(state=state)
+
+    assert [stream_slice.cursor_slice for stream_slice in cursor.stream_slices()] == [{}]
+    assert any(record.levelno == logging.WARNING for record in caplog.records)

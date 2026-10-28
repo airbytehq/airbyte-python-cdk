@@ -97,6 +97,7 @@ class SyncTokenCursor(Cursor):
         self._warned_no_token = False
         self._warned_cap = False
         self._partitions_over_cap: set[str] = set()
+        self._invalid_state_reason: Optional[str] = None
         self._load_state(stream_state or {})
 
     @property
@@ -131,6 +132,14 @@ class SyncTokenCursor(Cursor):
             }
 
     def stream_slices(self) -> Iterable[StreamSlice]:
+        if self._invalid_state_reason is not None:
+            message = (
+                f"Stream {self._stream_name}: the saved sync token state is malformed "
+                f"({self._invalid_state_reason}). Refresh the stream to start a new full sync."
+            )
+            raise AirbyteTracedException(
+                message=message, internal_message=message, failure_type=FailureType.system_error
+            )
         seen_partitions: set[str] = set()
         for stream_slice in self._partition_router.stream_slices():
             partition = dict(stream_slice.partition or {})
@@ -256,7 +265,10 @@ class SyncTokenCursor(Cursor):
 
     def _log_foreign_state(self) -> None:
         self._state_is_foreign = True
-        self._log_bootstrap("foreign state")
+        logger.warning(
+            "Stream %s: the saved state belongs to another cursor type; reading all records once.",
+            self._stream_name,
+        )
 
     def _log_replay(self, partition: Mapping[str, Any], committed: Mapping[str, Any]) -> None:
         age = self._human_age(committed.get("committed_at"))
@@ -357,6 +369,8 @@ class SyncTokenCursor(Cursor):
         self._state_emitted = True
 
     def ensure_at_least_one_state_emitted(self) -> None:
+        if self._invalid_state_reason is not None:
+            return  # leave the malformed state in place for diagnosis
         if self._partitioned or not self._state_emitted:
             self._emit_state_message()
         if self._partitions_over_cap and not self._warned_cap:
@@ -384,13 +398,16 @@ class SyncTokenCursor(Cursor):
         if self._partitioned:
             states = stream_state.get("states")
             if not isinstance(states, list) or "token" in stream_state:
-                self._log_foreign_state()
+                if "token" not in stream_state and "states" not in stream_state:
+                    self._log_bootstrap("none")
+                else:
+                    self._invalid_state_reason = "unpartitioned shape on a partitioned stream"
                 return
             committed: dict[str, dict[str, Any]] = {}
             for state in states:
                 if not isinstance(state, Mapping):
-                    self._log_bootstrap("foreign state")
-                    continue
+                    self._invalid_state_reason = "a partition entry is not an object"
+                    return
                 partition = state.get("partition")
                 cursor = state.get("cursor")
                 if (
@@ -404,11 +421,12 @@ class SyncTokenCursor(Cursor):
                         "committed_at": cursor.get("committed_at", ""),
                     }
                 else:
-                    self._log_bootstrap("foreign state")
+                    self._invalid_state_reason = "a partition entry has no valid token"
+                    return
             self._committed.update(committed)
         else:
             if "states" in stream_state:
-                self._log_foreign_state()
+                self._invalid_state_reason = "partitioned shape on an unpartitioned stream"
                 return
             token = stream_state.get("token")
             if isinstance(token, str) and token:
@@ -416,5 +434,5 @@ class SyncTokenCursor(Cursor):
                     "token": token,
                     "committed_at": stream_state.get("committed_at", ""),
                 }
-            elif token is not None:
-                self._log_foreign_state()
+            elif "token" in stream_state:
+                self._invalid_state_reason = "the token is not a non-empty string"
