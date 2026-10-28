@@ -17,6 +17,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     List,
     Mapping,
     MutableMapping,
@@ -705,6 +706,10 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
 )
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
+from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import (
+    PartitionGenerator,
+)
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import (
     StreamSlicer as ConcurrentStreamSlicer,
 )
@@ -1455,22 +1460,7 @@ class ModelToComponentFactory:
 
         model_parameters = datetime_based_cursor_model.parameters or {}
 
-        cursor_field = self._get_catalog_defined_cursor_field(
-            stream_name=stream_name,
-            allow_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
-            or False,
-        )
-
-        if not cursor_field:
-            interpolated_cursor_field = InterpolatedString.create(
-                datetime_based_cursor_model.cursor_field,
-                parameters=model_parameters,
-            )
-            cursor_field = CursorField(
-                cursor_field_key=interpolated_cursor_field.eval(config=config),
-                supports_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
-                or False,
-            )
+        cursor_field = self._resolve_cursor_field(datetime_based_cursor_model, stream_name, config)
 
         interpolated_partition_field_start = InterpolatedString.create(
             datetime_based_cursor_model.partition_field_start or "start_time",
@@ -1696,22 +1686,9 @@ class ModelToComponentFactory:
         else:
             evaluated_start_value = 0
 
-        cursor_field = self._get_catalog_defined_cursor_field(
-            stream_name=stream_name,
-            allow_catalog_defined_cursor_field=incrementing_count_cursor_model.allow_catalog_defined_cursor_field
-            or False,
+        cursor_field = self._resolve_cursor_field(
+            incrementing_count_cursor_model, stream_name, config
         )
-
-        if not cursor_field:
-            interpolated_cursor_field = InterpolatedString.create(
-                incrementing_count_cursor_model.cursor_field,
-                parameters=incrementing_count_cursor_model.parameters or {},
-            )
-            cursor_field = CursorField(
-                cursor_field_key=interpolated_cursor_field.eval(config=config),
-                supports_catalog_defined_cursor_field=incrementing_count_cursor_model.allow_catalog_defined_cursor_field
-                or False,
-            )
 
         connector_state_converter = IncrementingCountStreamStateConverter(
             is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
@@ -1781,26 +1758,7 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
             )
 
-        cursor_field = self._get_catalog_defined_cursor_field(
-            stream_name=stream_name,
-            allow_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
-            or False,
-        )
-
-        if not cursor_field:
-            interpolated_cursor_field = InterpolatedString.create(
-                datetime_based_cursor_model.cursor_field,
-                # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
-                # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
-                # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
-                # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
-                parameters=datetime_based_cursor_model.parameters or {},
-            )
-            cursor_field = CursorField(
-                cursor_field_key=interpolated_cursor_field.eval(config=config),
-                supports_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
-                or False,
-            )
+        cursor_field = self._resolve_cursor_field(datetime_based_cursor_model, stream_name, config)
 
         datetime_format = datetime_based_cursor_model.datetime_format
 
@@ -2244,26 +2202,7 @@ class ModelToComponentFactory:
         if isinstance(retriever, AsyncRetriever):
             stream_slicer = retriever.stream_slicer
 
-        schema_loader: SchemaLoader
-        if model.schema_loader and isinstance(model.schema_loader, list):
-            nested_schema_loaders = [
-                self._create_component_from_model(model=nested_schema_loader, config=config)
-                for nested_schema_loader in model.schema_loader
-            ]
-            schema_loader = CompositeSchemaLoader(
-                schema_loaders=nested_schema_loaders, parameters={}
-            )
-        elif model.schema_loader:
-            schema_loader = self._create_component_from_model(
-                model=model.schema_loader,  # type: ignore # If defined, schema_loader is guaranteed not to be a list and will be one of the existing base models
-                config=config,
-            )
-        else:
-            options = model.parameters or {}
-            if "name" not in options:
-                options["name"] = model.name
-            schema_loader = DefaultSchemaLoader(config=config, parameters=options)
-        schema_loader = CachingSchemaLoaderDecorator(schema_loader)
+        schema_loader = self._build_schema_loader(model, config)
 
         stream_name = model.name or ""
         return DefaultStream(
@@ -2288,6 +2227,81 @@ class ModelToComponentFactory:
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
+        )
+
+    def _build_schema_loader(self, model: DeclarativeStreamModel, config: Config) -> SchemaLoader:
+        schema_loader: SchemaLoader
+        if model.schema_loader and isinstance(model.schema_loader, list):
+            nested_schema_loaders = [
+                self._create_component_from_model(model=nested_schema_loader, config=config)
+                for nested_schema_loader in model.schema_loader
+            ]
+            schema_loader = CompositeSchemaLoader(
+                schema_loaders=nested_schema_loaders, parameters={}
+            )
+        elif model.schema_loader:
+            schema_loader = self._create_component_from_model(
+                model=model.schema_loader,  # type: ignore # If defined, schema_loader is guaranteed not to be a list and will be one of the existing base models
+                config=config,
+            )
+        else:
+            options = model.parameters or {}
+            if "name" not in options:
+                options["name"] = model.name
+            schema_loader = DefaultSchemaLoader(config=config, parameters=options)
+        return CachingSchemaLoaderDecorator(schema_loader)
+
+    def create_catalog_stream(
+        self,
+        model_type: Type[BaseModel],
+        component_definition: ComponentDefinition,
+        config: Config,
+    ) -> DefaultStream:
+        """Create a stream that can only describe itself in a catalog.
+
+        The stream gets the same name, schema loader, primary key, cursor field and file transfer
+        flag as `create_default_stream`, so `as_airbyte_stream()` returns the same catalog entry.
+        Requesters, authenticators, partition routers and cursors are never created, so a config is
+        not needed unless the schema loader or cursor field interpolates it. Reading a config value
+        that is not set raises `MissingConfigValueError` rather than producing an incomplete catalog
+        entry. Reading from the stream raises an error.
+        """
+        model = model_type.parse_obj(component_definition)
+        if isinstance(model, StateDelegatingStreamModel):
+            # Mirrors create_state_delegating_stream: without state, the full refresh stream is used.
+            model = (
+                model.incremental_stream
+                if self._connector_state_manager.get_stream_state(model.name, None)
+                else model.full_refresh_stream
+            )
+        if not isinstance(model, DeclarativeStreamModel):
+            raise ValueError(
+                f"Expected a DeclarativeStream or StateDelegatingStream component, but received {model.__class__.__name__}"
+            )
+
+        config = _StrictConfig(config)
+        stream_name = model.name or ""
+        cursor_field: Optional[CursorField] = None
+        if isinstance(
+            model.incremental_sync, (DatetimeBasedCursorModel, IncrementingCountCursorModel)
+        ):
+            cursor_field = self._resolve_cursor_field(model.incremental_sync, stream_name, config)
+        elif model.incremental_sync:
+            raise ValueError(
+                f"Incremental sync of type {type(model.incremental_sync)} is not supported"
+            )
+
+        return DefaultStream(
+            partition_generator=_CatalogOnlyPartitionGenerator(stream_name),
+            name=stream_name,
+            json_schema=self._build_schema_loader(model, config).get_json_schema,
+            primary_key=get_primary_key_from_stream(
+                model.primary_key.__root__ if model.primary_key else None
+            ),
+            cursor_field=cursor_field,
+            logger=logging.getLogger(f"airbyte.{stream_name}"),
+            cursor=FinalStateCursor(stream_name, None, self._message_repository),
+            supports_file_transfer=bool(model.file_uploader),
         )
 
     def _warn_on_ineffective_incremental_dependency(self, model: DeclarativeStreamModel) -> None:
@@ -5804,6 +5818,30 @@ class ModelToComponentFactory:
                         request_parameter
                     )
 
+    def _resolve_cursor_field(
+        self,
+        cursor_model: Union[DatetimeBasedCursorModel, IncrementingCountCursorModel],
+        stream_name: str,
+        config: Config,
+    ) -> CursorField:
+        """Return the catalog-defined cursor field if allowed and set, else the manifest's cursor field."""
+        allow_catalog_defined = cursor_model.allow_catalog_defined_cursor_field or False
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=allow_catalog_defined,
+        )
+        if cursor_field:
+            return cursor_field
+
+        interpolated_cursor_field = InterpolatedString.create(
+            cursor_model.cursor_field,
+            parameters=cursor_model.parameters or {},
+        )
+        return CursorField(
+            cursor_field_key=interpolated_cursor_field.eval(config=config),
+            supports_catalog_defined_cursor_field=allow_catalog_defined,
+        )
+
     def _get_catalog_defined_cursor_field(
         self, stream_name: str, allow_catalog_defined_cursor_field: bool
     ) -> Optional[CursorField]:
@@ -5831,3 +5869,31 @@ class ModelToComponentFactory:
                 cursor_field_key=configured_stream.cursor_field[0],
                 supports_catalog_defined_cursor_field=allow_catalog_defined_cursor_field,
             )
+
+
+class _CatalogOnlyPartitionGenerator(PartitionGenerator):
+    """Partition generator for streams created by `create_catalog_stream`, which cannot be read."""
+
+    def __init__(self, stream_name: str) -> None:
+        self._stream_name = stream_name
+
+    def generate(self) -> Iterable[Partition]:
+        raise RuntimeError(
+            f"Stream `{self._stream_name}` was created for discover only and cannot be read."
+        )
+
+
+class MissingConfigValueError(ValueError):
+    """Raised when a catalog-only stream reads a config value that is not set."""
+
+
+class _StrictConfig(Dict[str, Any]):
+    """Config that raises on missing keys instead of letting interpolation render them as empty.
+
+    Explicit defaults such as `config.get('key', 'default')` still work.
+    """
+
+    def __missing__(self, key: str) -> Any:
+        raise MissingConfigValueError(
+            f"Config value `{key}` is required to build this stream's catalog entry."
+        )

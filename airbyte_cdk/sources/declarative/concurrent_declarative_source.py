@@ -429,9 +429,27 @@ class ConcurrentDeclarativeSource(Source):
             yield from self._concurrent_source.read(selected_concurrent_streams)
 
     def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
-        return AirbyteCatalog(
-            streams=[stream.as_airbyte_stream() for stream in self.streams(config=self._config)]
+        streams = (
+            self._catalog_streams()
+            if not config and not self.check_config_during_discover and self._uses_default_streams()
+            else self.streams(config=self._config)
         )
+        return AirbyteCatalog(streams=[stream.as_airbyte_stream() for stream in streams])
+
+    def _catalog_streams(self) -> List[AbstractStream]:
+        """Create streams that can only describe their catalog entry, for config-free discover."""
+        return [
+            self._constructor.create_catalog_stream(
+                (
+                    StateDelegatingStreamModel
+                    if stream_config.get("type") == StateDelegatingStreamModel.__name__
+                    else DeclarativeStreamModel
+                ),
+                stream_config,
+                self._config,
+            )
+            for stream_config in self._stream_configs(self._source_config) + self.dynamic_streams
+        ]
 
     # todo: add PR comment about whether we can change the signature to List[AbstractStream]
     def streams(self, config: Mapping[str, Any]) -> List[AbstractStream]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
