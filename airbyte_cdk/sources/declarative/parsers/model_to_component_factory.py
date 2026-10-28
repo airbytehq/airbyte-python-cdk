@@ -571,7 +571,10 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_select
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
     GroupByKey,
 )
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DatetimeBasedRequestOptionsProvider,
     DefaultRequestOptionsProvider,
@@ -2314,6 +2317,59 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
+    def _validate_sync_token_option_collisions(
+        stream_name: str,
+        token_option: RequestOption,
+        paginator: DefaultPaginator,
+        ignore_stream_slicer_parameters: bool,
+        config: Config,
+    ) -> None:
+        try:
+            token_target = token_option.resolve_target(config)
+        except Exception:
+            return
+
+        def has_same_target(option: RequestOption) -> bool:
+            if option.inject_into != token_option.inject_into:
+                return False
+            try:
+                return option.resolve_target(config) == token_target
+            except Exception:
+                return False
+
+        field = ".".join(token_target)
+        page_size_option = paginator.page_size_option
+        if (
+            isinstance(page_size_option, RequestOption)
+            and paginator.pagination_strategy.get_page_size()
+            and has_same_target(page_size_option)
+        ):
+            raise ValueError(
+                f"Stream {stream_name}: token_option and the paginator's page_size_option both set "
+                f'{token_option.inject_into.value} "{field}". The page size is sent on every '
+                "request, including the first, so "
+                "ignore_stream_slicer_parameters_on_paginated_requests cannot separate them. "
+                "Use a different field for one of them."
+            )
+
+        page_token_option = paginator.page_token_option
+        if isinstance(page_token_option, RequestOption) and has_same_target(page_token_option):
+            if paginator.pagination_strategy.initial_token is not None:
+                raise ValueError(
+                    f"Stream {stream_name}: token_option and the paginator's page_token_option "
+                    f'both set {token_option.inject_into.value} "{field}", and the paginator '
+                    "sends a page token on the first request. Use a different field for one of "
+                    "them, or set inject_on_first_request: false."
+                )
+            if not ignore_stream_slicer_parameters:
+                raise ValueError(
+                    f"Stream {stream_name}: token_option and the paginator both set "
+                    f'{token_option.inject_into.value} "{field}". Set '
+                    "ignore_stream_slicer_parameters_on_paginated_requests: true on the retriever "
+                    "so the stored token is sent only on the first request of each pass."
+                )
+
+    @staticmethod
     def _validate_sync_token_stream(model: DeclarativeStreamModel) -> None:
         cursor_model = model.incremental_sync
         stream_name = model.name or ""
@@ -2342,33 +2398,6 @@ class ModelToComponentFactory:
             ignore_stream_slicer_parameters = (
                 retriever_model.ignore_stream_slicer_parameters_on_paginated_requests is True
             )
-            if isinstance(token_option, RequestOptionModel) and not ignore_stream_slicer_parameters:
-                for page_option in (
-                    retriever_model.paginator.page_token_option,
-                    retriever_model.paginator.page_size_option,
-                ):
-                    if (
-                        isinstance(page_option, RequestOptionModel)
-                        and token_option.inject_into == page_option.inject_into
-                    ):
-                        matching_field = None
-                        if token_option.field_name is not None and (
-                            token_option.field_name == page_option.field_name
-                        ):
-                            matching_field = token_option.field_name
-                        elif token_option.field_path is not None and (
-                            token_option.field_path == page_option.field_path
-                        ):
-                            matching_field = ".".join(token_option.field_path)
-                        if matching_field is not None:
-                            raise ValueError(
-                                f"Stream {stream_name}: token_option and the paginator both set "
-                                f'{token_option.inject_into.value} "{matching_field}". Set '
-                                "ignore_stream_slicer_parameters_on_paginated_requests: true on "
-                                "the retriever so the stored token is sent only on the first "
-                                "request of each pass."
-                            )
-
             strategy = retriever_model.paginator.pagination_strategy
             if (
                 isinstance(token_option, RequestPathModel) or ignore_stream_slicer_parameters
@@ -4129,6 +4158,23 @@ class ModelToComponentFactory:
         ignore_stream_slicer_parameters_on_paginated_requests = (
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
+
+        validation_paginator = (
+            paginator._decorated if isinstance(paginator, PaginatorTestReadDecorator) else paginator
+        )
+        if (
+            isinstance(incremental_sync, SyncTokenCursorModel)
+            and isinstance(token_request_options_provider, SyncTokenRequestOptionsProvider)
+            and isinstance(token_request_options_provider.token_option, RequestOption)
+            and isinstance(validation_paginator, DefaultPaginator)
+        ):
+            self._validate_sync_token_option_collisions(
+                name,
+                token_request_options_provider.token_option,
+                validation_paginator,
+                ignore_stream_slicer_parameters_on_paginated_requests,
+                config,
+            )
 
         reads_parent_stream_lazily = bool(
             model.partition_router

@@ -115,3 +115,27 @@ class RequestOption:
                 else self.field_name
             )
             target[str(key)] = value
+
+    def resolve_target(self, config: Config) -> tuple[str, ...]:
+        """Key path this option writes to, rendered with the same context as inject_into_request."""
+        scratch: dict[str, Any] = {}
+        sentinel = object()
+        self.inject_into_request(scratch, sentinel, config)
+
+        def find_sentinel_path(
+            target: Mapping[str, Any], prefix: tuple[str, ...] = ()
+        ) -> Optional[tuple[str, ...]]:
+            for key, value in target.items():
+                key = str(key)
+                if value is sentinel:
+                    return (*prefix, key)
+                if isinstance(value, Mapping):
+                    path = find_sentinel_path(value, (*prefix, key))
+                    if path is not None:
+                        return path
+            return None
+
+        path = find_sentinel_path(scratch)
+        if path is None:
+            raise ValueError("Unable to resolve RequestOption target")
+        return path

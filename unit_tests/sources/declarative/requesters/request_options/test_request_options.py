@@ -131,6 +131,35 @@ def test_interpolation_cases(
 
 
 @pytest.mark.parametrize(
+    ("field_name", "field_path", "config", "expected_target"),
+    [
+        ("syncToken", None, {}, ("syncToken",)),
+        ("{{ config['target'] }}", None, {"target": "syncToken"}, ("syncToken",)),
+        (
+            None,
+            ["data", "{{ config['target'] }}"],
+            {"target": "syncToken"},
+            ("data", "syncToken"),
+        ),
+    ],
+)
+def test_resolve_target(
+    field_name: Optional[str],
+    field_path: Optional[List[str]],
+    config: Dict[str, Any],
+    expected_target: tuple[str, ...],
+) -> None:
+    request_option = RequestOption(
+        field_name=field_name,
+        field_path=field_path,
+        inject_into=RequestOptionType.body_json,
+        parameters={},
+    )
+
+    assert request_option.resolve_target(config) == expected_target
+
+
+@pytest.mark.parametrize(
     "value, expected_type",
     [
         (42, int),
