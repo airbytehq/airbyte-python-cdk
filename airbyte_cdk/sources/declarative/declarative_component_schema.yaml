@@ -2886,6 +2886,7 @@ definitions:
           - RETRY
           - IGNORE
           - RESET_PAGINATION
+          - RESET_SYNC_TOKEN
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
           - REDUCE_PAGE_SIZE
@@ -2896,6 +2897,7 @@ definitions:
           - RETRY
           - IGNORE
           - RESET_PAGINATION
+          - RESET_SYNC_TOKEN
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
           - REDUCE_PAGE_SIZE
