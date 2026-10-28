@@ -4622,3 +4622,45 @@ def test_given_failed_partition_and_incoming_checkpoint_when_ensure_state_emitte
 
     assert cursor._message_repository.emit_message.call_count == 1
     assert cursor.state["state"] == {"updated_at": "2024-01-01T00:00:00Z"}
+
+
+def _partitions_failing_after_second():
+    yield StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={})
+    yield StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={})
+    raise RuntimeError("parent request failed")
+
+
+@pytest.mark.parametrize(
+    "stream_state, expected_emitted_messages, expected_global_state",
+    [
+        pytest.param({}, 0, None, id="no_incoming_state"),
+        pytest.param(
+            {"use_global_cursor": True, "state": {"updated_at": "2024-01-01T00:00:00Z"}},
+            1,
+            {"updated_at": "2024-01-01T00:00:00Z"},
+            id="incoming_global_state",
+        ),
+    ],
+)
+def test_given_failed_slice_generation_after_records_when_ensure_state_emitted_then_global_cursor_not_advanced(
+    stream_state, expected_emitted_messages, expected_global_state
+):
+    cursor = _global_cursor_over(_partitions_failing_after_second(), stream_state=stream_state)
+    slices = []
+    with pytest.raises(RuntimeError):
+        for stream_slice in cursor.stream_slices():
+            slices.append(stream_slice)
+    cursor.observe(
+        Record(
+            data={"updated_at": "2024-06-01T00:00:00Z"},
+            stream_name="test_stream",
+            associated_slice=slices[0],
+        )
+    )
+    for stream_slice in slices:
+        _close(cursor, stream_slice)
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    assert cursor._message_repository.emit_message.call_count == expected_emitted_messages
+    assert cursor.state.get("state") == expected_global_state

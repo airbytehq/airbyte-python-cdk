@@ -275,21 +275,23 @@ class ConcurrentPerPartitionCursor(Cursor):
         The platform expects at least one state message on successful syncs. Hence, whatever happens, we expect this method to be
         called.
 
-        If the stream did not complete (a partition was never closed, or slice generation stopped early) and the state holds no
+        If the stream did not complete (a partition was never closed, or slice generation stopped early), the global cursor is not
+        advanced, because partitions that were never generated have not been read up to it. If the state then holds no
         checkpoint, nothing is emitted. Such a state records no progress, but it is not empty, so the next attempt would treat
         the stream as already synced once: a StateDelegatingStream would switch to its incremental stream and never read the
-        slices this attempt missed.
+        slices this attempt missed. This covers global-cursor streams; in per-partition mode the cursor of every generated
+        partition reports its start value, so the state is still emitted.
         """
         all_partitions_closed = not any(
             semaphore_item[1]._value for semaphore_item in self._semaphore_per_partition.items()
         )
+        stream_completed = all_partitions_closed and self._finished_generating_slices
         if all_partitions_closed:
-            if self._synced_some_data:
+            if self._synced_some_data and stream_completed:
                 # we only update those if we actually synced some data
                 self._global_cursor = self._new_global_cursor
                 self._lookback_window = self._timer.finish()
             self._parent_state = self._partition_router.get_stream_state()
-        stream_completed = all_partitions_closed and self._finished_generating_slices
         if not stream_completed and not self._has_checkpoint():
             return
         self._emit_state_message(throttle=False)
