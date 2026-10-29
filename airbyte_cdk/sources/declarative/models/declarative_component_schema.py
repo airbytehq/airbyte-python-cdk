@@ -3014,7 +3014,6 @@ class SyncTokenCursor(BaseModel):
         None,
         description="Optional top-level record field advertised as the stream's cursor, so destinations can order versions of a record when deduplicating. It is never used to filter records or to build state.",
         title="Destination Cursor Field",
-        interpolation_context=["config"],
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

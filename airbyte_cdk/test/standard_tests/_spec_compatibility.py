@@ -26,6 +26,8 @@ import requests
 from packaging.version import InvalidVersion, Version
 from requests.adapters import HTTPAdapter, Retry
 
+from airbyte_cdk.test.standard_tests._acceptance_test_config import section_entries
+
 DeploymentMode = Literal["oss", "cloud"]
 
 REGISTRY_ENTRY_URL_TEMPLATE = (
@@ -1119,9 +1121,8 @@ def disabled_for_version(acceptance_test_config: Any) -> list[str]:
     acceptance_tests = acceptance_test_config.get("acceptance_tests")
     if not isinstance(acceptance_tests, Mapping):
         return []
-    spec_section = acceptance_tests.get("spec")
-    tests = spec_section.get("tests") if isinstance(spec_section, Mapping) else spec_section
-    if not isinstance(tests, list):
+    tests = section_entries(acceptance_tests.get("spec"))
+    if tests is None:
         return []
 
     versions: list[str] = []
