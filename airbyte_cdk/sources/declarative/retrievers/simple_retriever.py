@@ -80,6 +80,15 @@ LOGGER = logging.getLogger("airbyte")
 _MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
 
 
+@dataclass(frozen=True)
+class PageCompleted:
+    """Describe a completed response page observed by an incremental cursor."""
+
+    stream_slice: StreamSlice
+    response: requests.Response
+    pagination_exhausted: bool
+
+
 @dataclass
 class SimpleRetriever(Retriever):
     """
@@ -117,6 +126,8 @@ class SimpleRetriever(Retriever):
         request_window_splitter: Bound method - normally the stream's own cursor's `split_request_window` -
             asked to replace a failing `StreamSlice` with smaller children. `None` has the same effect as
             `request_window_splitting` being `None`.
+        page_observer (Optional[Callable[[PageCompleted], None]]): Observes completed response pages; set
+            only on streams using `SyncTokenCursor` and `None` otherwise.
     """
 
     requester: Requester
@@ -146,6 +157,7 @@ class SimpleRetriever(Retriever):
     request_window_splitter: Optional[
         Callable[[StreamSlice, Optional[datetime.timedelta]], Optional[List[StreamSlice]]]
     ] = None
+    page_observer: Optional[Callable[["PageCompleted"], None]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -547,6 +559,14 @@ class SimpleRetriever(Retriever):
                     **page_size_override_kwargs(page_size_override),
                     **stream_slice_kwargs(self._next_page_token, stream_slice),
                 )
+                if response is not None and self.page_observer:
+                    self.page_observer(
+                        PageCompleted(
+                            stream_slice=stream_slice,
+                            response=response,
+                            pagination_exhausted=not next_page_token,
+                        )
+                    )
                 if not next_page_token:
                     break
 

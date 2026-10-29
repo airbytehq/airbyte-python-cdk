@@ -199,6 +199,10 @@ class ConcurrentPerPartitionCursor(Cursor):
         return self._cursor_field
 
     @property
+    def partition_router(self) -> PartitionRouter:
+        return self._partition_router
+
+    @property
     def state(self) -> MutableMapping[str, Any]:
         state: dict[str, Any] = {"use_global_cursor": self._use_global_cursor}
         if not self._use_global_cursor:
