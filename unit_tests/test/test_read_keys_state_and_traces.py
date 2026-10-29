@@ -848,6 +848,14 @@ def test_fail_read_with_bad_catalog_checks_the_trace(tmp_path: Path) -> None:
     _suite(tmp_path, _Source([{"id": 1}])).test_fail_read_with_bad_catalog(_scenario())
 
 
+def test_fail_read_with_bad_catalog_honours_the_opt_out(tmp_path: Path) -> None:
+    # As in CAT, the opt-out skips this test for its config.
+    with pytest.raises(pytest.skip.Exception, match="expect_trace_message_on_failure: false"):
+        _suite(tmp_path, _Source([{"id": 1}])).test_fail_read_with_bad_catalog(
+            _scenario(config_path="secrets/config.json", expect_trace_message_on_failure=False)
+        )
+
+
 # --- Opt-outs in `acceptance-test-config.yml` ------------------------------------------------
 
 OPT_OUTS = (

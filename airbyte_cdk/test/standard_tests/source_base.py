@@ -271,9 +271,16 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
         Runs for configs listed under `basic_read` or `full_refresh` in
         `acceptance-test-config.yml`. The read must fail and emit a well-formed `ERROR` trace
-        message (see `assert_error_trace_messages`).
+        message (see `assert_error_trace_messages`). This is CAT's
+        `TestBasicRead.test_airbyte_trace_message_on_failure`, and as in CAT it is skipped for a
+        config whose `basic_read` entry sets `expect_trace_message_on_failure: false`.
         """
         skip_unless_runs(scenario, "read")
+        if not scenario.expect_trace_message_on_failure:
+            pytest.skip(
+                f"`expect_trace_message_on_failure: false` is set for {scenario.id!r} in "
+                "`acceptance-test-config.yml`."
+            )
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid
@@ -306,9 +313,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_fail_read_with_invalid_config(self) -> None:
         """Standard test for `read` with a config that the connector's spec rejects.
 
-        Ported from CAT's `TestBasicRead.test_airbyte_trace_message_on_failure`: a read that
-        fails must report why in a well-formed `ERROR` trace message (see
-        `assert_error_trace_messages`). Where `test_fail_read_with_bad_catalog` breaks the
+        A read that fails must report why in a well-formed `ERROR` trace message (see
+        `assert_error_trace_messages`). CAT had no such test: its
+        `test_airbyte_trace_message_on_failure` is `test_fail_read_with_bad_catalog`, and this
+        test honours the same opt-out. Where `test_fail_read_with_bad_catalog` breaks the
         catalog, which the entrypoint rejects before any connector code runs, this test gives
         the connector a config its own spec rejects: one that holds none of the spec's required
         top-level properties and no value from any real config (`make_invalid_config`). No
@@ -317,7 +325,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
         Skipped when the spec requires no top-level property (no config is invalid for sure),
         or when any `basic_read` entry of `acceptance-test-config.yml` sets
-        `expect_trace_message_on_failure: false`, as CAT did.
+        `expect_trace_message_on_failure: false`: the connector does not promise an error trace
+        for a failed read.
 
         A source that cannot even be created from the invalid config fails the same way
         `source-declarative-manifest` reports it: as an uncaught error, turned into a trace
