@@ -11,7 +11,7 @@ name: OSS Issue Triage
 #   - A defect is only escalated when the report includes a reproducing snippet,
 #     a stack trace, or a CDK version where the behavior changed.
 #
-# Playbook source: airbytehq/ai-skills → devin/playbooks/oss_issue_triage.md
+# Playbook source: airbytehq/ai-skills → plugins/devin-playbooks/playbooks/oss_issue_triage.md
 
 on:
   issues:
@@ -115,7 +115,7 @@ jobs:
             - Join the [Airbyte Community Slack](https://slack.airbyte.com) to connect with other users and community members
             - If you're an Airbyte Cloud customer, you can [open a support ticket](https://support.airbyte.com) or contact your account representative, referencing this issue URL
 
-            [View playbook](https://github.com/airbytehq/ai-skills/blob/main/devin/playbooks/oss_issue_triage.md)
+            [View playbook](https://github.com/airbytehq/ai-skills/blob/main/plugins/devin-playbooks/playbooks/oss_issue_triage.md)
           tags: |
             oss-issue-triage
             community-issue
