@@ -8,11 +8,15 @@ These port three more checks of the Connector Acceptance Tests (CAT) basic read 
 - every configured stream emits per-stream state with `sourceStats` (`_validate_state_messages`);
 - a failing read emits a well-formed `ERROR` trace message
   (`test_airbyte_trace_message_on_failure`).
+
+They also cover the advisory stream status check (`_validate_stream_statuses`), which warns
+instead of failing.
 """
 
 from __future__ import annotations
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -32,6 +36,7 @@ from airbyte_cdk.models import (
     AirbyteStateType,
     AirbyteStream,
     AirbyteStreamState,
+    AirbyteStreamStatus,
     AirbyteTraceMessage,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
@@ -51,12 +56,15 @@ from airbyte_cdk.test.standard_tests._job_runner import IConnector
 from airbyte_cdk.test.standard_tests._read_assertions import (
     INVALID_CONFIG_MARKER,
     MAX_PRIMARY_KEY_ERRORS_PER_STREAM,
+    StreamStatusWarning,
     assert_error_trace_messages,
     assert_read_records,
+    find_stream_status_problems,
     make_invalid_config,
 )
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message as stream_status_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.test.read_test_helpers import final_state
 
@@ -500,7 +508,9 @@ class _Source(Source):
     """A source over one `users` stream with primary key `id`.
 
     Behaviours:
-    - `records`: the given records, then the final state (unless `emit_state` is false).
+    - `records`: the given records, then the final state (unless `emit_state` is false),
+      between `STARTED`, `RUNNING` and `COMPLETE` stream statuses (unless `emit_statuses` is
+      false).
     - `skip_config_check`: like `records`, without validating the config against the spec.
     - `malformed_trace`: without validating the config, yield an `ERROR` trace with a blank
       message, then raise.
@@ -513,11 +523,13 @@ class _Source(Source):
         behavior: str = "records",
         spec: Mapping[str, Any] = SPEC_REQUIRING_API_KEY,
         emit_state: bool = True,
+        emit_statuses: bool = True,
     ) -> None:
         self._records = records or []
         self._behavior = behavior
         self._spec = dict(spec)
         self._emit_state = emit_state
+        self._emit_statuses = emit_statuses
         self.check_config_against_spec = behavior == "records"
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
@@ -551,10 +563,16 @@ class _Source(Source):
         for configured_stream in catalog.streams:
             if configured_stream.stream.name != "users":
                 continue
+            users = StreamDescriptor(name="users")
+            if self._emit_statuses:
+                yield stream_status_message(users, AirbyteStreamStatus.STARTED)
+                yield stream_status_message(users, AirbyteStreamStatus.RUNNING)
             for data in self._records:
                 yield _record("users", data)
             if self._emit_state:
                 yield final_state("users")
+            if self._emit_statuses:
+                yield stream_status_message(users, AirbyteStreamStatus.COMPLETE)
 
 
 def _suite(tmp_path: Path, source: _Source | Exception) -> SourceTestSuiteBase:
@@ -642,6 +660,131 @@ def test_basic_read(
         return
     with pytest.raises(AssertionError, match=failure_match):
         suite.test_basic_read(scenario)
+
+
+# --- Stream statuses (advisory) ----------------------------------------------------------------
+
+
+def _statuses(
+    stream: str, *statuses: AirbyteStreamStatus, namespace: str | None = None
+) -> list[AirbyteMessage]:
+    descriptor = StreamDescriptor(name=stream, namespace=namespace)
+    return [stream_status_message(descriptor, status) for status in statuses]
+
+
+STARTED, RUNNING, COMPLETE, INCOMPLETE = (
+    AirbyteStreamStatus.STARTED,
+    AirbyteStreamStatus.RUNNING,
+    AirbyteStreamStatus.COMPLETE,
+    AirbyteStreamStatus.INCOMPLETE,
+)
+
+
+@pytest.mark.parametrize(
+    "messages, expected",
+    [
+        pytest.param(
+            _statuses("a", STARTED, RUNNING, RUNNING, COMPLETE) + _statuses("b", STARTED, COMPLETE),
+            [],
+            id="complete_with_and_without_running",
+        ),
+        pytest.param(
+            _statuses("a", STARTED, RUNNING, COMPLETE),
+            ["1 of 2 configured streams reported no stream status: 'b'."],
+            id="stream_without_status",
+        ),
+        pytest.param(
+            _statuses("a", STARTED, COMPLETE)
+            + _statuses("b", STARTED, COMPLETE)
+            + _statuses("c", STARTED, COMPLETE),
+            ["1 streams that are not in the configured catalog reported a stream status: 'c'."],
+            id="unconfigured_stream",
+        ),
+        pytest.param(
+            _statuses("a", STARTED, RUNNING) + _statuses("b", STARTED, COMPLETE),
+            ["stream 'a' reported STARTED, RUNNING; expected"],
+            id="no_complete",
+        ),
+        pytest.param(
+            _statuses("a", STARTED, RUNNING, INCOMPLETE) + _statuses("b", STARTED, COMPLETE),
+            ["stream 'a' reported STARTED, RUNNING, INCOMPLETE; expected"],
+            id="incomplete",
+        ),
+        pytest.param(
+            _statuses("a", RUNNING, COMPLETE) + _statuses("b", STARTED, COMPLETE),
+            ["stream 'a' reported RUNNING, COMPLETE; expected"],
+            id="no_started",
+        ),
+        pytest.param(
+            _statuses("a", STARTED, COMPLETE, RUNNING, COMPLETE)
+            + _statuses("b", STARTED, COMPLETE),
+            ["stream 'a' reported STARTED, COMPLETE, RUNNING, COMPLETE; expected"],
+            id="complete_before_the_end",
+        ),
+        pytest.param(
+            _statuses("a", COMPLETE) + _statuses("b", STARTED, COMPLETE),
+            ["stream 'a' reported COMPLETE; expected"],
+            id="single_status",
+        ),
+    ],
+)
+def test_find_stream_status_problems(messages: list[AirbyteMessage], expected: list[str]) -> None:
+    problems = find_stream_status_problems(messages, _catalog({"a": None, "b": None}))
+    assert len(problems) == len(expected)
+    for problem, fragment in zip(problems, expected):
+        assert fragment in problem
+
+
+def test_find_stream_status_problems_ignores_other_messages() -> None:
+    messages = [
+        _record("a", {"id": 1}),
+        final_state("a"),
+        _error_trace(message="boom"),
+        *_statuses("a", STARTED, COMPLETE),
+    ]
+    assert find_stream_status_problems(messages, _catalog({"a": None})) == []
+
+
+def test_find_stream_status_problems_matches_the_namespace() -> None:
+    catalog = _catalog({"a": None}, namespace="public")
+    assert (
+        find_stream_status_problems(_statuses("a", STARTED, COMPLETE, namespace="public"), catalog)
+        == []
+    )
+    problems = find_stream_status_problems(_statuses("a", STARTED, COMPLETE), catalog)
+    assert [problem.split(":")[0] for problem in problems] == [
+        "- 1 of 1 configured streams reported no stream status",
+        "- 1 streams that are not in the configured catalog reported a stream status",
+    ]
+    assert "'public.a'" in problems[0]
+
+
+def test_basic_read_warns_on_missing_stream_statuses(tmp_path: Path) -> None:
+    suite = _suite(tmp_path, _Source([{"id": 1}], emit_statuses=False))
+    with pytest.warns(StreamStatusWarning, match="reported no stream status: 'users'"):
+        suite.test_basic_read(_scenario())
+
+
+def test_basic_read_does_not_warn_on_complete_stream_statuses(tmp_path: Path) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", StreamStatusWarning)
+        _suite(tmp_path, _Source([{"id": 1}])).test_basic_read(_scenario())
+
+
+def test_basic_read_skips_stream_statuses_for_a_full_refresh_only_config(tmp_path: Path) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", StreamStatusWarning)
+        _suite(tmp_path, _Source([{"id": 1}], emit_statuses=False)).test_basic_read(
+            _scenario(sections=("full_refresh",))
+        )
+
+
+def test_basic_read_stream_status_warning_can_be_made_an_error(tmp_path: Path) -> None:
+    suite = _suite(tmp_path, _Source([{"id": 1}], emit_statuses=False))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", StreamStatusWarning)
+        with pytest.raises(StreamStatusWarning):
+            suite.test_basic_read(_scenario())
 
 
 def test_fail_read_with_invalid_config_passes_when_the_spec_rejects_it(tmp_path: Path) -> None:

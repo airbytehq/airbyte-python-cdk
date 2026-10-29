@@ -14,6 +14,10 @@ which the standard tests did not reproduce:
 - every configured stream emits a `STREAM` (or `GLOBAL`) state message carrying `sourceStats`
   (the per-stream form of CAT `_validate_state_messages`).
 
+`find_stream_status_problems` ports CAT `_validate_stream_statuses`: every configured stream
+reports `STARTED`, then only `RUNNING`, and ends with `COMPLETE`. It is advisory for now: the
+`read` tests report its problems as a `StreamStatusWarning` and do not fail.
+
 They also include the check of CAT's `TestBasicRead.test_airbyte_trace_message_on_failure`: a
 read that fails emits a well-formed `TRACE` message of type `ERROR` (`assert_error_trace_messages`).
 
@@ -36,6 +40,7 @@ from referencing.exceptions import Unresolvable
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateType,
+    AirbyteStreamStatus,
     ConfiguredAirbyteCatalog,
     TraceType,
     Type,
@@ -49,6 +54,7 @@ MAX_PRIMARY_KEY_ERRORS_PER_STREAM = 5
 """How many distinct primary key errors are reported per stream. The total is always reported."""
 
 _MAX_MESSAGE_CHARS = 300
+_MAX_STREAM_NAMES = 10
 _MAX_CONSTRAINT_CHARS = 80
 
 # CAT's shape check for `date-time` values: a date, a ' ' or 'T' separator, a time, then anything
@@ -503,6 +509,87 @@ def _find_state_message_failures(
             "CDK entrypoint sets it on every state message it emits."
         )
     return failures
+
+
+class StreamStatusWarning(UserWarning):
+    """A stream status problem in a `read` that the standard tests report but do not enforce yet.
+
+    To make these problems fail the test, turn the warning into an error, either with
+    `pytest -W error::airbyte_cdk.test.standard_tests.StreamStatusWarning` or with
+    `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.StreamStatusWarning`.
+    """
+
+
+def _stream_label(namespace: str | None, name: str) -> str:
+    return name if namespace is None else f"{namespace}.{name}"
+
+
+def _stream_list(labels: Iterable[str]) -> str:
+    names = sorted(labels)
+    shown = ", ".join(repr(name) for name in names[:_MAX_STREAM_NAMES])
+    hidden = len(names) - _MAX_STREAM_NAMES
+    return shown + (f" and {hidden} more" if hidden > 0 else "")
+
+
+def find_stream_status_problems(
+    trace_messages: Iterable[AirbyteMessage],
+    configured_catalog: ConfiguredAirbyteCatalog,
+) -> list[str]:
+    """Check the stream status trace messages of a successful read, as CAT did.
+
+    Ported from CAT's `_validate_stream_statuses`: every configured stream, and no other stream,
+    must report its status, and each stream's statuses must be `STARTED`, then only `RUNNING`,
+    then `COMPLETE`. CAT ran this check by default for certified connectors only. Here it is
+    advisory: `test_basic_read` reports the problems as a `StreamStatusWarning`.
+    """
+    configured = {
+        (configured_stream.stream.namespace, configured_stream.stream.name)
+        for configured_stream in configured_catalog.streams
+    }
+    statuses: dict[tuple[str | None, str], list[AirbyteStreamStatus]] = {}
+    for message in trace_messages:
+        trace = message.trace
+        if (
+            message.type != Type.TRACE
+            or trace is None
+            or trace.type != TraceType.STREAM_STATUS
+            or trace.stream_status is None
+        ):
+            continue
+        descriptor = trace.stream_status.stream_descriptor
+        statuses.setdefault((descriptor.namespace, descriptor.name), []).append(
+            trace.stream_status.status
+        )
+
+    problems: list[str] = []
+    silent = [_stream_label(*stream) for stream in configured - statuses.keys()]
+    if silent:
+        problems.append(
+            f"- {len(silent)} of {len(configured)} configured streams reported no stream status: "
+            f"{_stream_list(silent)}."
+        )
+    unexpected = [_stream_label(*stream) for stream in statuses.keys() - configured]
+    if unexpected:
+        problems.append(
+            f"- {len(unexpected)} streams that are not in the configured catalog reported a "
+            f"stream status: {_stream_list(unexpected)}."
+        )
+    for stream in sorted(statuses.keys() & configured, key=lambda key: (key[0] or "", key[1])):
+        sequence = statuses[stream]
+        if (
+            len(sequence) < 2
+            or sequence[0] != AirbyteStreamStatus.STARTED
+            or sequence[-1] != AirbyteStreamStatus.COMPLETE
+            or any(status != AirbyteStreamStatus.RUNNING for status in sequence[1:-1])
+        ):
+            shown = ", ".join(status.value for status in sequence[:6])
+            if len(sequence) > 6:
+                shown += f" and {len(sequence) - 6} more"
+            problems.append(
+                f"- stream {_stream_label(*stream)!r} reported {shown}; expected `STARTED`, "
+                "then only `RUNNING`, then `COMPLETE`."
+            )
+    return problems
 
 
 def assert_error_trace_messages(messages: Iterable[AirbyteMessage]) -> None:

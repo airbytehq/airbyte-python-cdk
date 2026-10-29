@@ -27,9 +27,11 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests._read_assertions import (
+    StreamStatusWarning,
     assert_error_trace_messages,
     assert_read_records,
     assert_schema_validation_opt_out_allowed,
+    find_stream_status_problems,
     make_invalid_config,
 )
 from airbyte_cdk.test.standard_tests._spec_lint import assert_spec_is_valid, get_single_spec
@@ -186,6 +188,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
           missing or null (opt out with `validate_primary_keys_data_type: false`);
         - every stream it reads must emit a `STREAM` (or `GLOBAL`) state message, and every
           state message must carry `sourceStats` (opt out with `validate_state_messages: false`).
+
+        Every stream it reads should also report `STARTED`, then only `RUNNING`, then
+        `COMPLETE` stream statuses. That check is not enforced yet: its problems are reported as
+        a `StreamStatusWarning`.
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:
@@ -235,6 +241,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             return
 
         if scenario.is_basic_read_config:
+            status_problems = find_stream_status_problems(result.trace_messages, configured_catalog)
+            if status_problems:
+                warnings.warn(
+                    "The read's stream statuses are incomplete. This check is not enforced "
+                    "yet:\n" + "\n".join(status_problems),
+                    category=StreamStatusWarning,
+                    stacklevel=1,
+                )
             # Also asserts that the read returned records, in the same pass over them.
             assert_read_records(
                 records=result.records_iterator,

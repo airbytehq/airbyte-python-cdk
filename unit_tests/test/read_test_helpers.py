@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateBlob,
@@ -10,9 +12,11 @@ from airbyte_cdk.models import (
     AirbyteStateStats,
     AirbyteStateType,
     AirbyteStreamState,
+    AirbyteStreamStatus,
     StreamDescriptor,
     Type,
 )
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 
 
 def final_state(
@@ -36,3 +40,14 @@ def final_state(
             ),
         ),
     )
+
+
+def with_stream_statuses(
+    stream: str, messages: Iterable[AirbyteMessage], *, namespace: str | None = None
+) -> Iterator[AirbyteMessage]:
+    """Wrap a stream's messages in the `STARTED`, `RUNNING` and `COMPLETE` statuses the CDK emits."""
+    descriptor = StreamDescriptor(name=stream, namespace=namespace)
+    yield as_airbyte_message(descriptor, AirbyteStreamStatus.STARTED)
+    yield as_airbyte_message(descriptor, AirbyteStreamStatus.RUNNING)
+    yield from messages
+    yield as_airbyte_message(descriptor, AirbyteStreamStatus.COMPLETE)

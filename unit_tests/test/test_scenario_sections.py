@@ -28,6 +28,7 @@ from airbyte_cdk.models import (
     AirbyteStateType,
     AirbyteStream,
     AirbyteStreamState,
+    AirbyteStreamStatus,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
     Status,
@@ -52,6 +53,7 @@ from airbyte_cdk.test.standard_tests.docker_base import (
     skip_unless_runs,
 )
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message as stream_status_message
 
 POKEAPI_RESOURCE_DIR = Path(__file__).parent.parent / "resources" / "source_pokeapi_w_components_py"
 IMAGE = "airbyte/source-test:dev"
@@ -587,6 +589,7 @@ class _ReadSource(Source):
             return
         for configured_stream in catalog.streams:
             name = configured_stream.stream.name
+            yield stream_status_message(StreamDescriptor(name=name), AirbyteStreamStatus.STARTED)
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
@@ -604,6 +607,7 @@ class _ReadSource(Source):
                     ),
                 ),
             )
+            yield stream_status_message(StreamDescriptor(name=name), AirbyteStreamStatus.COMPLETE)
 
 
 def _read_suite(
