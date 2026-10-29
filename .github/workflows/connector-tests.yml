@@ -189,11 +189,8 @@ jobs:
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
-        # The Docker read runs in the "Container Build and Test" step below; skip it here so it
-        # does not run twice.
         run: |
-          poetry run airbyte-cdk connector test \
-            --pytest-arg=--read-from-streams=false
+          poetry run airbyte-cdk connector test
 
       # Manifest-only connector images are built `FROM` the published `source-declarative-manifest`
       # base image declared in metadata.yaml, so by default the container tests exercise the
@@ -215,7 +212,6 @@ jobs:
       # branch-built SDM base image here too. Otherwise those tests build the connector image
       # `FROM` the published metadata base image (running the released CDK instead of this
       # branch's), and the later `image test` step can't reuse its layers.
-      # The Docker read runs in the later `image test` step, so it is skipped here.
       - name: Run FAST Standard Tests [Manifest-Only Connectors]
         if: env.CONNECTOR_LANGUAGE == 'manifest-only'
         working-directory: airbyte-python-cdk
@@ -225,8 +221,7 @@ jobs:
         run: |
           poetry run airbyte-cdk connector test ${{ matrix.connector }} \
             --pytest-arg=--connector-base-image \
-            --pytest-arg=airbyte/source-declarative-manifest:dev \
-            --pytest-arg=--read-from-streams=false
+            --pytest-arg=airbyte/source-declarative-manifest:dev
 
       - name: Container Build and Test [All Connectors]
         if: steps.no_changes.outputs.status != 'cancelled'

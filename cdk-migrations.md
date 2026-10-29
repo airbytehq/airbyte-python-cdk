@@ -29,6 +29,40 @@ Migration steps:
 - A connector whose Docker read fails gets the same fixes as a failing `test_basic_read`: refresh an expired secret, declare a stream without data in `empty_streams` with a `bypass_reason`, fix the schema or the records, or set `validate_schema: false` (with a reason) where that is allowed.
 - To skip the Docker read for one run, pass `--read-from-streams=false` (to `airbyte-cdk connector test` as `--pytest-arg=--read-from-streams=false`), or set `PYTEST_ADDOPTS=--read-from-streams=false`, which `airbyte-cdk image test` also honours. Prefer `false` over `none` in CI files and poe tasks: `false` skips the read on every CDK version, while CDK 7.36.0 and earlier read `none` as a stream name, so they run the Docker `discover` and a `read` of an empty catalog.
 
+## Upgrading to 7.40.0
+
+### A connector without test scenarios fails unless it says why
+
+This release changes how the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) read `acceptance-test-config.yml`. There is no change to how connectors run. Previously a connector whose file listed no config the tests could run, or that had no file at all, collected an empty scenario list: every test that takes a scenario (`test_check`, `test_discover`, `test_basic_read` and their Docker counterparts) was skipped as "got empty parameter set" and the run passed. Now:
+
+| `acceptance-test-config.yml` | Before | Now |
+|---|---|---|
+| Lists at least one config under `spec`, `connection`, `discovery`, `basic_read` or `full_refresh` | Scenarios run | Scenarios run. Declared bypasses (below) are also reported as skipped tests. |
+| Lists no runnable config, but declares a `bypass_reason` | Every scenario test skipped as an empty parameter set | One skipped test per scenario test and distinct reason, whose skip message is the declared reason, plus one line after collection. |
+| Lists no runnable config and declares no `bypass_reason` | Every scenario test skipped as an empty parameter set | Collection fails, naming the file and why each section and entry produced nothing. |
+| Missing (Python or manifest-only connector) | `UserWarning`, every scenario test skipped | Collection fails. |
+| Missing (Java connector, `language:java` in `metadata.yaml`) | `UserWarning`, every scenario test skipped | Reported as a bypass: Java connectors are tested by their Gradle suites. |
+| Legacy top-level `tests:` key instead of `acceptance_tests:` | Collection failed with "Acceptance tests config not found" and the whole parsed file | Collection fails with a message naming the file and the migration. |
+| A section written as a plain list (`connection: [...]`, the legacy layout) | Silently ignored | Read as the section's `tests` list. Its entries are checked like the entries under `tests`: a key the Standard Tests do not read, or an invalid value, fails collection. |
+
+A `bypass_reason` counts in three places:
+
+- **Top level** (`bypass_reason: "..."` next to `acceptance_tests`): bypasses the whole connector. A file holding only this key is the opt-out for a connector without test configs. It cannot be combined with runnable configs, which fails collection.
+- **On a section** (`connection: {bypass_reason: "..."}`), the layout the Connector Acceptance Tests used: bypasses that section, when it lists no runnable config. A section `bypass_reason` next to runnable configs is ignored, as before.
+- **On an entry without `config_path`** (`- bypass_reason: "..."` in a section's `tests` list): bypasses that entry. An entry with a `config_path` always runs; its `bypass_reason` is ignored.
+
+Only the sections the Standard Tests collect count. A `bypass_reason` under `incremental`, which is not collected, does not, and neither does an IAM-role config (`config_path` containing `iam_role`), which the Standard Tests do not support. `DockerConnectorTestSuite.get_scenario_bypasses()` returns the bypasses, and `ConnectorTestScenario.bypass_reason` holds the reason on the placeholder scenario of each skipped test. `get_scenarios()` still returns only the runnable scenarios, and now raises `MissingAcceptanceTestConfigError` (a `FileNotFoundError`) or `AcceptanceTestConfigError` (a `ValueError`) instead of warning or failing with a generic `ValueError`. A suite that overrides `get_scenarios()` supplies its own scenarios: its `acceptance-test-config.yml` is not read for bypasses, and a missing file is not an error.
+
+Migration steps:
+
+- A connector without `acceptance-test-config.yml`: list its test configs in a new file, or create the file with only a top-level `bypass_reason` that says why it has none, e.g. `bypass_reason: "No test config in GSM for this connector"`. Earlier CDK versions reject a file without `acceptance_tests`, so a file that must also load under them adds `acceptance_tests: {}`.
+- A file whose sections list no `config_path`, such as one holding only a `spec_path` entry or only a `backward_compatibility_tests_config` waiver: add the configs, or declare a `bypass_reason` at the top level or on each section.
+- A file with a top-level `tests:` key: rename it to `acceptance_tests:` and nest each section's entries under `tests` (`connection: {tests: [{config_path: ...}]}`).
+- A section written as a plain list now runs its configs. Make sure they pass, or move the ones that cannot run out and declare a `bypass_reason` for them.
+- `empty_streams` entries must be mappings (`- name: <stream>`), not plain strings.
+
+Rationale: an empty scenario list looked like a green test run, so a connector whose configs were never collected, or whose configuration silently degraded to nothing, reported coverage it did not have. The opt-out is explicit and machine-readable so that the connectors that legitimately have no test configs say so in the test report instead of being indistinguishable from a broken configuration.
+
 ## Upgrading to 7.39.0
 
 ### `acceptance-test-config.yml` keys the Standard Tests do not read fail collection

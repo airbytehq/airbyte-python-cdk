@@ -219,8 +219,8 @@ class ConnectorTestScenario(BaseModel):
     configured_catalog_path: Path | None = None
     empty_streams: list[AcceptanceTestEmptyStream] | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
-    # Why the entry tests nothing. Read by the zero-scenario rule (a connector without test
-    # scenarios must declare why, airbyte-internal-issues#17131), which is not implemented yet.
+    # Why this scenario is not run: set on the placeholder scenarios that report a declared
+    # `bypass_reason` of `acceptance-test-config.yml` as skipped tests.
     bypass_reason: str | None = None
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
