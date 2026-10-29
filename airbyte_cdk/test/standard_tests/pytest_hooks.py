@@ -44,8 +44,12 @@ def connector_base_image_override(request: pytest.FixtureRequest) -> str | None:
     return cast(str | None, request.config.getoption("--connector-base-image"))
 
 
-READ_FROM_STREAMS_DEFAULT = "default"
-"""The `--read-from-streams` value used when the option is omitted: the Docker read test runs."""
+READ_FROM_STREAMS_DEFAULT = "false"
+"""The `--read-from-streams` value used when the option is omitted: the Docker read test is skipped.
+
+Connector CI reads each connector once, in process (`test_basic_read`). The Docker read is for a
+connector whose in-process tests cannot run, and is turned on per run with `--read-from-streams`.
+"""
 
 READ_SCENARIOS_DEFAULT = "default"
 """The `--read-scenarios` value used when the option is omitted."""
@@ -54,26 +58,25 @@ READ_SCENARIOS_DEFAULT = "default"
 @pytest.fixture
 def read_from_streams(
     request: pytest.FixtureRequest,
-) -> Literal["all", "none", "default"] | list[str]:
-    """Return the value of `--read-from-streams`: which streams the Docker read test reads.
+) -> Literal["default", "none"] | list[str]:
+    """Return the value of `--read-from-streams`: whether, and which streams, the Docker read reads.
 
     The Docker read test (`test_docker_image_build_and_read`) runs a full-refresh `read` inside the
     connector image for each config listed under `basic_read` or `full_refresh` in
-    `acceptance-test-config.yml`, of the streams of its `configured_catalog_path` (or every
-    discovered stream) minus its `empty_streams`. This option narrows those streams further:
+    `acceptance-test-config.yml`. It is off by default, because the in-process `test_basic_read`
+    already reads every connector whose in-process tests run:
 
-    - [Omitted], `--read-from-streams=default`, `=true` or `=suggested`: Read the connector's
-      `suggestedStreams` from `metadata.yaml`. A connector that declares none, or whose suggested
-      streams are all excluded for the config, reads all of the config's streams.
-    - `--read-from-streams=all`: Read all of the config's streams.
-    - `--read-from-streams=stream1,stream2`: Read only these of the config's streams. A config
-      that reads none of them is skipped.
-    - `--read-from-streams=false` or `=none`: Skip the Docker read test (the explicit opt-out).
-      Prefer `false` in CI files: CDK 7.36.0 and earlier read `none` as a stream name.
+    - [Omitted], `--read-from-streams=false` or `=none`: Skip the Docker read test. Prefer `false`
+      in CI files: CDK 7.36.0 and earlier read `none` as a stream name.
+    - `--read-from-streams=default` (also `true`, `all` and `suggested`): Read the streams that
+      `test_basic_read` reads: those of the config's `configured_catalog_path`, or every
+      discovered stream, minus its `empty_streams`. The connector's `suggestedStreams` play no
+      part.
+    - `--read-from-streams=stream1,stream2`: Read only these of those streams. A config that reads
+      none of them is skipped.
 
     Which configs are read is set by `--read-scenarios`. The two options combine: the test reads
-    the streams selected here for each config selected there, so the default of both reads at
-    least one config of every connector that lists a config under a read section.
+    the streams selected here for each config selected there.
     """
     input_val = request.config.getoption(
         "--read-from-streams",
@@ -88,12 +91,10 @@ def read_from_streams(
     normalized = input_val.strip().lower()
     if normalized in ("false", "none"):
         return "none"
-    if normalized in ("true", "suggested", "default"):
+    if normalized in ("default", "true", "all", "suggested"):
+        # `all` and `suggested` are kept so that existing commands still run; they read the same
+        # streams as `default`.
         return "default"
-    if normalized == "all":
-        # This will sometimes fail if the account doesn't have permissions
-        # to premium or restricted stream data.
-        return "all"
 
     # A comma-separated list of stream names; a single name gives a one-element list.
     return [name.strip() for name in input_val.split(",") if name.strip()]
@@ -116,8 +117,9 @@ def read_scenarios(
       without `.json`); the others are skipped.
     - `--read-scenarios=none`: Skip the Docker read test, like `--read-from-streams=false`.
 
-    `--read-from-streams` then picks the streams read for each selected config. The in-process
-    read test (`test_basic_read`) ignores both options and reads every read config.
+    This option only matters when `--read-from-streams` turns the Docker read on; that option then
+    picks the streams read for each selected config. The in-process read test (`test_basic_read`)
+    ignores both options and reads every read config.
     """
     input_val = request.config.getoption(
         "--read-scenarios",

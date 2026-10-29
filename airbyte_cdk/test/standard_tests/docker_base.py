@@ -183,24 +183,16 @@ def get_default_read_scenario_ids(scenarios: list[ConnectorTestScenario]) -> set
 def select_docker_read_streams(
     read_streams: list[AirbyteStream],
     *,
-    read_from_streams: Literal["all", "default"] | list[str],
-    suggested_streams: list[str] | None,
+    read_from_streams: Literal["default"] | list[str],
 ) -> list[AirbyteStream]:
     """Narrow a config's read streams by `--read-from-streams` (see the `read_from_streams` fixture).
 
-    `default` keeps the connector's suggested streams, unless it declares none or none of them is
-    read for this config: then every stream is kept, as `all` does. A stream list keeps the listed
-    streams, which may leave none.
+    `default` keeps every stream that `get_read_streams` returns, the same streams the in-process
+    `test_basic_read` reads. A stream list keeps the listed streams, which may leave none.
     """
     if isinstance(read_from_streams, list):
         wanted = set(read_from_streams)
         return [stream for stream in read_streams if stream.name in wanted]
-
-    if read_from_streams == "default" and suggested_streams:
-        suggested = set(suggested_streams)
-        narrowed = [stream for stream in read_streams if stream.name in suggested]
-        if narrowed:
-            return narrowed
 
     return read_streams
 
@@ -914,7 +906,7 @@ class DockerConnectorTestSuite:
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
         connector_base_image_override: str | None,
-        read_from_streams: Literal["all", "none", "default"] | list[str],
+        read_from_streams: Literal["default", "none"] | list[str],
         read_scenarios: Literal["all", "none", "default"] | list[str],
     ) -> None:
         """Read from the connector's Docker image, and check the records as `test_basic_read` does.
@@ -931,10 +923,12 @@ class DockerConnectorTestSuite:
         connector at `test_strictness_level: high` cannot). A config listed only under
         `full_refresh` must return some records.
 
-        The test runs by default. `--read-scenarios` picks which configs are read (by default
-        `config`, `valid_config` and `default`, or the first read config when a connector has
-        none of those), and `--read-from-streams` which of their streams (by default the
-        connector's suggested streams); `--read-from-streams=false` (or `none`) skips the test. See the
+        The test is skipped unless `--read-from-streams` turns it on: the in-process
+        `test_basic_read` already reads every connector whose in-process tests run, and connector
+        CI turns this read on only for a connector whose in-process tests cannot run.
+        `--read-from-streams=default` reads the streams above; a stream list narrows them.
+        `--read-scenarios` picks which configs are read (by default `config`, `valid_config` and
+        `default`, or the first read config when a connector has none of those). See the
         `read_from_streams` and `read_scenarios` fixtures.
 
         Note:
@@ -950,7 +944,8 @@ class DockerConnectorTestSuite:
 
         if read_from_streams == "none":
             pytest.skip(
-                "Skipping the Docker read test: it was disabled with `--read-from-streams`."
+                "Skipping the Docker read test: it is off unless `--read-from-streams` turns it "
+                "on (for example `--read-from-streams=default`)."
             )
 
         if read_scenarios == "none":
@@ -978,7 +973,6 @@ class DockerConnectorTestSuite:
 
         connector_root = self.get_connector_root_dir()
         connector_name = connector_root.absolute().name
-        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
         connector_image = self._connector_image(
             connector_image_override, connector_base_image_override
         )
@@ -1012,7 +1006,6 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
-            suggested_streams = metadata.data.suggestedStreams
             read_streams = select_docker_read_streams(
                 get_read_streams(
                     scenario,
@@ -1020,7 +1013,6 @@ class DockerConnectorTestSuite:
                     connector_root,
                 ),
                 read_from_streams=read_from_streams,
-                suggested_streams=suggested_streams.streams if suggested_streams else None,
             )
             if not read_streams and isinstance(read_from_streams, list):
                 pytest.skip(

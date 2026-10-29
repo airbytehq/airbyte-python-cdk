@@ -2,32 +2,32 @@
 
 ## Upgrading to the next minor release (unreleased)
 
-### The Docker read test runs by default
+### The Docker read test works when turned on, and checks its records
 
-`test_docker_image_build_and_read`, the `read` inside the connector image, was skipped for every connector: `--read-from-streams` was registered without a default, and the test treated the missing value as `none`. Neither the CDK's connector CI nor the connector monorepo passed the option, so the test never ran. It now runs by default, in `airbyte-cdk image test` (what the connector monorepo runs for every Python and manifest-only connector) and wherever else the Docker suite is collected. For most Python connectors, whose in-process tests do not run in the monorepo, it is the first `read` that connector CI runs (only `source-s3` and `source-hardcoded-records` already read, through their own integration tests).
+`test_docker_image_build_and_read`, the `read` inside the connector image, stays off by default: connector CI reads each connector in process, through `test_basic_read`, and the Docker read is meant for a connector whose in-process tests cannot run. Turn it on with `--read-from-streams=default`. Before this release, turning it on did not work: a config with `empty_streams` crashed the test with `AttributeError: 'str' object has no attribute 'name'`, and the records were not checked.
 
-The read records now get the checks of the in-process `test_basic_read`, through the same `assert_read_records`:
+When it runs, the Docker read now:
 
-- A config listed under `basic_read` must return at least one record from every stream it reads, and every record must match its stream's JSON schema. The exceptions are declared the same way: `empty_streams` (with a `bypass_reason`) for streams without data, and `validate_schema: false` to skip schema validation, which a connector at `test_strictness_level: high` cannot set.
-- A config listed only under `full_refresh` must return some records.
-
-Previously the test only failed on a trace error or a non-zero exit.
+- Reads the same streams as `test_basic_read`: those of the config's `configured_catalog_path`, or every discovered stream, minus `empty_streams`. The connector's `suggestedStreams` no longer narrow the read.
+- Checks the records as `test_basic_read` does, through the same `assert_read_records`. A config listed under `basic_read` must return at least one record from every stream it reads, and every record must match its stream's JSON schema; `empty_streams` (with a `bypass_reason`) and `validate_schema: false` (not allowed at `test_strictness_level: high`) are the exceptions. A config listed only under `full_refresh` must return some records. Previously the test only failed on a trace error or a non-zero exit.
 
 The Docker `check`, `discover` and `read` tests now run the connector with a writable working directory, `/source` (an in-memory `tmpfs`), as the platform does. They used to run in the image's `WORKDIR`, which the image's `airbyte` user cannot write, so a connector that writes a temporary file to its working directory (for example `source-shopify` and `source-salesforce`, for bulk results) failed in the test although it works in a sync.
 
-Two options pick what is read. The defaults read one config of every connector that lists a config under `basic_read` or `full_refresh`:
+Two options pick what is read:
 
 | Option | Default | Other values |
 |---|---|---|
-| `--read-scenarios` (which configs) | `default`: the configs named `config`, `valid_config` or `default`. A connector with none of those reads its first read config instead. | `all`; a comma-separated list of config names (with or without `.json`); `none` skips the test. |
-| `--read-from-streams` (which streams of each config) | `default` (also `true`, `suggested`): the connector's `suggestedStreams` from `metadata.yaml`, or every stream of the config when it declares none, or when none of them is read for the config. | `all`; a comma-separated list of stream names (a config that reads none of them is skipped); `false` or `none` skips the test (`false` on every CDK version; CDK 7.36.0 and earlier read `none` as a stream name and run the read). |
+| `--read-from-streams` (whether to read, and which streams of each config) | `false`: the Docker read is skipped. | `default` (also `true`, `all`, `suggested`): the streams `test_basic_read` reads. A comma-separated list of stream names narrows them (a config that reads none of them is skipped). `none` also skips, but CDK 7.36.0 and earlier read `none` as a stream name, so use `false`. |
+| `--read-scenarios` (which configs, once the read is on) | `default`: the configs named `config`, `valid_config` or `default`. A connector with none of those reads its first read config instead. | `all`; a comma-separated list of config names (with or without `.json`); `none` skips the test. |
 
-The streams of a config are the ones the in-process read covers: those of its `configured_catalog_path`, or every discovered stream, minus `empty_streams`. The two options only narrow that set, and either one set to `none` skips the test, so they cannot cancel each other silently: the `--read-scenarios` default used to skip every Docker read of a connector whose read configs had other names, and now reads its first one. `--read-scenarios=none` used to raise a `ValueError` for every config, and a `--read-scenarios` list raised one for each config it left out; both now skip. The in-process `test_basic_read` ignores both options and reads every read config.
+The two options only narrow, and either one set to `none` skips the test, so they cannot cancel each other silently: the `--read-scenarios` default used to skip every Docker read of a connector whose read configs had other names, and now reads its first one. `--read-scenarios=none` used to raise a `ValueError` for every config, and a `--read-scenarios` list raised one for each config it left out; both now skip. The in-process `test_basic_read` ignores both options and reads every read config.
 
 Migration steps:
 
+- No change is needed: the Docker read stays off unless a run turns it on.
+- To turn it on, pass `--read-from-streams=default` (to `airbyte-cdk connector test` as `--pytest-arg=--read-from-streams=default`), or set `PYTEST_ADDOPTS=--read-from-streams=default`, which `airbyte-cdk image test` also honours.
+- A command that passed `--read-from-streams=suggested` or `=default` to read a connector's `suggestedStreams` now reads every stream of the config. Pass the stream names as a list to keep the narrower read.
 - A connector whose Docker read fails gets the same fixes as a failing `test_basic_read`: refresh an expired secret, declare a stream without data in `empty_streams` with a `bypass_reason`, fix the schema or the records, or set `validate_schema: false` (with a reason) where that is allowed.
-- To skip the Docker read for one run, pass `--read-from-streams=false` (to `airbyte-cdk connector test` as `--pytest-arg=--read-from-streams=false`), or set `PYTEST_ADDOPTS=--read-from-streams=false`, which `airbyte-cdk image test` also honours. Prefer `false` over `none` in CI files and poe tasks: `false` skips the read on every CDK version, while CDK 7.36.0 and earlier read `none` as a stream name, so they run the Docker `discover` and a `read` of an empty catalog.
 
 ## Upgrading to 7.40.0
 

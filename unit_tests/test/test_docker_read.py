@@ -1,10 +1,11 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
-"""The Docker read test runs by default and checks its records as `test_basic_read` does.
+"""The Docker read test runs when turned on and checks its records as `test_basic_read` does.
 
-- `--read-from-streams` and `--read-scenarios` default to reading; `false` or `none` is the explicit opt-out.
+- `--read-from-streams` defaults to `false`, which skips the Docker read; `default` turns it on.
 - `--read-scenarios=default` reads the `config`, `valid_config` and `default` configs, or the first
   read config of a connector that has none of those, so it never skips every read.
-- `--read-from-streams=default` reads the suggested streams, or every stream when none applies.
+- `--read-from-streams=default` reads the streams `test_basic_read` reads; `suggestedStreams` play
+  no part.
 - A `basic_read` config must return records from every stream it reads, and the records must
   match their schemas; a `full_refresh`-only config must return some records.
 """
@@ -93,24 +94,25 @@ def test_options(read_from_streams, read_scenarios):
 @pytest.mark.parametrize(
     "args, expected",
     [
-        pytest.param([], ["default", "default"], id="omitted-reads-by-default"),
+        pytest.param([], ["none", "default"], id="omitted-skips-the-read"),
+        pytest.param(["--read-from-streams=default"], ["default", "default"], id="default"),
         pytest.param(["--read-from-streams=none"], ["none", "default"], id="none"),
         pytest.param(["--read-from-streams=False"], ["none", "default"], id="false"),
         pytest.param(["--read-from-streams=true"], ["default", "default"], id="true"),
         pytest.param(["--read-from-streams=suggested"], ["default", "default"], id="suggested"),
-        pytest.param(["--read-from-streams=all"], ["all", "default"], id="all"),
+        pytest.param(["--read-from-streams=all"], ["default", "default"], id="all"),
         pytest.param(["--read-from-streams=users, events"], [["users", "events"], "default"]),
-        pytest.param(["--read-scenarios=none"], ["default", "none"], id="scenarios-none"),
-        pytest.param(["--read-scenarios=ALL"], ["default", "all"], id="scenarios-all"),
+        pytest.param(["--read-scenarios=none"], ["none", "none"], id="scenarios-none"),
+        pytest.param(["--read-scenarios=ALL"], ["none", "all"], id="scenarios-all"),
         pytest.param(
             ["--read-scenarios=Config.json,config_oauth"],
-            ["default", ["config", "config_oauth"]],
+            ["none", ["config", "config_oauth"]],
             id="scenarios-list",
         ),
     ],
 )
 def test_read_options(pytester: pytest.Pytester, args: list[str], expected: list[Any]) -> None:
-    """The `addoption` defaults, the fixtures and their docstrings agree: omitted means read."""
+    """The `addoption` defaults, the fixtures and their docstrings agree: omitted means no read."""
     pytester.makepyfile(test_options=OPTIONS_TEST)
     result = pytester.runpytest_inprocess(
         "-p", "airbyte_cdk.test.standard_tests.pytest_hooks", "-s", *args
@@ -124,7 +126,7 @@ def test_read_options(pytester: pytest.Pytester, args: list[str], expected: list
 # --- Opt-outs and config selection -------------------------------------------------------------
 
 
-def test_docker_read_runs_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_docker_read_runs_when_turned_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _stub_docker(
         monkeypatch,
         {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
@@ -144,7 +146,7 @@ def test_docker_read_opt_outs_skip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, options: dict[str, Any], reason: str
 ) -> None:
     calls = _stub_docker(monkeypatch, {})
-    with pytest.raises(pytest.skip.Exception, match=f"disabled with `{reason}`"):
+    with pytest.raises(pytest.skip.Exception, match=f"`{reason}`"):
         _read(_read_suite(tmp_path), _scenario("basic_read"), **options)
     assert calls == []
 
@@ -233,9 +235,7 @@ def test_docker_read_defaults_read_a_connector_without_a_default_named_config(
     "suggested, read_from_streams, expected",
     [
         pytest.param(None, "default", ["users", "events"], id="no-suggested-streams"),
-        pytest.param(["events"], "default", ["events"], id="suggested-streams"),
-        pytest.param(["events"], "all", ["users", "events"], id="all"),
-        pytest.param(["other"], "default", ["users", "events"], id="no-suggested-stream-read"),
+        pytest.param(["events"], "default", ["users", "events"], id="suggested-streams-ignored"),
         pytest.param(["events"], ["users"], ["users"], id="stream-list"),
     ],
 )
