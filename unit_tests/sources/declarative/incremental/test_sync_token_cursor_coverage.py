@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from airbyte_cdk.models import FailureType, SyncMode
+from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -197,6 +198,40 @@ def test_get_partition_router_returns_substream_router_for_token_child():
     )
     child = {s.name: s for s in source.streams(config={})}["events"]
     assert isinstance(child.get_partition_router(), SubstreamPartitionRouter)
+
+
+# A token parent without incremental_dependency is read in full and never emits its own state.
+def test_token_parent_without_incremental_dependency_is_read_in_full():
+    manifest = _parent_child_manifest(parent_sync=TOKEN_CURSOR)
+    manifest["streams"] = manifest["streams"][1:]
+    state_manager = ConnectorStateManager()
+    state_manager.update_state_for_stream(
+        "accounts", None, {"state_type": "sync_token", "token": "P0"}
+    )
+    state = [state_manager.create_state_message("accounts", None).state]
+    parent_request = HttpRequest("https://api.example.com/accounts", body=None)
+    child_request = HttpRequest(_URL, body=None)
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            parent_request,
+            HttpResponse(json.dumps({"items": [{"id": "a"}, {"id": "b"}], "syncToken": "P1"})),
+        )
+        http_mocker.post(
+            child_request,
+            [
+                HttpResponse(json.dumps({"items": [{"id": "e1"}], "syncToken": "E1"})),
+                HttpResponse(json.dumps({"items": [{"id": "e2"}], "syncToken": "E2"})),
+            ],
+        )
+        source, catalog = _source_and_catalog(manifest, state)
+        messages = _read(source, catalog, state)
+        http_mocker.assert_number_of_calls(parent_request, 1)
+        http_mocker.assert_number_of_calls(child_request, 2)
+    states = _state(messages)
+    assert {s.stream.stream_descriptor.name for s in states} == {"events"}
+    assert sorted(
+        entry["cursor"]["token"] for entry in states[-1].stream.stream_state.__dict__["states"]
+    ) == ["E1", "E2"]
 
 
 @pytest.mark.parametrize("cursor_field,expected", [(None, []), ("updatedAt", ["updatedAt"])])

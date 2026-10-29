@@ -406,21 +406,6 @@ def test_commit_observability_counts_completed_pages_per_partition(caplog):
     assert "Stream events: committed sync token T1 for partition {} after 3 pages." in caplog.text
 
 
-def test_t_schema_ignores_incompatible_partition_state_shape():
-    cursor = _cursor(
-        router=Router([]),
-        state={"state_type": "sync_token", "token": "wrong-shape"},
-    )
-
-    assert cursor.state == {"state_type": "sync_token", "states": []}
-
-
-def test_t_schema_ignores_partition_state_shape_on_unpartitioned_stream():
-    cursor = _cursor(state={"state_type": "sync_token", "states": []})
-
-    assert cursor.state == {"state_type": "sync_token"}
-
-
 def test_t_valid_and_t_init_use_partition_router_and_initial_token_slice():
     router = Router([StreamSlice(partition={"account": "a"}, cursor_slice={})])
     cursor = _cursor(router=router)
@@ -458,14 +443,36 @@ def test_malformed_sync_token_state_fails_the_stream_instead_of_reading_everythi
             },
             id="integer-token-entry",
         ),
+        pytest.param({"state_type": "sync_token", "token": "T1", "states": []}, id="both-shapes"),
+        pytest.param({"state_type": "sync_token", "states": None}, id="null-states"),
+        pytest.param(
+            {"state_type": "sync_token", "states": [{"partition": "a", "cursor": {"token": "A1"}}]},
+            id="non-object-partition",
+        ),
+        pytest.param(
+            {
+                "state_type": "sync_token",
+                "states": [{"partition": {"account": "a"}, "cursor": None}],
+            },
+            id="null-cursor",
+        ),
+        pytest.param(
+            {
+                "state_type": "sync_token",
+                "states": [{"partition": {"account": "a"}, "cursor": {"token": ""}}],
+            },
+            id="empty-token-entry",
+        ),
     ],
 )
 def test_malformed_partitioned_sync_token_state_fails(state):
     router = Router([StreamSlice(partition={"account": "a"}, cursor_slice={})])
     cursor = _cursor(state=state, router=router)
 
-    with pytest.raises(AirbyteTracedException):
+    with pytest.raises(AirbyteTracedException) as error:
         list(cursor.stream_slices())
+    assert error.value.failure_type == FailureType.system_error
+    assert cursor.state == {"state_type": "sync_token", "states": []}
 
 
 def test_malformed_sync_token_state_is_not_overwritten_when_the_stream_fails():
