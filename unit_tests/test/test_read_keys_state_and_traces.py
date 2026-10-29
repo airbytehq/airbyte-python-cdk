@@ -558,6 +558,20 @@ class _Source(Source):
 
 
 def _suite(tmp_path: Path, source: _Source | Exception) -> SourceTestSuiteBase:
+    # The connector's test configs are read from `acceptance-test-config.yml`, which must exist.
+    # A test that needs an opt-out writes its own file first.
+    config_file = tmp_path / ACCEPTANCE_TEST_CONFIG
+    if not config_file.exists():
+        config_file.write_text(
+            yaml.safe_dump(
+                {
+                    "acceptance_tests": {
+                        "basic_read": {"tests": [{"config_path": "secrets/config.json"}]}
+                    }
+                }
+            )
+        )
+
     class _Suite(SourceTestSuiteBase):
         @classmethod
         def get_connector_root_dir(cls) -> Path:
