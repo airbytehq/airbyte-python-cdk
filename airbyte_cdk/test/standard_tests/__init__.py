@@ -34,10 +34,15 @@ pytest -W error::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning
 airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.DiscoveredCatalogWarning
 ```
 
+`SourceTestSuiteBase.test_basic_read` likewise reports incomplete stream statuses as a
+`StreamStatusWarning`, which `-W error::airbyte_cdk.test.standard_tests.StreamStatusWarning`
+turns into a failure.
+
 '''
 
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._catalog_checks import DiscoveredCatalogWarning
+from airbyte_cdk.test.standard_tests._read_assertions import StreamStatusWarning
 from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.standard_tests.declarative_sources import (
     DeclarativeSourceTestSuite,
@@ -52,4 +57,5 @@ __all__ = [
     "DestinationTestSuiteBase",
     "DiscoveredCatalogWarning",
     "SourceTestSuiteBase",
+    "StreamStatusWarning",
 ]

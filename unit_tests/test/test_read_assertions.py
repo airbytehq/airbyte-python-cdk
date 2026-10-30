@@ -46,6 +46,7 @@ from airbyte_cdk.test.standard_tests._read_assertions import (
 )
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
+from unit_tests.test.read_test_helpers import final_state, with_stream_statuses
 
 MSG_MISSING_STREAMS = "Every configured stream must return at least one record"
 MSG_SCHEMA = "Records do not match their stream's JSON schema"
@@ -563,8 +564,11 @@ class _FakeReadSource(Source):
         if self._records is None:
             raise RuntimeError("The read failed.")
         for configured_stream in catalog.streams:
-            for data in self._records.get(configured_stream.stream.name, []):
-                yield _record(configured_stream.stream.name, data)
+            name = configured_stream.stream.name
+            yield from with_stream_statuses(
+                name,
+                [*(_record(name, data) for data in self._records.get(name, [])), final_state(name)],
+            )
 
 
 def _run_basic_read(

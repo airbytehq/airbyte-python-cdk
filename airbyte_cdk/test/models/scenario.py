@@ -97,13 +97,7 @@ LEGACY_ENTRY_KEYS: Mapping[str, frozenset[str]] = MappingProxyType(
         "spec": frozenset({"spec_path", "backward_compatibility_tests_config", "deployment_mode"}),
         "connection": frozenset({"deployment_mode"}),
         "discovery": frozenset({"backward_compatibility_tests_config"}),
-        "basic_read": frozenset(
-            {
-                "client_container_config",
-                "expect_trace_message_on_failure",
-                "validate_state_messages",
-            }
-        ),
+        "basic_read": frozenset({"client_container_config"}),
         "full_refresh": frozenset({"client_container_config"}),
     }
 )
@@ -114,6 +108,24 @@ backward-compatibility test (`disable_for_version`). The others configure CAT ch
 standard-test counterpart yet, and connectors still set them. They are accepted, and dropped, only
 in the section CAT read them from. Every other key that is not a field of `ConnectorTestScenario`
 is rejected (see `entry_key_problems`).
+"""
+
+
+BASIC_READ_ONLY_FIELDS: frozenset[str] = frozenset(
+    {
+        "validate_schema",
+        "validate_primary_keys_data_type",
+        "validate_state_messages",
+        "expect_trace_message_on_failure",
+    }
+)
+"""Fields that only a `basic_read` entry may set: CAT's opt-outs from its basic read checks.
+
+`get_scenarios()` merges the entries for one config, and an opt-out declared by any of them is
+kept, so the same key in another section would silently turn the config's `basic_read` check off.
+CAT read these keys only from `basic_read` entries; its `discovery` entries had their own
+`validate_primary_keys_data_type`, which skipped a different check (the schema type of the key
+fields).
 """
 
 
@@ -140,13 +152,16 @@ def entry_key_problems(
     """Return one message per key of an `acceptance-test-config.yml` entry that is not accepted.
 
     An entry may set the fields of `ConnectorTestScenario`, except the `POPULATED_FIELDS`, and the
-    `LEGACY_ENTRY_KEYS` of the section that lists it. A key of `REMOVED_ENTRY_KEYS` is reported as
-    no longer read, and a key of `POPULATED_FIELDS` as not an entry key, with the reason; any
-    other key as unknown. Each message names the key, the section and the entry's `config_path`,
-    never a value.
+    `LEGACY_ENTRY_KEYS` of the section that lists it; the `BASIC_READ_ONLY_FIELDS` only from a
+    `basic_read` entry. A key of `REMOVED_ENTRY_KEYS` is reported as no longer read, a key of
+    `POPULATED_FIELDS` as not an entry key, and a key of `BASIC_READ_ONLY_FIELDS` outside
+    `basic_read` as read only there, with the reason; any other key as unknown. Each message names the key, the section and the entry's
+    `config_path`, never a value.
 
     `from_file=False` checks the data a scenario is built from (by `get_scenarios()` or by hand),
-    where the `POPULATED_FIELDS` are accepted.
+    where the `POPULATED_FIELDS` are accepted, and so are the `BASIC_READ_ONLY_FIELDS` in every
+    section: a scenario merged from several entries, or copied with every field written out,
+    carries them whatever its sections.
     """
     sections = tuple(sections)
     accepted = set(ConnectorTestScenario.model_fields)
@@ -154,6 +169,8 @@ def entry_key_problems(
         accepted -= set(POPULATED_FIELDS)
     for section in sections:
         accepted |= LEGACY_ENTRY_KEYS.get(section, frozenset())
+    if from_file and "basic_read" not in sections:
+        accepted -= BASIC_READ_ONLY_FIELDS
     where = (f"the `{'`/`'.join(sections)}` entry" if sections else "the scenario") + (
         f" for config `{entry['config_path']}`"
         if entry.get("config_path")
@@ -168,6 +185,12 @@ def entry_key_problems(
         if key in REMOVED_ENTRY_KEYS:
             problems.append(
                 f"`{key}` in {where} is no longer read: {REMOVED_ENTRY_KEYS[key]}. Remove the key."
+            )
+        elif key in BASIC_READ_ONLY_FIELDS:
+            problems.append(
+                f"`{key}` in {where} is read only from a `basic_read` entry: it opts the config "
+                "out of a check of the basic read test. Move it to the config's `basic_read` "
+                "entry, or remove it."
             )
         elif key in POPULATED_FIELDS:
             problems.append(
@@ -192,7 +215,8 @@ class ConnectorTestScenario(BaseModel):
     Every field is read by the standard tests (a unit test enforces it). An entry that sets a key
     that is not a field is rejected, except for the `LEGACY_ENTRY_KEYS` of its section; a key the
     standard tests used to accept and ignore is reported as no longer read (`REMOVED_ENTRY_KEYS`).
-    `get_scenarios()` also rejects an entry that sets one of the `POPULATED_FIELDS`, which it fills
+    `get_scenarios()` also rejects an entry outside `basic_read` that sets one of the
+    `BASIC_READ_ONLY_FIELDS`, and an entry that sets one of the `POPULATED_FIELDS`, which it fills
     in itself.
     """
 
@@ -224,6 +248,12 @@ class ConnectorTestScenario(BaseModel):
     bypass_reason: str | None = None
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
+    # CAT's `basic_read` opt-out from checking the primary key of every record.
+    validate_primary_keys_data_type: bool = True
+    # CAT's `basic_read` opt-out from checking that every stream emits per-stream state.
+    validate_state_messages: bool = True
+    # CAT's `basic_read` opt-out from requiring a well-formed error trace from a failing read.
+    expect_trace_message_on_failure: bool = True
     # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
     # by `get_scenarios()`; at `high`, `validate_schema: false` is rejected, as in CAT.
     test_strictness_level: Literal["low", "high"] | None = None
@@ -323,8 +353,10 @@ class ConnectorTestScenario(BaseModel):
         """Whether this config is listed under `basic_read` (or the scenario was built by hand).
 
         Only the records of these configs are checked as in CAT's basic read test: every stream
-        not declared in `empty_streams` returns records, and every record matches its stream's
-        schema unless `validate_schema: false` is set. A config read only because it is listed
+        not declared in `empty_streams` returns records, every record matches its stream's
+        schema unless `validate_schema: false` is set, every record has a usable primary key
+        unless `validate_primary_keys_data_type: false` is set, and every stream emits state
+        unless `validate_state_messages: false` is set. A config read only because it is listed
         under `full_refresh` never had CAT's basic read checks, and has no `basic_read` entry to
         declare those exceptions in, so its `read` only has to return some records.
         """

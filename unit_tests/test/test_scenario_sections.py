@@ -23,11 +23,16 @@ from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteRecordMessage,
+    AirbyteStateBlob,
     AirbyteStateMessage,
+    AirbyteStateType,
     AirbyteStream,
+    AirbyteStreamState,
+    AirbyteStreamStatus,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
     Status,
+    StreamDescriptor,
     SyncMode,
     Type,
 )
@@ -48,6 +53,7 @@ from airbyte_cdk.test.standard_tests.docker_base import (
     skip_unless_runs,
 )
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message as stream_status_message
 
 POKEAPI_RESOURCE_DIR = Path(__file__).parent.parent / "resources" / "source_pokeapi_w_components_py"
 IMAGE = "airbyte/source-test:dev"
@@ -583,12 +589,25 @@ class _ReadSource(Source):
             return
         for configured_stream in catalog.streams:
             name = configured_stream.stream.name
+            yield stream_status_message(StreamDescriptor(name=name), AirbyteStreamStatus.STARTED)
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
                     stream=name, data={"id": 1, "updated_at": "2026-01-01"}, emitted_at=0
                 ),
             )
+            # The final state the CDK emits once a full-refresh stream completes.
+            yield AirbyteMessage(
+                type=Type.STATE,
+                state=AirbyteStateMessage(
+                    type=AirbyteStateType.STREAM,
+                    stream=AirbyteStreamState(
+                        stream_descriptor=StreamDescriptor(name=name),
+                        stream_state=AirbyteStateBlob(__ab_no_cursor_state_message=True),
+                    ),
+                ),
+            )
+            yield stream_status_message(StreamDescriptor(name=name), AirbyteStreamStatus.COMPLETE)
 
 
 def _read_suite(

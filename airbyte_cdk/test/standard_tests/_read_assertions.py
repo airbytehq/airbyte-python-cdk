@@ -7,7 +7,19 @@ which the standard tests did not reproduce:
 - every configured stream returns at least one record (CAT `_validate_empty_streams`);
 - every record conforms to its stream's JSON schema (CAT `_validate_schema`), with the same
   validator CAT ran: Draft 7 with strict integers and a lenient `date-time` format check, and
-  without failing on extra columns.
+  without failing on extra columns;
+- every record of a stream with a `source_defined_primary_key` has a usable primary key: no key
+  field holds an object or an array, and not every key field is missing or null (CAT
+  `_validate_primary_keys_data_type`);
+- every configured stream emits a `STREAM` (or `GLOBAL`) state message carrying `sourceStats`
+  (the per-stream form of CAT `_validate_state_messages`).
+
+`find_stream_status_problems` ports CAT `_validate_stream_statuses`: every configured stream
+reports `STARTED`, then only `RUNNING`, and ends with `COMPLETE`. It is advisory for now: the
+`read` tests report its problems as a `StreamStatusWarning` and do not fail.
+
+They also include the check of CAT's `TestBasicRead.test_airbyte_trace_message_on_failure`: a
+read that fails emits a well-formed `TRACE` message of type `ERROR` (`assert_error_trace_messages`).
 
 They take the read output and the configured catalog rather than a scenario, so the in-process
 and the Docker read tests can share them.
@@ -17,7 +29,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,13 +37,24 @@ from jsonschema import Draft7Validator, FormatChecker, validators
 from jsonschema.exceptions import FormatError, UnknownType, ValidationError, best_match
 from referencing.exceptions import Unresolvable
 
-from airbyte_cdk.models import AirbyteMessage, ConfiguredAirbyteCatalog
+from airbyte_cdk.models import (
+    AirbyteMessage,
+    AirbyteStateType,
+    AirbyteStreamStatus,
+    ConfiguredAirbyteCatalog,
+    TraceType,
+    Type,
+)
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
 
 MAX_SCHEMA_ERRORS_PER_STREAM = 5
 """How many distinct schema errors are reported per stream. The total is always reported."""
 
+MAX_PRIMARY_KEY_ERRORS_PER_STREAM = 5
+"""How many distinct primary key errors are reported per stream. The total is always reported."""
+
 _MAX_MESSAGE_CHARS = 300
+_MAX_STREAM_NAMES = 10
 _MAX_CONSTRAINT_CHARS = 80
 
 # CAT's shape check for `date-time` values: a date, a ' ' or 'T' separator, a time, then anything
@@ -339,6 +362,317 @@ class _StreamSchemaChecker:
         return "\n".join(lines) if lines else None
 
 
+_MISSING = object()
+"""The value of a key field that is absent from the record."""
+
+
+def _key_field_value(data: Any, key_path: Sequence[str]) -> Any:
+    """Return the value at `key_path` in `data`, or `_MISSING` if the path does not exist."""
+    node = data
+    for part in key_path:
+        if not isinstance(node, Mapping) or part not in node:
+            return _MISSING
+        node = node[part]
+    return node
+
+
+def _format_primary_key(primary_key: Sequence[Sequence[str]]) -> str:
+    return ", ".join(f"`{format_record_path(key_path)}`" for key_path in primary_key)
+
+
+class _StreamPrimaryKeyChecker:
+    """Checks the primary key of each record of one stream, as CAT's
+    `_validate_primary_keys_data_type` did.
+
+    A key field must not hold an object or an array, and at least one key field must be present
+    and not null. As in CAT, a composite key may have some of its fields null. Booleans count
+    as scalars, as in CAT; they are named `boolean`, never `integer`.
+    """
+
+    def __init__(self, stream_name: str, primary_key: Sequence[Sequence[str]]) -> None:
+        self._stream_name = stream_name
+        self._primary_key = [list(key_path) for key_path in primary_key if key_path]
+        self.records_checked = 0
+        self.invalid_records = 0
+        # Distinct problems, keyed by the key field and the kind of problem; first record wins.
+        self.errors: dict[tuple[Any, ...], str] = {}
+
+    def check(self, data: Any, record_number: int) -> None:
+        if not self._primary_key:
+            return
+        self.records_checked += 1
+        problems: dict[tuple[Any, ...], str] = {}
+        null_fields: list[str] = []
+        for key_path in self._primary_key:
+            value = _key_field_value(data, key_path)
+            rendered_path = format_record_path(key_path)
+            if value is _MISSING or value is None:
+                null_fields.append(
+                    f"`{rendered_path}` is {'missing' if value is _MISSING else 'null'}"
+                )
+            elif isinstance(value, (Mapping, list)):
+                got = _json_type_name(value)
+                problems[(tuple(key_path), got)] = (
+                    f"record #{record_number}: key field `{rendered_path}` is an {got}; a primary "
+                    "key field must hold a scalar (a string, a number or a boolean)"
+                )
+        if len(null_fields) == len(self._primary_key):
+            problems[("every key field missing or null", *null_fields)] = (
+                f"record #{record_number}: every key field is missing or null "
+                f"({', '.join(null_fields)})"
+            )
+        if problems:
+            self.invalid_records += 1
+            for problem, description in problems.items():
+                self.errors.setdefault(problem, description)
+
+    def describe_failures(self) -> str | None:
+        if not self.invalid_records:
+            return None
+        lines = [
+            f"- Stream '{self._stream_name}' (primary key {_format_primary_key(self._primary_key)}): "
+            f"{self.invalid_records} of {self.records_checked} records have an invalid primary key."
+        ]
+        shown = list(self.errors.values())[:MAX_PRIMARY_KEY_ERRORS_PER_STREAM]
+        lines.extend(f"    - {error}" for error in shown)
+        hidden = len(self.errors) - len(shown)
+        if hidden:
+            lines.append(f"    - ...and {hidden} more distinct primary key error(s).")
+        return "\n".join(lines)
+
+
+def _find_state_message_failures(
+    state_messages: Iterable[AirbyteMessage],
+    configured_catalog: ConfiguredAirbyteCatalog,
+) -> list[str]:
+    """Check the state messages of a full-refresh read, as CAT's `_validate_state_messages` did.
+
+    CAT asserted that the read emitted at least as many state messages as there are configured
+    streams, that none was of the deprecated `LEGACY` type, and that each carried `sourceStats`.
+    State is per stream in the current protocol, so the count is checked per stream instead: a
+    stream that emits several state messages cannot hide one that emits none.
+    """
+    configured = {
+        (configured_stream.stream.namespace, configured_stream.stream.name)
+        for configured_stream in configured_catalog.streams
+    }
+    covered: set[tuple[str | None, str]] = set()
+    state_count = 0
+    legacy_states: list[int] = []
+    states_without_object: list[int] = []
+    states_without_stats: list[int] = []
+    for message in state_messages:
+        state = message.state
+        if message.type != Type.STATE or state is None:
+            continue
+        state_number = state_count
+        state_count += 1
+        if state.type == AirbyteStateType.STREAM and state.stream is not None:
+            descriptor = state.stream.stream_descriptor
+            covered.add((descriptor.namespace, descriptor.name))
+        elif state.type == AirbyteStateType.GLOBAL and state.global_ is not None:
+            covered.update(
+                (stream_state.stream_descriptor.namespace, stream_state.stream_descriptor.name)
+                for stream_state in state.global_.stream_states or []
+            )
+        elif state.type in (AirbyteStateType.STREAM, AirbyteStateType.GLOBAL):
+            states_without_object.append(state_number)
+        else:
+            legacy_states.append(state_number)
+        if state.sourceStats is None or state.sourceStats.recordCount is None:
+            states_without_stats.append(state_number)
+
+    def _numbers(numbers: list[int]) -> str:
+        shown = ", ".join(f"#{number}" for number in numbers[:5])
+        return shown + (f" and {len(numbers) - 5} more" if len(numbers) > 5 else "")
+
+    failures: list[str] = []
+    streams_without_state = sorted(
+        name if namespace is None else f"{namespace}.{name}"
+        for namespace, name in configured - covered
+    )
+    if streams_without_state:
+        failures.append(
+            f"- {len(streams_without_state)} of {len(configured)} configured streams emitted no "
+            "`STREAM` or `GLOBAL` state message: "
+            f"{', '.join(repr(name) for name in streams_without_state)}. A stream must emit a "
+            "state message once it has been read in full; the CDK emits one when a stream "
+            "completes."
+        )
+    if legacy_states:
+        failures.append(
+            f"- {len(legacy_states)} of {state_count} state messages use the deprecated `LEGACY` "
+            f"state type (or no type): state message(s) {_numbers(legacy_states)}. Emit "
+            "per-stream `STREAM` state (or `GLOBAL` state) instead."
+        )
+    if states_without_object:
+        failures.append(
+            f"- {len(states_without_object)} of {state_count} state messages are of type "
+            "`STREAM` without a `stream` object, or `GLOBAL` without a `global` object: state "
+            f"message(s) {_numbers(states_without_object)}. Emit the object that the type names."
+        )
+    if states_without_stats:
+        failures.append(
+            f"- {len(states_without_stats)} of {state_count} state messages carry no "
+            f"`sourceStats.recordCount`: state message(s) {_numbers(states_without_stats)}. The "
+            "CDK entrypoint sets it on every state message it emits."
+        )
+    return failures
+
+
+class StreamStatusWarning(UserWarning):
+    """A stream status problem in a `read` that the standard tests report but do not enforce yet.
+
+    To make these problems fail the test, turn the warning into an error, either with
+    `pytest -W error::airbyte_cdk.test.standard_tests.StreamStatusWarning` or with
+    `airbyte-cdk connector test --pytest-arg=-Werror::airbyte_cdk.test.standard_tests.StreamStatusWarning`.
+    """
+
+
+def _stream_label(namespace: str | None, name: str) -> str:
+    return name if namespace is None else f"{namespace}.{name}"
+
+
+def _stream_list(labels: Iterable[str]) -> str:
+    names = sorted(labels)
+    shown = ", ".join(repr(name) for name in names[:_MAX_STREAM_NAMES])
+    hidden = len(names) - _MAX_STREAM_NAMES
+    return shown + (f" and {hidden} more" if hidden > 0 else "")
+
+
+def find_stream_status_problems(
+    trace_messages: Iterable[AirbyteMessage],
+    configured_catalog: ConfiguredAirbyteCatalog,
+) -> list[str]:
+    """Check the stream status trace messages of a successful read, as CAT did.
+
+    Ported from CAT's `_validate_stream_statuses`: every configured stream, and no other stream,
+    must report its status, and each stream's statuses must be `STARTED`, then only `RUNNING`,
+    then `COMPLETE`. CAT ran this check by default for certified connectors only. Here it is
+    advisory: `test_basic_read` reports the problems as a `StreamStatusWarning`.
+    """
+    configured = {
+        (configured_stream.stream.namespace, configured_stream.stream.name)
+        for configured_stream in configured_catalog.streams
+    }
+    statuses: dict[tuple[str | None, str], list[AirbyteStreamStatus]] = {}
+    for message in trace_messages:
+        trace = message.trace
+        if (
+            message.type != Type.TRACE
+            or trace is None
+            or trace.type != TraceType.STREAM_STATUS
+            or trace.stream_status is None
+        ):
+            continue
+        descriptor = trace.stream_status.stream_descriptor
+        statuses.setdefault((descriptor.namespace, descriptor.name), []).append(
+            trace.stream_status.status
+        )
+
+    problems: list[str] = []
+    silent = [_stream_label(*stream) for stream in configured - statuses.keys()]
+    if silent:
+        problems.append(
+            f"- {len(silent)} of {len(configured)} configured streams reported no stream status: "
+            f"{_stream_list(silent)}."
+        )
+    unexpected = [_stream_label(*stream) for stream in statuses.keys() - configured]
+    if unexpected:
+        problems.append(
+            f"- {len(unexpected)} streams that are not in the configured catalog reported a "
+            f"stream status: {_stream_list(unexpected)}."
+        )
+    for stream in sorted(statuses.keys() & configured, key=lambda key: (key[0] or "", key[1])):
+        sequence = statuses[stream]
+        if (
+            len(sequence) < 2
+            or sequence[0] != AirbyteStreamStatus.STARTED
+            or sequence[-1] != AirbyteStreamStatus.COMPLETE
+            or any(status != AirbyteStreamStatus.RUNNING for status in sequence[1:-1])
+        ):
+            shown = ", ".join(status.value for status in sequence[:6])
+            if len(sequence) > 6:
+                shown += f" and {len(sequence) - 6} more"
+            problems.append(
+                f"- stream {_stream_label(*stream)!r} reported {shown}; expected `STARTED`, "
+                "then only `RUNNING`, then `COMPLETE`."
+            )
+    return problems
+
+
+def assert_error_trace_messages(messages: Iterable[AirbyteMessage]) -> None:
+    """Assert that a failed command emitted at least one well-formed `ERROR` trace message.
+
+    Ported from CAT's `TestBasicRead.test_airbyte_trace_message_on_failure`, which only required
+    one `ERROR` trace. A trace is also well-formed here: it carries the `error` object, a
+    non-blank `error.message` (what the platform shows the user), an `error.failure_type` (what
+    the platform uses to tell a configuration problem from a system error) and a positive
+    `emitted_at`. A `TRACE` line that does not parse as an Airbyte message never counts.
+
+    The failure message names the trace messages by number and the fields they lack. It never
+    prints their text, which may hold record or config values.
+    """
+    error_traces = [
+        message.trace
+        for message in messages
+        if message.type == Type.TRACE
+        and message.trace is not None
+        and message.trace.type == TraceType.ERROR
+    ]
+    if not error_traces:
+        raise AssertionError(
+            "The failed read emitted no `TRACE` message of type `ERROR`. A connector must report "
+            "why it fails as an error trace message: the CDK entrypoint does so for any "
+            "exception that escapes `read`, so a connector without one bypasses the entrypoint "
+            "or exits without raising."
+        )
+
+    problems: list[str] = []
+    for number, trace in enumerate(error_traces):
+        lacking: list[str] = []
+        error = trace.error
+        if error is None:
+            lacking.append("the `error` object")
+        else:
+            if not isinstance(error.message, str) or not error.message.strip():
+                lacking.append("a non-blank `error.message`")
+            if error.failure_type is None:
+                lacking.append("an `error.failure_type`")
+        emitted_at = trace.emitted_at
+        if (
+            not isinstance(emitted_at, (int, float))
+            or isinstance(emitted_at, bool)
+            or emitted_at <= 0
+        ):
+            lacking.append("a positive `emitted_at`")
+        if lacking:
+            problems.append(f"- error trace #{number} lacks {', '.join(lacking)}.")
+    if problems:
+        raise AssertionError(
+            f"{len(problems)} of {len(error_traces)} `ERROR` trace messages of the failed read "
+            "are not well-formed:\n" + "\n".join(problems)
+        )
+
+
+INVALID_CONFIG_MARKER = "__airbyte_standard_tests_invalid_config"
+"""The only key of the config that `make_invalid_config` returns."""
+
+
+def make_invalid_config(connection_specification: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a config that the connector's spec rejects, or `None` if none can be built.
+
+    The config holds none of the spec's required top-level properties, and no value from any
+    real config, so a connector that validates its config fails before it sends a request, and
+    nothing secret can leak from it. `None` means the spec requires no top-level property, so
+    an arbitrary config may be valid.
+    """
+    required = connection_specification.get("required")
+    if not isinstance(required, list) or not required:
+        return None
+    return {INVALID_CONFIG_MARKER: True}
+
+
 def assert_schema_validation_opt_out_allowed(
     *, validate_schema: bool, test_strictness_level: str | None
 ) -> None:
@@ -364,6 +698,8 @@ def assert_read_records(
     configured_catalog: ConfiguredAirbyteCatalog,
     require_records_per_stream: bool,
     validate_schema: bool,
+    validate_primary_keys: bool = False,
+    state_messages: Iterable[AirbyteMessage] | None = None,
 ) -> None:
     """Assert the records a `read` returned against the configured catalog.
 
@@ -371,15 +707,20 @@ def assert_read_records(
     records are consumed once, so a lazy iterator over a large read is fine.
 
     Args:
-        records: The `RECORD` messages from the read.
+        records: The `RECORD` messages from the read. Other messages are ignored.
         configured_catalog: The catalog the read ran with. Streams declared in `empty_streams`
             are expected to be excluded from it already.
         require_records_per_stream: Require at least one record from every configured stream.
         validate_schema: Validate every record against its stream's JSON schema.
+        validate_primary_keys: Check the primary key of every record of a stream with a
+            `source_defined_primary_key`: no key field holds an object or an array, and not
+            every key field is missing or null.
+        state_messages: The `STATE` messages from the read, to check that every configured
+            stream emitted per-stream state with `sourceStats`; `None` skips the check.
 
     Raises:
         AssertionError: Listing every failure, by stream, with the path of the offending value
-            inside the record.
+            inside the record. Record values are never printed.
     """
     record_counts: Counter[str] = Counter()
     checkers: dict[str, _StreamSchemaChecker] = {}
@@ -390,15 +731,28 @@ def assert_read_records(
             )
             for configured_stream in configured_catalog.streams
         }
+    key_checkers: dict[str, _StreamPrimaryKeyChecker] = {}
+    if validate_primary_keys:
+        key_checkers = {
+            configured_stream.stream.name: _StreamPrimaryKeyChecker(
+                configured_stream.stream.name, configured_stream.stream.source_defined_primary_key
+            )
+            for configured_stream in configured_catalog.streams
+            if configured_stream.stream.source_defined_primary_key
+        }
 
     for message in records:
         record = message.record
-        if record is None:
+        if message.type != Type.RECORD or record is None:
             continue
+        record_number = record_counts[record.stream]
         record_counts[record.stream] += 1
         checker = checkers.get(record.stream)
         if checker is not None:
             checker.check(record.data)
+        key_checker = key_checkers.get(record.stream)
+        if key_checker is not None:
+            key_checker.check(record.data, record_number)
 
     failures: list[str] = []
     if not record_counts:
@@ -429,6 +783,29 @@ def assert_read_records(
             "skip this check for a config, set `validate_schema: false` (with a reason) in its "
             "`basic_read` entry of `acceptance-test-config.yml`.\n" + "\n".join(schema_failures)
         )
+
+    key_failures = [
+        description
+        for key_checker in key_checkers.values()
+        if (description := key_checker.describe_failures()) is not None
+    ]
+    if key_failures:
+        failures.append(
+            "Records have invalid primary keys. Destinations deduplicate on the primary key, so "
+            "every record needs a scalar value in at least one key field, and none in an object "
+            "or an array. Fix the stream's `primary_key` or the records; to skip this check for "
+            "a config, set `validate_primary_keys_data_type: false` (with a reason) in its "
+            "`basic_read` entry of `acceptance-test-config.yml`.\n" + "\n".join(key_failures)
+        )
+
+    if state_messages is not None:
+        state_failures = _find_state_message_failures(state_messages, configured_catalog)
+        if state_failures:
+            failures.append(
+                "The read's state messages are incomplete. To skip this check for a config, set "
+                "`validate_state_messages: false` (with a reason) in its `basic_read` entry of "
+                "`acceptance-test-config.yml`.\n" + "\n".join(state_failures)
+            )
 
     if failures:
         raise AssertionError("\n\n".join(failures))
