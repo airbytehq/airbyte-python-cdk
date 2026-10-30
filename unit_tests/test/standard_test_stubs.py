@@ -30,14 +30,14 @@ class Reached(Exception):
 _SuiteT = TypeVar("_SuiteT", bound=DockerConnectorTestSuite)
 
 
-def run_without_skip(test: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+def run_without_skip(test: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
     """Call a standard test method that must run, not skip.
 
     A unit test that calls a standard test method directly would otherwise be skipped too when the
     method skips, and a skip passes in CI.
     """
     try:
-        return test(*args, **kwargs)
+        test(*args, **kwargs)
     except pytest.skip.Exception as skip:
         pytest.fail(f"`{test.__name__}` was skipped instead of run: {skip}")
 
