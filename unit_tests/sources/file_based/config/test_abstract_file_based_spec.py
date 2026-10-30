@@ -65,3 +65,36 @@ def test_start_date_validation(start_date: str, should_pass: bool) -> None:
     else:
         with pytest.raises(ValueError, match="is not a valid datetime string"):
             AbstractFileBasedSpec.validate_start_date(start_date)
+
+
+def test_spec_requires_defaulted_visible_file_fields() -> None:
+    schema = AbstractFileBasedSpec.schema()
+    assert "delivery_method" in schema["required"]
+
+    stream_schema = schema["properties"]["streams"]["items"]
+    assert {
+        "globs",
+        "validation_policy",
+        "days_to_sync_if_history_is_full",
+        "schemaless",
+        "use_first_found_file_for_schema_discovery",
+    }.issubset(stream_schema["required"])
+
+    csv_schema = next(
+        option
+        for option in stream_schema["properties"]["format"]["oneOf"]
+        if option["properties"]["filetype"]["default"] == "csv"
+    )
+    assert {
+        "delimiter",
+        "quote_char",
+        "encoding",
+        "double_quote",
+        "null_values",
+        "strings_can_be_null",
+        "skip_rows_before_header",
+        "skip_rows_after_header",
+        "header_definition",
+        "true_values",
+        "false_values",
+    }.issubset(csv_schema["required"])
