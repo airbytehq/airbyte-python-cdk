@@ -823,6 +823,56 @@ def test_check():
     assert connection_status.status == Status.SUCCEEDED
 
 
+def test_check_section_runs_the_declared_check_on_the_partial_config():
+    """
+    A section check of the stepped setup form reads the same check streams as the full check, with the configuration
+    collected so far.
+    """
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(
+                "https://persona.metaverse.com/party_members?start=2024-07-01&end=2024-07-15"
+            ),
+            HttpResponse(json.dumps({"id": "amamiya"})),
+        )
+        http_mocker.get(
+            HttpRequest("https://persona.metaverse.com/palaces"),
+            HttpResponse(json.dumps({"id": "palace_1"})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://persona.metaverse.com/locations?m=active&i=1&g=country&start=2024-07-01&end=2024-07-31"
+            ),
+            HttpResponse(json.dumps({"id": "location_1"})),
+        )
+        source = ConcurrentDeclarativeSource(
+            source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+        )
+
+        connection_status = source.check_section(
+            logger=source.logger, section="connection", config=_CONFIG
+        )
+
+    assert connection_status.status == Status.SUCCEEDED
+
+
+def test_check_section_delegates_to_the_declared_check():
+    from airbyte_cdk.models import AirbyteConnectionStatus
+
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+    )
+    failed_status = AirbyteConnectionStatus(status=Status.FAILED, message="'womp womp'")
+
+    with patch.object(source, "check", return_value=failed_status) as check:
+        connection_status = source.check_section(
+            logger=source.logger, section="connection", config=_CONFIG
+        )
+
+    assert connection_status == failed_status
+    check.assert_called_once_with(source.logger, _CONFIG)
+
+
 def test_discover():
     """
     Verifies that the ConcurrentDeclarativeSource discover command returns concurrent and synchronous catalog definitions

@@ -739,6 +739,21 @@ class ConcurrentDeclarativeSource(Source):
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
 
+    def check_section(
+        self, logger: logging.Logger, section: str, config: Mapping[str, Any]
+    ) -> AirbyteConnectionStatus:
+        """
+        Section check for the stepped setup form, see `airbyte_cdk.sources.utils.check_section`.
+
+        A declarative source validates a configuration by reading from the streams its `check` component names, so a
+        section check runs that same check on the configuration collected so far. The manifest is responsible for
+        ordering its `sections` so that the sections which declare `"check": true` already hold every field those
+        streams need; the entrypoint has validated that the required fields of the section and of the sections before
+        it are present.
+        """
+        logger.info(f"Checking configuration section '{section}' with the declared check streams.")
+        return self.check(logger, config)
+
     @contextmanager
     def _config_overridden_for_check(
         self, config_overrides: Optional[Mapping[str, Any]]

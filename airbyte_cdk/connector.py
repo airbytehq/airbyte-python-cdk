@@ -16,6 +16,7 @@ from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     ConnectorSpecification,
     ConnectorSpecificationSerializer,
+    Status,
 )
 
 
@@ -28,6 +29,11 @@ def load_optional_package_file(package: str, filename: str) -> Optional[bytes]:
 
 
 TConfig = TypeVar("TConfig", bound=Mapping[str, Any])
+
+CHECK_SECTION_NOT_IMPLEMENTED = (
+    "The connector specification declares sections but the connector does not implement "
+    "a section check (section '{section}')."
+)
 
 
 class BaseConnector(ABC, Generic[TConfig]):
@@ -103,6 +109,21 @@ class BaseConnector(ABC, Generic[TConfig]):
         Tests if the input configuration can be used to successfully connect to the integration e.g: if a provided Stripe API token can be used to connect
         to the Stripe API.
         """
+
+    def check_section(
+        self, logger: logging.Logger, section: str, config: TConfig
+    ) -> AirbyteConnectionStatus:
+        """
+        Checks the configuration up to `section` only, for the stepped setup form
+        (see `airbyte_cdk.sources.utils.check_section`). The entrypoint calls this instead of `check` when the config
+        carries a `check-section` key naming a declared section other than the last one; `config` then only holds
+        the fields of that section and of the sections before it.
+
+        Override it in a connector whose specification declares sections.
+        """
+        return AirbyteConnectionStatus(
+            status=Status.FAILED, message=CHECK_SECTION_NOT_IMPLEMENTED.format(section=section)
+        )
 
 
 class _WriteConfigProtocol(Protocol):
