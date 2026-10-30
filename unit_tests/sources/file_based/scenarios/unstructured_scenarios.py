@@ -38,6 +38,7 @@ simple_markdown_scenario = (
     .set_name("simple_markdown_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -45,7 +46,7 @@ simple_markdown_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -125,6 +126,7 @@ simple_txt_scenario = (
     .set_name("simple_txt_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -132,7 +134,7 @@ simple_txt_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -197,6 +199,7 @@ unstructured_invalid_file_type_discover_scenario_no_skip = (
     .set_name("unstructured_invalid_file_type_discover_scenario_no_skip")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -204,7 +207,7 @@ unstructured_invalid_file_type_discover_scenario_no_skip = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -248,6 +251,7 @@ unstructured_invalid_file_type_discover_scenario_skip = (
     .set_name("unstructured_invalid_file_type_discover_scenario_skip")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -255,7 +259,7 @@ unstructured_invalid_file_type_discover_scenario_skip = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -308,6 +312,7 @@ unstructured_invalid_file_type_read_scenario = (
     .set_name("unstructured_invalid_file_type_read_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -315,7 +320,7 @@ unstructured_invalid_file_type_read_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -381,6 +386,7 @@ simple_unstructured_scenario = (
     .set_name("simple_unstructured_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -388,7 +394,7 @@ simple_unstructured_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -467,6 +473,7 @@ corrupted_file_scenario = (
     .set_name("corrupted_file_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -474,7 +481,7 @@ corrupted_file_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -525,6 +532,7 @@ no_file_extension_unstructured_scenario = (
     .set_name("no_file_extension_unstructured_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -532,7 +540,7 @@ no_file_extension_unstructured_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(

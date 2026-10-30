@@ -37,7 +37,7 @@ class APIProcessingConfigModel(BaseModel):
     api_key: str = Field(
         default="",
         always_show=True,
-        title="API Key",
+        title="API key",
         airbyte_secret=True,
         description="The API key to use matching the environment",
     )
@@ -53,7 +53,7 @@ class APIProcessingConfigModel(BaseModel):
     parameters: Optional[List[APIParameterConfigModel]] = Field(
         default=[],
         always_show=True,
-        title="Additional URL Parameters",
+        title="Additional URL parameters",
         description="List of parameters send to the API",
     )
 
@@ -76,7 +76,7 @@ class UnstructuredFormat(BaseModel):
 
     skip_unprocessable_files: bool = Field(
         default=True,
-        title="Skip Unprocessable Files",
+        title="Skip unprocessable files",
         description="If true, skip files that cannot be parsed and pass the error message along as the _ab_source_file_parse_error field. If false, fail the sync.",
         always_show=True,
     )
@@ -85,7 +85,7 @@ class UnstructuredFormat(BaseModel):
         always_show=True,
         order=0,
         default="auto",
-        title="Parsing Strategy",
+        title="Parsing strategy",
         enum=["auto", "fast", "ocr_only", "hi_res"],
         description="The strategy used to parse documents. `fast` extracts text directly from the document which doesn't work for all files. `ocr_only` is more reliable, but slower. `hi_res` is the most reliable, but requires an API key and a hosted instance of unstructured and can't be used with local mode. See the unstructured.io documentation for more details: https://unstructured-io.github.io/unstructured/core/partition.html#partition-pdf",
     )

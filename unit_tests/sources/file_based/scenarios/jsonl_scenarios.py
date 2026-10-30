@@ -17,6 +17,7 @@ single_jsonl_scenario = (
     .set_name("single_jsonl_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -24,7 +25,7 @@ single_jsonl_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -102,6 +103,7 @@ multi_jsonl_with_different_keys_scenario = (
     .set_name("multi_jsonl_with_different_keys_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -109,7 +111,7 @@ multi_jsonl_with_different_keys_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -216,6 +218,7 @@ multi_jsonl_stream_n_file_exceeds_limit_for_inference = (
     .set_name("multi_jsonl_stream_n_file_exceeds_limit_for_inference")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -223,7 +226,7 @@ multi_jsonl_stream_n_file_exceeds_limit_for_inference = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -328,6 +331,7 @@ multi_jsonl_stream_n_bytes_exceeds_limit_for_inference = (
     .set_name("multi_jsonl_stream_n_bytes_exceeds_limit_for_inference")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -335,7 +339,7 @@ multi_jsonl_stream_n_bytes_exceeds_limit_for_inference = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -440,6 +444,7 @@ invalid_jsonl_scenario = (
     .set_name("invalid_jsonl_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -447,7 +452,7 @@ invalid_jsonl_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -517,6 +522,7 @@ jsonl_multi_stream_scenario = (
     .set_name("jsonl_multi_stream_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -530,7 +536,7 @@ jsonl_multi_stream_scenario = (
                     "globs": ["b.jsonl"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -665,6 +671,7 @@ schemaless_jsonl_scenario = (
     .set_name("schemaless_jsonl_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -673,7 +680,7 @@ schemaless_jsonl_scenario = (
                     "validation_policy": "Skip Record",
                     "schemaless": True,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -767,6 +774,7 @@ schemaless_jsonl_multi_stream_scenario = (
     .set_name("schemaless_jsonl_multi_stream_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -781,7 +789,7 @@ schemaless_jsonl_multi_stream_scenario = (
                     "globs": ["b.jsonl"],
                     "validation_policy": "Skip Record",
                 },
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -893,6 +901,7 @@ jsonl_user_input_schema_scenario = (
     .set_name("jsonl_user_input_schema_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -901,7 +910,7 @@ jsonl_user_input_schema_scenario = (
                     "validation_policy": "Emit Record",
                     "input_schema": '{"col1": "integer", "col2": "string"}',
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
