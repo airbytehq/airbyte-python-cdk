@@ -2241,6 +2241,16 @@ class OAuthAuthenticator(BaseModel):
         examples=[["invalid_grant", "invalid_permissions"]],
         title="Refresh Token Error Values",
     )
+    refresh_token_error_messages: Optional[Dict[str, str]] = Field(
+        None,
+        description="Fixed user-facing messages for refresh token errors. Keys are matched in order against the provider error code leading error_description (a token such as ABC12345 followed by a word boundary), the whitespace-normalized full error_description, then the OAuth error value; the first match replaces the default re-authentication guidance, and the provider error detail is still appended. Only applies to responses already flagged as config errors by Refresh Token Error Status Codes, Refresh Token Error Key and Refresh Token Error Values (or their defaults); it does not flag any additional responses. Values are used verbatim, without interpolation, so the message is identical on every attempt.",
+        examples=[
+            {
+                "invalid_grant": "The refresh token expired or was revoked. Re-authenticate this source to restore syncs."
+            }
+        ],
+        title="Refresh Token Error Messages",
+    )
     refresh_token_updater: Optional[RefreshTokenUpdater] = Field(
         None,
         description="When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.",

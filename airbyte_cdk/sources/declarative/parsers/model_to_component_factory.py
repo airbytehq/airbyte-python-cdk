@@ -3437,6 +3437,7 @@ class ModelToComponentFactory:
                 refresh_token_error_status_codes=refresh_token_error_status_codes,
                 refresh_token_error_key=refresh_token_error_key,
                 refresh_token_error_values=refresh_token_error_values,
+                refresh_token_error_messages=self._get_refresh_token_error_messages(model),
             )
         # ignore type error because fixing it would have a lot of dependencies, revisit later
         return DeclarativeOauth2Authenticator(  # type: ignore
@@ -3467,6 +3468,7 @@ class ModelToComponentFactory:
             refresh_token_error_status_codes=refresh_token_error_status_codes,
             refresh_token_error_key=refresh_token_error_key,
             refresh_token_error_values=refresh_token_error_values,
+            refresh_token_error_messages=self._get_refresh_token_error_messages(model),
         )
 
     @staticmethod
@@ -3516,6 +3518,11 @@ class ModelToComponentFactory:
 
         # returning default values we think cover most cases
         return (400,), "error", ("invalid_grant", "invalid_permissions")
+
+    @staticmethod
+    def _get_refresh_token_error_messages(model: OAuthAuthenticatorModel) -> Dict[str, str]:
+        """Resolve messages separately so they never disable the default gate."""
+        return dict(model.refresh_token_error_messages or {})
 
     @staticmethod
     def _reject_union_combined_extractor_for_offset_increment(

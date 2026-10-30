@@ -7216,6 +7216,32 @@ def test_combined_extractor_with_an_empty_extractors_list_fails_schema_validatio
     )
 
 
+def test_refresh_token_error_messages_accepts_string_values_in_manifest():
+    manifest = _combined_extractor_manifest({"type": "DpathExtractor", "field_path": ["rows"]})
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = {
+        "type": "OAuthAuthenticator",
+        "refresh_token_error_messages": {"invalid_grant": "Re-authenticate this source."},
+    }
+
+    ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+
+@pytest.mark.parametrize("value", [123, ["message"]])
+def test_refresh_token_error_messages_rejects_non_string_values(value):
+    manifest = _combined_extractor_manifest({"type": "DpathExtractor", "field_path": ["rows"]})
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = {
+        "type": "OAuthAuthenticator",
+        "refresh_token_error_messages": {"invalid_grant": value},
+    }
+
+    with pytest.raises(ValidationError):
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+
 @pytest.mark.parametrize(
     "pagination_strategy, page_token_field, page_tokens",
     [

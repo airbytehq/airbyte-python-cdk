@@ -28,6 +28,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     Generates OAuth2.0 access tokens from an OAuth2.0 refresh token and client credentials.
     The generated access token is attached to each request via the Authorization header.
     If a connector_config is provided any mutation of it's value in the scope of this class will emit AirbyteControlConnectorConfigMessage.
+    `refresh_token_error_messages` provides fixed user-facing messages for configured refresh token errors.
     """
 
     def __init__(
@@ -53,6 +54,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_messages: Optional[Mapping[str, str]] = None,
     ) -> None:
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret_name = client_secret_name
@@ -75,7 +77,10 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._token_expiry_is_time_of_expiration = token_expiry_is_time_of_expiration
         self._access_token = None
         super().__init__(
-            refresh_token_error_status_codes, refresh_token_error_key, refresh_token_error_values
+            refresh_token_error_status_codes,
+            refresh_token_error_key,
+            refresh_token_error_values,
+            refresh_token_error_messages=refresh_token_error_messages,
         )
 
     def get_token_refresh_endpoint(self) -> str:
@@ -158,6 +163,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     By default, this authenticator expects a connector config with a "credentials" field with the following nested fields: client_id,
     client_secret, refresh_token. This behavior can be changed by defining custom config path (using dpath paths) in client_id_config_path,
     client_secret_config_path, refresh_token_config_path constructor arguments.
+    `refresh_token_error_messages` provides fixed user-facing messages for configured refresh token errors.
     """
 
     def __init__(
@@ -187,6 +193,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
         emit_control_message_to_message_repository: bool = False,
+        refresh_token_error_messages: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         Args:
@@ -209,6 +216,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
             message_repository (MessageRepository): The message repository used to emit logs on HTTP requests and control message on config update.
             emit_control_message_to_message_repository (bool): Whether the message repository additionally receives the CONNECTOR_CONFIG message. This is only for in-process consumers such as the Connector Builder, because messages in the repository are otherwise printed to stdout by the entrypoint and would duplicate the direct stdout emission. Defaults to False.
+            refresh_token_error_messages (Optional[Mapping[str, str]]): Fixed user-facing messages for refresh token errors
         """
         self._connector_config = connector_config
         self._client_id: str = self._get_config_value_by_path(
@@ -253,6 +261,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             refresh_token_error_status_codes=refresh_token_error_status_codes,
             refresh_token_error_key=refresh_token_error_key,
             refresh_token_error_values=refresh_token_error_values,
+            refresh_token_error_messages=refresh_token_error_messages,
         )
 
     @property
