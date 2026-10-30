@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
+from airbyte_cdk.test.standard_tests._read_assertions import StreamStatusWarning
 from airbyte_cdk.test.standard_tests.docker_base import (
     DockerConnectorTestSuite,
     get_default_read_scenario_ids,
@@ -30,6 +31,7 @@ from unit_tests.test.test_scenario_sections import (
     _entry,
     _record_message,
     _scenario,
+    _state_message,
     _stream_json,
     _stub_docker,
     _suite_class,
@@ -50,6 +52,15 @@ DISCOVER = [
         _stream_json("events", ["full_refresh"]),
     )
 ]
+
+
+def _read_output(*streams: str) -> list[str]:
+    """A read's output: one record and then the final state for each of `streams`."""
+    return [
+        message
+        for stream in streams
+        for message in (_record_message(stream), _state_message(stream))
+    ]
 
 
 def _read_suite(
@@ -129,7 +140,7 @@ def test_read_options(pytester: pytest.Pytester, args: list[str], expected: list
 def test_docker_read_runs_when_turned_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _stub_docker(
         monkeypatch,
-        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+        {"discover": DISCOVER, "read": _read_output("users", "events")},
     )
     _read(_read_suite(tmp_path), _scenario("basic_read"))
     assert len(_read_commands(calls)) == 1
@@ -157,7 +168,7 @@ def test_docker_read_scenario_list_skips_other_configs(
     """A config missing from `--read-scenarios` is skipped; it used to raise a `ValueError`."""
     calls = _stub_docker(
         monkeypatch,
-        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+        {"discover": DISCOVER, "read": _read_output("users", "events")},
     )
     suite = _read_suite(tmp_path)
     with pytest.raises(pytest.skip.Exception, match=r"not in `--read-scenarios=config_oauth`"):
@@ -210,7 +221,7 @@ def test_docker_read_defaults_read_a_connector_without_a_default_named_config(
     """`--read-scenarios=default` used to skip every read of such a connector."""
     calls = _stub_docker(
         monkeypatch,
-        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+        {"discover": DISCOVER, "read": _read_output("users", "events")},
     )
     suite = _read_suite(
         tmp_path,
@@ -249,7 +260,7 @@ def test_docker_read_streams(
     catalogs: list[dict[str, Any]] = []
     _stub_docker(
         monkeypatch,
-        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+        {"discover": DISCOVER, "read": _read_output("users", "events")},
         read_catalogs=catalogs,
     )
     suite = _read_suite(tmp_path, suggested_streams=suggested)
@@ -272,7 +283,7 @@ def test_docker_read_skips_when_the_stream_list_matches_nothing(
 def test_docker_read_requires_records_from_every_stream(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _stub_docker(monkeypatch, {"discover": DISCOVER, "read": [_record_message("users")]})
+    _stub_docker(monkeypatch, {"discover": DISCOVER, "read": _read_output("users")})
     suite = _read_suite(tmp_path)
 
     with pytest.raises(AssertionError, match=r"these returned none: 'events'"):
@@ -288,7 +299,7 @@ def test_docker_read_requires_records_from_every_stream(
 def test_docker_read_of_a_full_refresh_only_config_needs_some_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    responses = {"discover": DISCOVER, "read": [_record_message("users")]}
+    responses = {"discover": DISCOVER, "read": _read_output("users")}
     _stub_docker(monkeypatch, responses)
     suite = _read_suite(tmp_path, {"full_refresh": {"tests": [_entry("secrets/config.json")]}})
 
@@ -321,7 +332,10 @@ def test_docker_read_validates_records_against_their_schema(
 ) -> None:
     _stub_docker(
         monkeypatch,
-        {"discover": STRICT_DISCOVER, "read": [_record_with("users", {"id": 31337})]},
+        {
+            "discover": STRICT_DISCOVER,
+            "read": [_record_with("users", {"id": 31337}), _state_message("users")],
+        },
     )
     suite = _read_suite(tmp_path)
 
@@ -350,9 +364,60 @@ def test_docker_read_runs_in_a_writable_working_directory(
     """The platform gives a connector a writable working directory; the image's own is not."""
     calls = _stub_docker(
         monkeypatch,
-        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+        {"discover": DISCOVER, "read": _read_output("users", "events")},
     )
     _read(_read_suite(tmp_path), _scenario("basic_read"))
     assert [cmd[3:7] for cmd in calls] == [
         ["--tmpfs", "/source:rw,exec,mode=1777", "--workdir", "/source"]
     ] * 2, "both `discover` and `read`"
+
+
+KEYED_DISCOVER = [
+    _catalog_message(
+        {
+            "name": "users",
+            "json_schema": {"type": "object"},
+            "supported_sync_modes": ["full_refresh"],
+            "source_defined_primary_key": [["id"]],
+        }
+    )
+]
+
+
+def test_docker_read_checks_primary_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_docker(
+        monkeypatch,
+        {
+            "discover": KEYED_DISCOVER,
+            "read": [_record_with("users", {"id": {"token": "SENTINEL"}}), _state_message("users")],
+        },
+    )
+    suite = _read_suite(tmp_path)
+
+    with pytest.raises(AssertionError, match="Records have invalid primary keys") as exc_info:
+        _read(suite, _scenario("basic_read"))
+    assert "SENTINEL" not in str(exc_info.value), "key values must never reach the message"
+
+    _read(suite, _scenario("basic_read", validate_primary_keys_data_type=False))
+
+
+def test_docker_read_checks_state_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_docker(
+        monkeypatch,
+        {"discover": DISCOVER, "read": [_record_message("users"), _record_message("events")]},
+    )
+    suite = _read_suite(tmp_path)
+
+    with pytest.raises(AssertionError, match="The read's state messages are incomplete"):
+        _read(suite, _scenario("basic_read"))
+
+    _read(suite, _scenario("basic_read", validate_state_messages=False))
+
+
+def test_docker_read_warns_on_missing_stream_statuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_docker(monkeypatch, {"discover": DISCOVER, "read": _read_output("users", "events")})
+
+    with pytest.warns(StreamStatusWarning, match="reported no stream status"):
+        _read(_read_suite(tmp_path), _scenario("basic_read"))

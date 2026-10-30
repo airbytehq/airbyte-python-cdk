@@ -43,8 +43,10 @@ from airbyte_cdk.test.standard_tests._assertions import (
     assert_config_matches_spec,
 )
 from airbyte_cdk.test.standard_tests._read_assertions import (
+    StreamStatusWarning,
     assert_read_records,
     assert_schema_validation_opt_out_allowed,
+    find_stream_status_problems,
 )
 from airbyte_cdk.test.standard_tests._spec_compatibility import (
     DEPLOYMENT_MODE_ENV_VARS,
@@ -930,10 +932,14 @@ class DockerConnectorTestSuite:
         `configured_catalog_path`, or every discovered stream when it declares none, minus its
         `empty_streams` (see `get_read_streams`), narrowed further by `--read-from-streams`.
 
-        The records get the same checks as in `test_basic_read`: a config listed under
-        `basic_read` must return at least one record from every stream it reads, and every record
-        must match its stream's JSON schema (opt out with `validate_schema: false`, which a
-        connector at `test_strictness_level: high` cannot). A config listed only under
+        The read gets the same checks as `test_basic_read`. For a config listed under
+        `basic_read`: every stream it reads must return at least one record; every record must
+        match its stream's JSON schema (opt out with `validate_schema: false`, which a connector
+        at `test_strictness_level: high` cannot); every record of a stream with a
+        `source_defined_primary_key` must have a usable primary key (opt out with
+        `validate_primary_keys_data_type: false`); and every stream must emit state with
+        `sourceStats` (opt out with `validate_state_messages: false`). Incomplete stream statuses
+        are reported as a `StreamStatusWarning`, not enforced. A config listed only under
         `full_refresh` must return some records.
 
         The test is skipped unless `--read-from-streams` turns it on: the in-process
@@ -1069,12 +1075,26 @@ class DockerConnectorTestSuite:
             )
 
         if scenario.is_basic_read_config:
+            status_problems = find_stream_status_problems(
+                read_result.trace_messages, configured_catalog
+            )
+            if status_problems:
+                warnings.warn(
+                    "The read's stream statuses are incomplete. This check is not enforced "
+                    "yet:\n" + "\n".join(status_problems),
+                    category=StreamStatusWarning,
+                    stacklevel=1,
+                )
             # Also asserts that the read returned records, in the same pass over them.
             assert_read_records(
                 records=read_result.records_iterator,
                 configured_catalog=configured_catalog,
                 require_records_per_stream=True,
                 validate_schema=scenario.validate_schema,
+                validate_primary_keys=scenario.validate_primary_keys_data_type,
+                state_messages=(
+                    read_result.state_messages if scenario.validate_state_messages else None
+                ),
             )
         elif next(read_result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")

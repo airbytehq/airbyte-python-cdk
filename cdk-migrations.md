@@ -9,7 +9,7 @@
 When it runs, the Docker read now:
 
 - Reads the same streams as `test_basic_read`: those of the config's `configured_catalog_path`, or every discovered stream, minus `empty_streams`. The connector's `suggestedStreams` no longer narrow the read.
-- Checks the records as `test_basic_read` does, through the same `assert_read_records`. A config listed under `basic_read` must return at least one record from every stream it reads, and every record must match its stream's JSON schema; `empty_streams` (with a `bypass_reason`) and `validate_schema: false` (not allowed at `test_strictness_level: high`) are the exceptions. A config listed only under `full_refresh` must return some records. Previously the test only failed on a trace error or a non-zero exit.
+- Checks the read as `test_basic_read` does, through the same `assert_read_records`. A config listed under `basic_read` must return at least one record from every stream it reads, and every record must match its stream's JSON schema; `empty_streams` (with a `bypass_reason`) and `validate_schema: false` (not allowed at `test_strictness_level: high`) are the exceptions. It also runs the 7.42.0 checks: usable primary keys (opt out with `validate_primary_keys_data_type: false`), a per-stream state message with `sourceStats` for every stream read (opt out with `validate_state_messages: false`), and the stream-status `StreamStatusWarning`. A config listed only under `full_refresh` must return some records. Previously the test only failed on a trace error or a non-zero exit.
 
 The Docker `check`, `discover` and `read` tests now run the connector with a writable working directory, `/source` (an in-memory `tmpfs`), as the platform does. They used to run in the image's `WORKDIR`, which the image's `airbyte` user cannot write, so a connector that writes a temporary file to its working directory (for example `source-shopify` and `source-salesforce`, for bulk results) failed in the test although it works in a sync.
 
@@ -27,7 +27,7 @@ Migration steps:
 - No change is needed: the Docker read stays off unless a run turns it on.
 - To turn it on, pass `--read-from-streams=default` (to `airbyte-cdk connector test` as `--pytest-arg=--read-from-streams=default`), or set `PYTEST_ADDOPTS=--read-from-streams=default`, which `airbyte-cdk image test` also honours.
 - A command that passed `--read-from-streams=suggested` or `=default` to read a connector's `suggestedStreams` now reads every stream of the config. Pass the stream names as a list to keep the narrower read.
-- A connector whose Docker read fails gets the same fixes as a failing `test_basic_read`: refresh an expired secret, declare a stream without data in `empty_streams` with a `bypass_reason`, fix the schema or the records, or set `validate_schema: false` (with a reason) where that is allowed.
+- A connector whose Docker read fails gets the same fixes as a failing `test_basic_read`: refresh an expired secret, declare a stream without data in `empty_streams` with a `bypass_reason`, fix the schema or the records, or set `validate_schema: false`, `validate_primary_keys_data_type: false` or `validate_state_messages: false` (with a reason) where that is allowed.
 
 ## Upgrading to 7.42.0
 

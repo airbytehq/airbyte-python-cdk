@@ -796,6 +796,23 @@ def _record_message(stream: str) -> str:
     )
 
 
+def _state_message(stream: str) -> str:
+    """The final per-stream state, with the `sourceStats` the CDK entrypoint adds."""
+    return json.dumps(
+        {
+            "type": "STATE",
+            "state": {
+                "type": "STREAM",
+                "stream": {
+                    "stream_descriptor": {"name": stream},
+                    "stream_state": {"__ab_no_cursor_state_message": True},
+                },
+                "sourceStats": {"recordCount": 1.0},
+            },
+        }
+    )
+
+
 def _stub_docker(
     monkeypatch: pytest.MonkeyPatch,
     responses: dict[str, list[str]],
@@ -906,7 +923,12 @@ def test_docker_read_configures_the_catalog_for_the_section(
                     _stream_json("static", ["full_refresh"]),
                 )
             ],
-            "read": [_record_message("users"), _record_message("events")],
+            "read": [
+                _record_message("users"),
+                _state_message("users"),
+                _record_message("events"),
+                _state_message("events"),
+            ],
         },
         read_catalogs=catalogs,
     )
