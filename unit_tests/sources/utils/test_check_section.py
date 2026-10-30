@@ -57,6 +57,73 @@ def test_declared_sections_are_in_form_order():
     assert declared_sections(SECTIONED_SPEC) == ["connection", "credentials", "review"]
 
 
+# The same form as SECTIONED_SCHEMA, with the sections listed out of their `order` and the review section without one:
+# the webapp sorts the sections with an `order` first and keeps the others in list order after them.
+SHUFFLED_SCHEMA = {
+    **SECTIONED_SCHEMA,
+    "sections": [
+        {"id": "review", "title": "Review & set up", "groups": []},
+        {
+            "id": "credentials",
+            "title": "Credentials",
+            "order": 1,
+            "groups": ["auth"],
+            "check": True,
+        },
+        {
+            "id": "connection",
+            "title": "Connection",
+            "order": 0,
+            "groups": ["db", "security"],
+            "check": True,
+        },
+    ],
+}
+SHUFFLED_SPEC = ConnectorSpecification(connectionSpecification=SHUFFLED_SCHEMA)
+
+
+def test_declared_sections_follow_order_not_list_position():
+    assert declared_sections(SHUFFLED_SPEC) == ["connection", "credentials", "review"]
+
+
+def test_sections_without_order_keep_their_list_position_after_the_ordered_ones():
+    spec = ConnectorSpecification(
+        connectionSpecification={
+            "sections": [
+                {"id": "c", "groups": []},
+                {"id": "b", "order": 5, "groups": []},
+                {"id": "d", "groups": []},
+                {"id": "a", "order": 2, "groups": []},
+            ]
+        }
+    )
+
+    assert declared_sections(spec) == ["a", "b", "c", "d"]
+
+
+def test_is_last_section_follows_order_not_list_position():
+    assert is_last_section(SHUFFLED_SPEC, "review")
+    assert not is_last_section(SHUFFLED_SPEC, "connection")
+    assert not is_last_section(SHUFFLED_SPEC, "credentials")
+
+
+def test_section_spec_for_the_first_section_in_form_order_requires_its_own_fields_only():
+    """The webapp sends the first step's fields alone, even when the spec lists that section later."""
+    narrowed = section_spec(SHUFFLED_SPEC, "connection").connectionSpecification
+
+    assert narrowed["required"] == ["host"]
+
+
+def test_section_spec_for_a_later_section_in_form_order_requires_the_earlier_fields_too():
+    narrowed = section_spec(SHUFFLED_SPEC, "credentials").connectionSpecification
+
+    assert narrowed["required"] == ["host", "username", "password"]
+
+
+def test_section_spec_for_the_last_section_in_form_order_is_the_full_spec():
+    assert section_spec(SHUFFLED_SPEC, "review") is SHUFFLED_SPEC
+
+
 def test_checkable_sections_are_the_ones_declaring_check():
     assert checkable_sections(SECTIONED_SPEC) == ["connection", "credentials"]
     assert checkable_sections(FLAT_SPEC) == []

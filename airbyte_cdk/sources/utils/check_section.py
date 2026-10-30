@@ -4,8 +4,9 @@
 """
 Section-aware CHECK for the stepped setup form.
 
-A connector whose specification declares `sections` (each listing the `groups` of properties it shows, in form order)
-can be checked one section at a time. A section which declares `"check": true` tells the platform to run a CHECK when
+A connector whose specification declares `sections` (each listing the `groups` of properties it shows) can be checked
+one section at a time. The form order is the webapp's: sections with a numeric `order` come first, sorted by it, then
+the others in list order. A section which declares `"check": true` tells the platform to run a CHECK when
 the user completes it; the configuration JSON then carries a top-level `check-section` key naming the section, and only
 holds the fields of that section and of the sections before it. The entrypoint validates that much of the configuration
 against the specification, runs the full check for the last section (the configuration is complete by then) and
@@ -17,7 +18,7 @@ CHECK validates the complete configuration, exactly as before.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Mapping, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 from airbyte_cdk.models import ConnectorSpecification, FailureType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -26,13 +27,27 @@ CHECK_SECTION_KEY = "check-section"
 """The optional top-level key of the configuration JSON object which turns a CHECK into a section check."""
 
 
+def _form_position(section: Mapping[str, Any]) -> Tuple[int, float]:
+    """Sections with a numeric `order` come first, sorted by it; the others keep their list order after them."""
+    order = section.get("order")
+    if isinstance(order, (int, float)) and not isinstance(order, bool):
+        return (0, order)
+    return (1, 0)
+
+
 def _sections(spec: ConnectorSpecification) -> List[Mapping[str, Any]]:
-    """The `sections` of the specification which have a string `id`, in form order."""
-    return [
-        section
-        for section in spec.connectionSpecification.get("sections") or []
-        if isinstance(section, Mapping) and isinstance(section.get("id"), str)
-    ]
+    """
+    The `sections` of the specification which have a string `id`, in form order: the webapp shows the sections with a
+    numeric `order` first, sorted by it, then the others in list order, so the list position alone is not the order.
+    """
+    return sorted(
+        (
+            section
+            for section in spec.connectionSpecification.get("sections") or []
+            if isinstance(section, Mapping) and isinstance(section.get("id"), str)
+        ),
+        key=_form_position,
+    )
 
 
 def declared_sections(spec: ConnectorSpecification) -> List[str]:
@@ -123,9 +138,9 @@ def section_spec(spec: ConnectorSpecification, section: str) -> ConnectorSpecifi
     for keyword in CROSS_PROPERTY_KEYWORDS:
         schema.pop(keyword, None)
     collected_groups: Set[str] = set()
-    for declared_section in schema.get("sections") or []:
+    for declared_section in _sections(spec):
         collected_groups.update(declared_section.get("groups") or [])
-        if declared_section.get("id") == section:
+        if declared_section["id"] == section:
             break
     properties = schema.get("properties") or {}
     schema["required"] = [
