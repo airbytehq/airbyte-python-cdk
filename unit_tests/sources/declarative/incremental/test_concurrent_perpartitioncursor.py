@@ -4761,18 +4761,17 @@ def _last_state(output: EntrypointOutput) -> Optional[AirbyteStateBlob]:
     return output.state_messages[-1].state.stream.stream_state if output.state_messages else None
 
 
-def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_grandchild_is_read() -> (
+def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_no_regression() -> (
     None
 ):
+    """The failed day-two window leaves the middle cursor at its input value, so resume rereads day one."""
     manifest = _dated_substream_manifest(middle_parent_cursor=True)
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
-    posts = [
-        {"id": 1, "updated_at": "2024-01-01T10:00:00Z"},
-        {"id": 2, "updated_at": "2024-01-02T10:00:00Z"},
-    ]
+    posts = [{"id": 1, "updated_at": "2024-01-01T10:00:00Z"}]
     comments = [
         {"id": 12, "post_id": 1, "updated_at": "2024-01-01T23:00:00Z"},
         {"id": 11, "post_id": 1, "updated_at": "2024-01-01T10:00:00Z"},
+        {"id": 13, "post_id": 1, "updated_at": "2024-01-02T10:00:00Z"},
     ]
     vote_requests = []
     comment_request_windows = []
@@ -4784,7 +4783,7 @@ def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_
 
     def run(
         state: Optional[List[AirbyteStateMessage]],
-        fail_post_two: bool,
+        fail_post_one_day_two: bool,
         expecting_exception: bool,
     ) -> EntrypointOutput:
         source = ConcurrentDeclarativeSource(
@@ -4799,7 +4798,12 @@ def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_
                 query.get("end_time", [None])[0],
             )
             comment_request_windows.append((post_id, *window))
-            if fail_post_two and post_id == "2":
+            if (
+                fail_post_one_day_two
+                and post_id == "1"
+                and window[0] is not None
+                and window[0][:10] == "2024-01-02"
+            ):
                 context.status_code = 500
                 return {"error": {"message": "comments request failed"}}
             start_time, end_time = window
@@ -4843,15 +4847,31 @@ def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_
                 expecting_exception=expecting_exception,
             )
 
-    initial_state = None
+    initial_state = [
+        _state_message(
+            "post_comment_votes",
+            {
+                "use_global_cursor": True,
+                "lookback_window": 0,
+                "parent_state": {
+                    "post_comments": {
+                        "use_global_cursor": True,
+                        "lookback_window": 0,
+                        "state": {"updated_at": "2024-01-01T00:00:00Z"},
+                        "parent_state": {"posts": {"updated_at": "2024-01-01T00:00:00Z"}},
+                    }
+                },
+            },
+        )
+    ]
     before_a = len(vote_requests)
-    attempt_a = run(initial_state, fail_post_two=True, expecting_exception=True)
+    attempt_a = run(initial_state, fail_post_one_day_two=True, expecting_exception=True)
     requests_a = vote_requests[before_a:]
     state_a = _last_state(attempt_a)
     resume_state = _resume_state(attempt_a, initial_state)
     windows_a = list(comment_request_windows)
     before_b = len(vote_requests)
-    run(resume_state, fail_post_two=False, expecting_exception=False)
+    run(resume_state, fail_post_one_day_two=False, expecting_exception=False)
     requests_b = vote_requests[before_b:]
     windows_b = comment_request_windows[len(windows_a) :]
     assert state_a is not None
@@ -4860,6 +4880,11 @@ def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_
     expected_comments_start = persisted_comments_cursor or config["start_date"]
     first_comments_window_b = windows_b[0]
 
+    assert persisted_comments_cursor == "2024-01-01T00:00:00Z"
+    assert [window[1] for window in windows_a] == [
+        "2024-01-01T00:00:00Z",
+        "2024-01-02T00:00:00Z",
+    ]
     assert "11" not in requests_a
     assert {"11", "12"}.issubset(set(requests_a) | set(requests_b))
     assert first_comments_window_b[0] == "1"
@@ -5149,6 +5174,7 @@ def test_given_successful_sync_when_read_then_parent_and_child_state_advance_to_
 def test_given_global_cursor_and_failed_first_parent_request_when_read_then_no_state_emitted() -> (
     None
 ):
+    """Main emitted a STATE with no progress here; this PR stops emitting it."""
     manifest = _dated_substream_manifest(global_substream_cursor=True)
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
     output, _ = _read_with_requests(
