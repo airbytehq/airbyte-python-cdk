@@ -68,6 +68,10 @@ from airbyte_cdk.sources.streams.http.request_window_split_exception import (
     RequestWindowSplitNotSupportedException,
     RequestWindowSplitRequiredException,
 )
+from airbyte_cdk.sources.streams.http.sync_token_reset_exception import (
+    SyncTokenResetNotSupportedException,
+    SyncTokenResetRequiredException,
+)
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -158,6 +162,7 @@ class SimpleRetriever(Retriever):
         Callable[[StreamSlice, Optional[datetime.timedelta]], Optional[List[StreamSlice]]]
     ] = None
     page_observer: Optional[Callable[["PageCompleted"], None]] = None
+    token_reset_handler: Optional[Callable[[StreamSlice, Optional[str]], StreamSlice]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -707,6 +712,25 @@ class SimpleRetriever(Retriever):
                 yield from self._read_records_or_split_request_window(
                     records_schema, child, original_slice, depth + 1
                 )
+        except SyncTokenResetRequiredException as exception:
+            if self.token_reset_handler is None:
+                raise SyncTokenResetNotSupportedException(stream_name=self.name) from exception
+
+            reset_slice = self.token_reset_handler(stream_slice, exception.error_message)
+            reason = exception.error_message or "the API rejected the stored sync token"
+            if stream_slice.partition:
+                LOGGER.warning(
+                    f"Stream {self.name}: {reason}; re-reading partition {stream_slice.partition} in full "
+                    "without a sync token. All of its records will be emitted again."
+                )
+            else:
+                LOGGER.warning(
+                    f"Stream {self.name}: {reason}; re-reading the stream in full "
+                    "without a sync token. All of its records will be emitted again."
+                )
+            yield from self._read_records_or_split_request_window(
+                records_schema, reset_slice, original_slice, depth + 1
+            )
 
     def _with_request_window_failure_message(self, message: str) -> str:
         """

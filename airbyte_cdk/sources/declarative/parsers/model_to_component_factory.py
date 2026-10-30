@@ -1257,6 +1257,9 @@ class ModelToComponentFactory:
         self._reject_reduce_page_size_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
         )
+        self._reject_reset_sync_token_action(
+            model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
+        )
         self._reject_split_request_window_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
         )
@@ -2137,6 +2140,13 @@ class ModelToComponentFactory:
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
+        requester = getattr(model.retriever, "requester", None)
+        if self._uses_reset_sync_token_action(
+            getattr(requester, "error_handler", None)
+        ) and not isinstance(model.incremental_sync, SyncTokenCursorModel):
+            raise ValueError(
+                f"Stream {model.name}: RESET_SYNC_TOKEN requires a SyncTokenCursor incremental_sync."
+            )
         self._validate_sync_token_stream(model)
         self._migrate_state(model, config)
         self._warn_on_ineffective_incremental_dependency(model)
@@ -4235,6 +4245,9 @@ class ModelToComponentFactory:
             page_observer=(
                 cursor.on_page_completed if isinstance(cursor, SyncTokenCursor) else None
             ),
+            token_reset_handler=(
+                cursor.restart_without_token if isinstance(cursor, SyncTokenCursor) else None
+            ),
             parameters=model.parameters or {},
         )
 
@@ -4537,6 +4550,29 @@ class ModelToComponentFactory:
                 for response_filter in error_handler.response_filters or []
             )
         # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
+
+    def _reject_reset_sync_token_action(self, requester: Any, description: str) -> None:
+        if requester is None:
+            return
+        if self._uses_reset_sync_token_action(getattr(requester, "error_handler", None)):
+            raise ValueError(
+                f"The RESET_SYNC_TOKEN response action is not supported on the {description}: only a "
+                "DeclarativeStream configured with a SyncTokenCursor can re-read a partition without "
+                "its stored sync token."
+            )
+
+    def _uses_reset_sync_token_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_reset_sync_token_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.RESET_SYNC_TOKEN
+                for response_filter in error_handler.response_filters or []
+            )
         return False
 
     def _create_request_window_splitting(
@@ -5023,6 +5059,10 @@ class ModelToComponentFactory:
             "delete_requester",
         ):
             self._reject_reduce_page_size_action(
+                getattr(model, requester_field, None),
+                f"`{requester_field}` of the AsyncRetriever of stream {name}",
+            )
+            self._reject_reset_sync_token_action(
                 getattr(model, requester_field, None),
                 f"`{requester_field}` of the AsyncRetriever of stream {name}",
             )
@@ -5673,6 +5713,7 @@ class ModelToComponentFactory:
         self, model: FileUploaderModel, config: Config, **kwargs: Any
     ) -> FileUploader:
         self._reject_reduce_page_size_action(model.requester, "requester of a `file_uploader`")
+        self._reject_reset_sync_token_action(model.requester, "requester of a `file_uploader`")
         self._reject_split_request_window_action(model.requester, "requester of a `file_uploader`")
         name = "File Uploader"
         requester = self._create_component_from_model(

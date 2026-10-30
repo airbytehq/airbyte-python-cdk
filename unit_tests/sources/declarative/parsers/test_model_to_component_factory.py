@@ -8893,6 +8893,13 @@ _REDUCE_PAGE_SIZE_ERROR_HANDLER = {
     ],
 }
 
+_RESET_SYNC_TOKEN_ERROR_HANDLER = {
+    "type": "DefaultErrorHandler",
+    "response_filters": [
+        {"type": "HttpResponseFilter", "http_codes": [410], "action": "RESET_SYNC_TOKEN"}
+    ],
+}
+
 
 def test_given_reduce_page_size_action_on_the_file_uploader_requester_then_raise():
     """
@@ -8949,6 +8956,61 @@ def test_given_reduce_page_size_action_on_the_login_requester_then_raise():
         )
 
     assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+def test_given_reset_sync_token_action_on_the_file_uploader_requester_then_raise():
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=FileUploaderModel,
+            component_definition={
+                "type": "FileUploader",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/download",
+                    "error_handler": _RESET_SYNC_TOKEN_ERROR_HANDLER,
+                },
+                "download_target_extractor": {
+                    "type": "DpathExtractor",
+                    "field_path": ["url"],
+                },
+            },
+            config={},
+        )
+
+    assert "RESET_SYNC_TOKEN" in str(exception.value)
+    assert "file_uploader" in str(exception.value)
+
+
+def test_given_reset_sync_token_action_on_the_login_requester_then_raise():
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=SessionTokenAuthenticatorModel,
+            component_definition={
+                "type": "SessionTokenAuthenticator",
+                "login_requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/login",
+                    "http_method": "POST",
+                    "error_handler": _RESET_SYNC_TOKEN_ERROR_HANDLER,
+                },
+                "session_token_path": ["token"],
+                "request_authentication": {
+                    "type": "ApiKey",
+                    "inject_into": {
+                        "type": "RequestOption",
+                        "inject_into": "header",
+                        "field_name": "Authorization",
+                    },
+                },
+            },
+            config={},
+            name="a_stream",
+        )
+
+    assert "RESET_SYNC_TOKEN" in str(exception.value)
+    assert "login_requester" in str(exception.value)
 
 
 @pytest.mark.parametrize(
