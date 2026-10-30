@@ -4527,3 +4527,140 @@ def test_split_request_window_builds_one_state_free_cursor_on_first_use() -> Non
 
     cursor_factory.create.assert_called_once_with(stream_state={}, runtime_lookback_window=None)
     assert cursor._cursor_per_partition == {}
+
+
+def _global_cursor_over(partitions, stream_state=None) -> ConcurrentPerPartitionCursor:
+    inner_cursor = MagicMock()
+    inner_cursor.stream_slices.side_effect = lambda: iter([{"start": "a"}, {"start": "b"}])
+    cursor_factory = MagicMock()
+    cursor_factory.create.return_value = inner_cursor
+    partition_router = MagicMock()
+    partition_router.stream_slices.return_value = partitions
+    partition_router.get_stream_state.return_value = None
+    return ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=partition_router,
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state=stream_state or {},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+            datetime_format="%Y-%m-%dT%H:%M:%SZ",
+            input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+            is_sequential_state=True,
+            cursor_granularity=timedelta(0),
+        ),
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+        use_global_cursor=True,
+    )
+
+
+def _close(cursor: ConcurrentPerPartitionCursor, stream_slice: StreamSlice) -> None:
+    cursor.close_partition(
+        DeclarativePartition(
+            stream_name="test_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=stream_slice,
+            record_counter=RecordCounter(),
+        )
+    )
+
+
+def _partitions_failing_after_first():
+    yield StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={})
+    raise RuntimeError("parent request failed")
+
+
+def test_given_failed_partition_and_no_checkpoint_when_ensure_state_emitted_then_no_state_emitted():
+    cursor = _global_cursor_over(iter([StreamSlice(partition={"id": "1"}, cursor_slice={})]))
+    slices = list(cursor.stream_slices())
+    _close(cursor, slices[0])  # the second slice raised and was never closed
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    assert cursor._message_repository.emit_message.call_count == 0
+
+
+def test_given_failed_slice_generation_and_no_checkpoint_when_ensure_state_emitted_then_no_state_emitted():
+    cursor = _global_cursor_over(_partitions_failing_after_first())
+    slices = []
+    with pytest.raises(RuntimeError):
+        for stream_slice in cursor.stream_slices():
+            slices.append(stream_slice)
+    for stream_slice in slices:
+        _close(cursor, stream_slice)
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    assert cursor._message_repository.emit_message.call_count == 0
+
+
+def test_given_completed_stream_without_records_when_ensure_state_emitted_then_state_emitted():
+    cursor = _global_cursor_over(iter([StreamSlice(partition={"id": "1"}, cursor_slice={})]))
+    for stream_slice in list(cursor.stream_slices()):
+        _close(cursor, stream_slice)
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    assert cursor._message_repository.emit_message.call_count == 1
+    assert cursor.state == {"use_global_cursor": True, "lookback_window": 0}
+
+
+def test_given_failed_partition_and_incoming_checkpoint_when_ensure_state_emitted_then_state_emitted():
+    cursor = _global_cursor_over(
+        iter([StreamSlice(partition={"id": "1"}, cursor_slice={})]),
+        stream_state={"use_global_cursor": True, "state": {"updated_at": "2024-01-01T00:00:00Z"}},
+    )
+    slices = list(cursor.stream_slices())
+    _close(cursor, slices[0])
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    assert cursor._message_repository.emit_message.call_count == 1
+    assert cursor.state["state"] == {"updated_at": "2024-01-01T00:00:00Z"}
+
+
+def _partitions_failing_after_second():
+    yield StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={})
+    yield StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={})
+    raise RuntimeError("parent request failed")
+
+
+@pytest.mark.parametrize(
+    "stream_state, expected_emitted_messages, expected_global_state",
+    [
+        pytest.param({}, 0, None, id="no_incoming_state"),
+        pytest.param(
+            {"use_global_cursor": True, "state": {"updated_at": "2024-01-01T00:00:00Z"}},
+            1,
+            {"updated_at": "2024-01-01T00:00:00Z"},
+            id="incoming_global_state",
+        ),
+    ],
+)
+def test_given_failed_slice_generation_after_records_when_ensure_state_emitted_then_global_cursor_not_advanced(
+    stream_state, expected_emitted_messages, expected_global_state
+):
+    cursor = _global_cursor_over(_partitions_failing_after_second(), stream_state=stream_state)
+    slices = []
+    with pytest.raises(RuntimeError):
+        for stream_slice in cursor.stream_slices():
+            slices.append(stream_slice)
+    cursor.observe(
+        Record(
+            data={"updated_at": "2024-06-01T00:00:00Z"},
+            stream_name="test_stream",
+            associated_slice=slices[0],
+        )
+    )
+    for stream_slice in slices:
+        _close(cursor, stream_slice)
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    assert cursor._message_repository.emit_message.call_count == expected_emitted_messages
+    assert cursor.state.get("state") == expected_global_state
