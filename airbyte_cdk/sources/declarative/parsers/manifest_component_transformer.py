@@ -87,6 +87,17 @@ CUSTOM_COMPONENTS_MAPPING: Mapping[str, str] = {
 
 
 class ManifestComponentTransformer:
+    @staticmethod
+    def _copy_tree(value: Any) -> Any:
+        """Copy containers without preserving shared dict/list identities."""
+        if isinstance(value, dict):
+            return {
+                key: ManifestComponentTransformer._copy_tree(item) for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [ManifestComponentTransformer._copy_tree(item) for item in value]
+        return copy.deepcopy(value)
+
     def propagate_types_and_parameters(
         self,
         parent_field_identifier: str,
@@ -96,8 +107,8 @@ class ManifestComponentTransformer:
     ) -> Dict[str, Any]:
         """
         Recursively transforms the specified declarative component and subcomponents to propagate parameters and insert the
-        default component type if it was not already present. The resulting transformed components are a deep copy of the input
-        components, not an in-place transformation.
+        default component type if it was not already present. The input is copied once and then transformed in place; the
+        resulting transformed components never share containers with the input.
 
         :param declarative_component: The current component that is having type and parameters added
         :param parent_field_identifier: The name of the field of the current component coming from the parent component
@@ -105,7 +116,22 @@ class ManifestComponentTransformer:
         :param use_parent_parameters: If set, parent parameters will be used as the source of truth when key names are the same
         :return: A deep copy of the transformed component with types and parameters persisted to it
         """
-        propagated_component = dict(copy.deepcopy(declarative_component))
+        return self._propagate_in_place(
+            parent_field_identifier,
+            self._copy_tree(dict(declarative_component)),
+            self._copy_tree(dict(parent_parameters)),
+            use_parent_parameters,
+        )
+
+    def _propagate_in_place(
+        self,
+        parent_field_identifier: str,
+        declarative_component: Dict[str, Any],
+        parent_parameters: Mapping[str, Any],
+        use_parent_parameters: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Mutate a caller-owned input tree containing no shared dict/list objects."""
+        propagated_component = declarative_component
         if "type" not in propagated_component:
             # If the component has class_name we assume that this is a reference to a custom component. This is a slight change to
             # existing behavior because we originally allowed for either class or type to be specified. After the pydantic migration,
@@ -120,7 +146,7 @@ class ManifestComponentTransformer:
 
         # Combines parameters defined at the current level with parameters from parent components. Parameters at the current
         # level take precedence
-        current_parameters = dict(copy.deepcopy(parent_parameters))
+        current_parameters = dict(parent_parameters)
         component_parameters = propagated_component.pop(PARAMETERS_STR, {})
         current_parameters = (
             {**component_parameters, **current_parameters}
@@ -151,17 +177,18 @@ class ManifestComponentTransformer:
 
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
         # both exist
+        written_from_parameters = set()
         for parameter_key, parameter_value in current_parameters.items():
-            propagated_component[parameter_key] = (
-                propagated_component.get(parameter_key) or parameter_value
-            )
+            if not propagated_component.get(parameter_key):
+                propagated_component[parameter_key] = copy.deepcopy(parameter_value)
+                written_from_parameters.add(parameter_key)
 
         for field_name, field_value in propagated_component.items():
             if isinstance(field_value, dict):
                 # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
                 excluded_parameter = current_parameters.pop(field_name, None)
                 parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
-                propagated_component[field_name] = self.propagate_types_and_parameters(
+                propagated_component[field_name] = self._propagate_in_place(
                     parent_type_field_identifier,
                     field_value,
                     current_parameters,
@@ -177,17 +204,19 @@ class ManifestComponentTransformer:
                         parent_type_field_identifier = (
                             f"{propagated_component.get('type')}.{field_name}"
                         )
-                        field_value[i] = self.propagate_types_and_parameters(
+                        field_value[i] = self._propagate_in_place(
                             parent_type_field_identifier,
                             element,
                             current_parameters,
                             use_parent_parameters=use_parent_parameters,
                         )
                 if excluded_parameter:
-                    current_parameters[field_name] = excluded_parameter
+                    current_parameters[field_name] = (
+                        field_value if field_name in written_from_parameters else excluded_parameter
+                    )
 
         if current_parameters:
-            propagated_component[PARAMETERS_STR] = current_parameters
+            propagated_component[PARAMETERS_STR] = copy.deepcopy(current_parameters)
         return propagated_component
 
     @staticmethod
@@ -213,7 +242,7 @@ class ManifestComponentTransformer:
     ) -> Dict[str, Any]:
         for field_name, field_value in propagated_component.items():
             if isinstance(field_value, dict) and field_value.get("type"):
-                nested_component_with_parameters = self.propagate_types_and_parameters(
+                nested_component_with_parameters = self._propagate_in_place(
                     parent_field_identifier,
                     field_value,
                     current_parameters,
