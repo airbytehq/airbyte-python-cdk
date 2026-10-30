@@ -359,7 +359,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                 "certain to be invalid."
             )
 
-        scenario = ConnectorTestScenario(config_dict=invalid_config, status="failed")
+        # No expected status: a read that succeeds is reported below, with its likely cause.
+        scenario = ConnectorTestScenario(config_dict=invalid_config)
         catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
@@ -381,7 +382,6 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         except Exception as error:  # noqa: BLE001  # Any error here is the read failing.
             result = EntrypointOutput(messages=[], uncaught_exception=error)
         else:
-            # Asserts that the read fails.
             result = run_test_job(
                 connector,
                 "read",
@@ -389,4 +389,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                 test_scenario=scenario,
                 catalog=catalog,
             )
+        assert result.errors, (
+            "The read succeeded with a config that the connector's spec rejects (it holds none "
+            "of the spec's required top-level properties). The connector did not validate the "
+            "config against its spec: the CDK entrypoint does so unless the source sets "
+            "`check_config_against_spec = False`. To skip this test, set "
+            "`expect_trace_message_on_failure: false` in a `basic_read` entry of "
+            "`acceptance-test-config.yml`, with a YAML comment giving the reason."
+        )
         assert_error_trace_messages(result.get_message_iterator())

@@ -245,6 +245,12 @@ def test_basic_read_opt_out_is_accepted_when_building_a_scenario(key: str) -> No
 
 
 def test_basic_read_only_fields_are_fields_not_legacy_keys() -> None:
+    assert BASIC_READ_ONLY_FIELDS == {
+        "validate_schema",
+        "validate_primary_keys_data_type",
+        "validate_state_messages",
+        "expect_trace_message_on_failure",
+    }
     assert BASIC_READ_ONLY_FIELDS <= set(ConnectorTestScenario.model_fields)
     assert not BASIC_READ_ONLY_FIELDS & set(POPULATED_FIELDS)
     assert not any(BASIC_READ_ONLY_FIELDS & keys for keys in LEGACY_ENTRY_KEYS.values())
@@ -429,7 +435,13 @@ def test_get_scenarios_rejects_basic_read_opt_outs_in_other_sections(tmp_path: P
             },
             "basic_read": {"tests": [{"config_path": "secrets/config.json"}]},
             "full_refresh": {
-                "tests": [{"config_path": "secrets/config.json", "validate_state_messages": False}]
+                "tests": [
+                    {
+                        "config_path": "secrets/config.json",
+                        "validate_schema": False,
+                        "validate_state_messages": False,
+                    }
+                ]
             },
         },
     )
@@ -443,6 +455,7 @@ def test_get_scenarios_rejects_basic_read_opt_outs_in_other_sections(tmp_path: P
         "`secrets/config.json`",
         "- `validate_primary_keys_data_type` in the `discovery` entry for config "
         "`secrets/config.json`",
+        "- `validate_schema` in the `full_refresh` entry for config `secrets/config.json`",
         "- `validate_state_messages` in the `full_refresh` entry for config `secrets/config.json`",
     ]
     assert all("is read only from a `basic_read` entry" in line for line in lines)

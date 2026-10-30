@@ -176,6 +176,18 @@ def test_usable_primary_keys_pass(primary_key: list[list[str]], data: Mapping[st
             id="nested_parent_not_an_object",
         ),
         pytest.param(
+            [["org", "id"]],
+            {"org": "an id"},
+            "every key field is missing or null (`$.org.id` is missing)",
+            id="nested_parent_a_string_containing_the_key",
+        ),
+        pytest.param(
+            [["org", "id"]],
+            {"org": 7},
+            "every key field is missing or null (`$.org.id` is missing)",
+            id="nested_parent_a_number",
+        ),
+        pytest.param(
             [["id"]],
             {"id": {"value": SENTINEL}},
             "record #0: key field `$.id` is an object; a primary key field must hold a scalar",
@@ -211,6 +223,8 @@ def test_unusable_primary_keys_fail_with_stream_record_and_key_path(
 def test_primary_key_errors_never_print_key_values() -> None:
     message = _key_error([["id"], ["org"]], {"id": {"x": SENTINEL}, "org": [SENTINEL]})
     assert message is not None
+    # One record with two problems is one invalid record.
+    assert "1 of 1 records have an invalid primary key." in message
     assert "`$.id` is an object" in message
     assert "`$.org` is an array" in message
     assert SENTINEL not in message
@@ -399,6 +413,75 @@ def test_legacy_state_fails() -> None:
     assert "state message(s) #2." in message
 
 
+def _stream_state(
+    stream: str,
+    *,
+    state_type: AirbyteStateType | None = AirbyteStateType.STREAM,
+    with_stream: bool = True,
+    source_stats: AirbyteStateStats | None = None,
+) -> AirbyteMessage:
+    return AirbyteMessage(
+        type=Type.STATE,
+        state=AirbyteStateMessage(
+            type=state_type,
+            stream=(
+                AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name=stream),
+                    stream_state=AirbyteStateBlob(cursor=1),
+                )
+                if with_stream
+                else None
+            ),
+            sourceStats=source_stats or AirbyteStateStats(recordCount=1.0),
+        ),
+    )
+
+
+def test_untyped_state_fails_and_covers_no_stream() -> None:
+    # The in-process entrypoint passes an untyped state that carries `stream`.
+    message = _state_error([final_state("a", record_count=1), _stream_state("b", state_type=None)])
+    assert message is not None
+    assert "1 of 2 configured streams emitted no `STREAM` or `GLOBAL` state message: 'b'" in message
+    assert "1 of 2 state messages use the deprecated `LEGACY` state type (or no type)" in message
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param(_stream_state("b", with_stream=False), id="stream_without_stream"),
+        pytest.param(
+            AirbyteMessage(
+                type=Type.STATE,
+                state=AirbyteStateMessage(
+                    type=AirbyteStateType.GLOBAL, sourceStats=AirbyteStateStats(recordCount=1.0)
+                ),
+            ),
+            id="global_without_global",
+        ),
+    ],
+)
+def test_state_without_the_object_its_type_names_fails(state: AirbyteMessage) -> None:
+    message = _state_error([final_state("a", record_count=1), state])
+    assert message is not None
+    assert (
+        "1 of 2 state messages are of type `STREAM` without a `stream` object, or `GLOBAL` "
+        "without a `global` object: state message(s) #1." in message
+    )
+    assert "`LEGACY`" not in message
+
+
+def test_state_without_a_record_count_fails() -> None:
+    message = _state_error(
+        [
+            final_state("a", record_count=1),
+            _stream_state("b", source_stats=AirbyteStateStats(recordCount=None)),
+        ]
+    )
+    assert message is not None
+    assert "1 of 2 state messages carry no `sourceStats.recordCount`" in message
+    assert "state message(s) #1." in message
+
+
 def test_state_without_source_stats_fails() -> None:
     message = _state_error([final_state("a", record_count=1), final_state("b")])
     assert message is not None
@@ -475,6 +558,9 @@ def test_no_error_trace_fails() -> None:
             _error_trace(failure_type=None), "an `error.failure_type`", id="no_failure_type"
         ),
         pytest.param(_error_trace(emitted_at=0), "a positive `emitted_at`", id="no_emitted_at"),
+        pytest.param(
+            _error_trace(emitted_at=True), "a positive `emitted_at`", id="boolean_emitted_at"
+        ),
         pytest.param(_error_trace(with_error=False), "the `error` object", id="no_error_object"),
     ],
 )
@@ -765,6 +851,13 @@ def test_basic_read_warns_on_missing_stream_statuses(tmp_path: Path) -> None:
         suite.test_basic_read(_scenario())
 
 
+def test_basic_read_warns_on_stream_statuses_when_a_check_fails(tmp_path: Path) -> None:
+    suite = _suite(tmp_path, _Source([{"id": None, "name": "x"}], emit_statuses=False))
+    with pytest.warns(StreamStatusWarning, match="reported no stream status: 'users'"):
+        with pytest.raises(AssertionError, match=MSG_PRIMARY_KEY):
+            suite.test_basic_read(_scenario())
+
+
 def test_basic_read_does_not_warn_on_complete_stream_statuses(tmp_path: Path) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", StreamStatusWarning)
@@ -792,10 +885,14 @@ def test_fail_read_with_invalid_config_passes_when_the_spec_rejects_it(tmp_path:
 
 
 def test_fail_read_with_invalid_config_fails_when_the_read_succeeds(tmp_path: Path) -> None:
-    with pytest.raises(AssertionError, match="Expected exception but got none"):
+    with pytest.raises(AssertionError) as error:
         _suite(
             tmp_path, _Source([{"id": 1}], behavior="skip_config_check")
         ).test_fail_read_with_invalid_config()
+    message = str(error.value)
+    assert "The read succeeded with a config that the connector's spec rejects" in message
+    assert "`check_config_against_spec = False`" in message
+    assert "`expect_trace_message_on_failure: false`" in message
 
 
 def test_fail_read_with_invalid_config_fails_on_a_malformed_trace(tmp_path: Path) -> None:
@@ -846,6 +943,15 @@ def test_fail_read_with_invalid_config_honours_the_opt_out(tmp_path: Path) -> No
 
 def test_fail_read_with_bad_catalog_checks_the_trace(tmp_path: Path) -> None:
     _suite(tmp_path, _Source([{"id": 1}])).test_fail_read_with_bad_catalog(_scenario())
+
+
+def test_fail_read_with_bad_catalog_fails_on_a_malformed_trace(tmp_path: Path) -> None:
+    # Without the stub, the entrypoint rejects the invalid catalog before the source reads.
+    source = _Source(behavior="malformed_trace")
+    source.read_catalog = lambda catalog_path: ConfiguredAirbyteCatalog(streams=[])  # type: ignore[method-assign]
+    with pytest.raises(AssertionError, match=MSG_MALFORMED_TRACE) as error:
+        _suite(tmp_path, source).test_fail_read_with_bad_catalog(_scenario())
+    assert SENTINEL not in str(error.value)
 
 
 def test_fail_read_with_bad_catalog_honours_the_opt_out(tmp_path: Path) -> None:

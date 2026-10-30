@@ -2,7 +2,7 @@
 
 ## Upgrading to the next minor release (unreleased)
 
-This release of the CDK adds three checks of the Connector Acceptance Tests (CAT) basic read test to the Standard Tests, and reports a fourth (stream statuses) without enforcing it. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the new checks up with this release, without a per-connector CDK bump.
+This release of the CDK adds three checks of the Connector Acceptance Tests (CAT) basic read test to the Standard Tests, and reports a fourth (stream statuses) without enforcing it. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. Manifest-only connectors get the new checks with this release, because the connector monorepo installs the `airbyte-cdk` CLI unpinned. Python sources run the same suite in-process with the CDK they pin (airbytehq/airbyte#88945), so they get the new checks when they bump to this release.
 
 ### Every record has a usable primary key (`basic_read`)
 
@@ -21,7 +21,7 @@ For the same configs, `test_basic_read` now checks the state messages of the rea
 - No state message may use the deprecated `LEGACY` state type, or no type.
 - Every state message must carry `sourceStats.recordCount`.
 
-The CDK emits a final state message for every stream it completes, including full-refresh streams, and its entrypoint adds `sourceStats`, so a CDK connector meets the last two checks whenever it reads every stream to the end.
+The CDK emits a final state message for every stream it completes, including full-refresh streams, and its entrypoint adds `sourceStats`, so a CDK connector that reads every stream to the end meets all three checks.
 
 ### A failed read reports a well-formed error trace
 
@@ -38,9 +38,9 @@ Migration steps:
 - A record with an invalid primary key: fix the stream's `primary_key` (or the record) so that every record has a scalar key. To skip the check for one config while the fix is pending, set `validate_primary_keys_data_type: false` in its `basic_read` entry, with a YAML comment giving the reason. As in CAT, this is allowed at `test_strictness_level: high`.
 - A stream without state: a stream that ends early, or a source that emits only `LEGACY` state, has to be fixed. To skip the check for one config while the fix is pending, set `validate_state_messages: false` in its `basic_read` entry, with a YAML comment giving the reason.
 - A failed read without a well-formed error trace: make the connector raise (or emit) an `AirbyteTracedException` for invalid configs and catalogs. To skip the check, set `expect_trace_message_on_failure: false` in a `basic_read` entry, with a YAML comment giving the reason; this skips `test_fail_read_with_bad_catalog` for that config and `test_fail_read_with_invalid_config` for the whole connector.
-- `validate_state_messages: false` and `expect_trace_message_on_failure: false` in a `basic_read` entry now skip their checks. 7.39.0 and 7.40.0 accepted both keys in that section and ignored them. `validate_primary_keys_data_type`, which 7.39.0 and 7.40.0 reject as an unknown key, is read from this release on.
+- `validate_state_messages: false` and `expect_trace_message_on_failure: false` in a `basic_read` entry now skip their checks. 7.39.0 through 7.41.0 accepted both keys in that section and ignored them. `validate_primary_keys_data_type`, which 7.39.0 through 7.41.0 reject as an unknown key, is read from this release on.
 - A `StreamStatusWarning`: nothing to do yet. A connector that emits its own messages instead of the CDK's should emit `STARTED`, `RUNNING` and `COMPLETE` stream statuses for every stream it reads.
-- `validate_primary_keys_data_type`, `validate_state_messages` and `expect_trace_message_on_failure` are read only from `basic_read` entries, as in CAT. In an entry of any other section they fail collection, as they did in 7.39.0 through 7.41.0, naming the key, the section and the config: move the key to the config's `basic_read` entry. (CAT's `discovery` entries had their own `validate_primary_keys_data_type`, which skipped a different check.)
+- `validate_schema`, `validate_primary_keys_data_type`, `validate_state_messages` and `expect_trace_message_on_failure` are read only from `basic_read` entries, as in CAT. In an entry of any other section they fail collection, naming the key, the section and the config: move the key to the config's `basic_read` entry. For the last three this is how 7.39.0 through 7.41.0 behaved. `validate_schema` is new to the rule: 7.39.0 through 7.41.0 accepted it in any section, and a `false` there turned off the schema check of the config's `basic_read` read. (CAT's `discovery` entries had their own `validate_primary_keys_data_type`, which skipped a different check.)
 - A config listed under several sections keeps an opt-out that any of its entries declares, as for `validate_schema`.
 
 Rationale: Destinations deduplicate on the primary key; a record whose key is an object, an array or entirely missing cannot be deduplicated. A stream that emits no state cannot be resumed, and the platform cannot tell whether it completed. A failed read without a well-formed error trace gives users and the platform no reason for the failure. CAT checked all three for every `basic_read` config, and the Standard Tests that replaced it did not.

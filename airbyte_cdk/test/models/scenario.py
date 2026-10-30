@@ -113,6 +113,7 @@ is rejected (see `entry_key_problems`).
 
 BASIC_READ_ONLY_FIELDS: frozenset[str] = frozenset(
     {
+        "validate_schema",
         "validate_primary_keys_data_type",
         "validate_state_messages",
         "expect_trace_message_on_failure",

@@ -459,6 +459,7 @@ def _find_state_message_failures(
     covered: set[tuple[str | None, str]] = set()
     state_count = 0
     legacy_states: list[int] = []
+    states_without_object: list[int] = []
     states_without_stats: list[int] = []
     for message in state_messages:
         state = message.state
@@ -474,6 +475,8 @@ def _find_state_message_failures(
                 (stream_state.stream_descriptor.namespace, stream_state.stream_descriptor.name)
                 for stream_state in state.global_.stream_states or []
             )
+        elif state.type in (AirbyteStateType.STREAM, AirbyteStateType.GLOBAL):
+            states_without_object.append(state_number)
         else:
             legacy_states.append(state_number)
         if state.sourceStats is None or state.sourceStats.recordCount is None:
@@ -501,6 +504,12 @@ def _find_state_message_failures(
             f"- {len(legacy_states)} of {state_count} state messages use the deprecated `LEGACY` "
             f"state type (or no type): state message(s) {_numbers(legacy_states)}. Emit "
             "per-stream `STREAM` state (or `GLOBAL` state) instead."
+        )
+    if states_without_object:
+        failures.append(
+            f"- {len(states_without_object)} of {state_count} state messages are of type "
+            "`STREAM` without a `stream` object, or `GLOBAL` without a `global` object: state "
+            f"message(s) {_numbers(states_without_object)}. Emit the object that the type names."
         )
     if states_without_stats:
         failures.append(
