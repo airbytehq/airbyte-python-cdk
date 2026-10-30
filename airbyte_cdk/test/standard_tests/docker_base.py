@@ -189,6 +189,50 @@ def get_default_read_scenario_ids(scenarios: list[ConnectorTestScenario]) -> set
     return picked
 
 
+def fail_on_unknown_read_scenarios(
+    read_scenarios: list[str],
+    scenarios: list[ConnectorTestScenario],
+) -> None:
+    """Fail when `--read-scenarios` names a config that is not one of the connector's read configs.
+
+    The names were lowercased by the `read_scenarios` fixture, and match config ids in any case.
+    Without this check a misspelled name would skip every Docker read, and the run would pass.
+    """
+    read_ids = sorted({scenario.id for scenario in scenarios if scenario.runs("read")})
+    known = {scenario_id.lower() for scenario_id in read_ids}
+    unknown = [name for name in read_scenarios if name not in known]
+    if unknown:
+        pytest.fail(
+            f"`--read-scenarios={','.join(read_scenarios)}` names configs that are not listed "
+            f"under `basic_read` or `full_refresh` in `acceptance-test-config.yml`: "
+            f"{', '.join(map(repr, unknown))}. The read configs are: "
+            f"{', '.join(map(repr, read_ids)) or 'none'}."
+        )
+
+
+def fail_on_undiscovered_read_streams(
+    read_from_streams: list[str],
+    discovered_streams: list[AirbyteStream],
+    *,
+    scenario_id: str,
+) -> None:
+    """Fail when `--read-from-streams` names a stream that `discover` does not report for a config.
+
+    Stream names match exactly, case included, as they do in a catalog. Without this check a
+    misspelled name would skip every Docker read, and the run would pass.
+    """
+    discovered_names = sorted(stream.name for stream in discovered_streams)
+    unknown = [name for name in read_from_streams if name not in set(discovered_names)]
+    if unknown:
+        pytest.fail(
+            f"`--read-from-streams={','.join(read_from_streams)}` names streams that `discover` "
+            f"does not report for config '{scenario_id}': {', '.join(map(repr, unknown))}. "
+            "Stream names match exactly, case included. The discovered streams "
+            f"are: {', '.join(map(repr, discovered_names)) or 'none'}. If only another config "
+            "discovers the stream, pick that config with `--read-scenarios`."
+        )
+
+
 def select_docker_read_streams(
     read_streams: list[AirbyteStream],
     *,
@@ -961,8 +1005,9 @@ class DockerConnectorTestSuite:
         `--read-from-streams=default` reads the streams above; a stream list narrows them.
         `--read-scenarios` picks which configs are read (by default `config`, `valid_config` and
         `default`, plus a `basic_read` config if none of those is one; see
-        `get_default_read_scenario_ids`). See the
-        `read_from_streams` and `read_scenarios` fixtures.
+        `get_default_read_scenario_ids`). A config or stream name that matches nothing fails the
+        test, so a typo cannot skip every read. See the `read_from_streams` and `read_scenarios`
+        fixtures.
 
         Note:
           - If the --connector-image arg is provided, it will be used instead of building the image.
@@ -992,11 +1037,13 @@ class DockerConnectorTestSuite:
                     f"`--read-scenarios=default` reads {', '.join(sorted(map(repr, default_ids)))}. "
                     "Pass `--read-scenarios=all` to read every config."
                 )
-        elif read_scenarios != "all" and scenario.id.lower() not in read_scenarios:
-            pytest.skip(
-                f"Skipping the Docker read of config '{scenario.id}': not in "
-                f"`--read-scenarios={','.join(read_scenarios)}`."
-            )
+        elif read_scenarios != "all":
+            fail_on_unknown_read_scenarios(read_scenarios, self.get_scenarios())
+            if scenario.id.lower() not in read_scenarios:
+                pytest.skip(
+                    f"Skipping the Docker read of config '{scenario.id}': not in "
+                    f"`--read-scenarios={','.join(read_scenarios)}`."
+                )
 
         if scenario.is_basic_read_config:
             assert_schema_validation_opt_out_allowed(
@@ -1039,19 +1086,20 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
+            discovered_streams = get_discovered_streams(discover_result, connector_name)
+            if isinstance(read_from_streams, list):
+                fail_on_undiscovered_read_streams(
+                    read_from_streams, discovered_streams, scenario_id=scenario.id
+                )
             read_streams = select_docker_read_streams(
-                get_read_streams(
-                    scenario,
-                    get_discovered_streams(discover_result, connector_name),
-                    connector_root,
-                ),
+                get_read_streams(scenario, discovered_streams, connector_root),
                 read_from_streams=read_from_streams,
             )
             if not read_streams and isinstance(read_from_streams, list):
                 pytest.skip(
                     f"Skipping the Docker read of config '{scenario.id}': none of the streams in "
-                    f"`--read-from-streams={','.join(read_from_streams)}` is "
-                    "read for it."
+                    f"`--read-from-streams={','.join(read_from_streams)}` is read for it (its "
+                    "`configured_catalog_path` leaves them out, or its `empty_streams` lists them)."
                 )
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(

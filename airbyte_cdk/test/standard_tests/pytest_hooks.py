@@ -72,9 +72,12 @@ def read_from_streams(
       `test_basic_read` reads: those of the config's `configured_catalog_path`, or every
       discovered stream, minus its `empty_streams`. The connector's `suggestedStreams` play no
       part.
-    - `--read-from-streams=stream1,stream2`: Read only these of those streams. A config that reads
-      none of them is skipped. A value that names no stream, such as an empty one, is a usage
-      error, so a CI variable that expands to nothing cannot turn the read off unnoticed.
+    - `--read-from-streams=stream1,stream2`: Read only these of those streams. Names match
+      exactly, case included, as in a catalog. A name that `discover` does not report fails the
+      test; a config whose `configured_catalog_path` or `empty_streams` leaves out every listed
+      stream is skipped. A value that names no stream, such as an empty one, is a usage error.
+      Neither a misspelled name nor a CI variable that expands to nothing can turn the read off
+      unnoticed.
 
     Which configs are read is set by `--read-scenarios`. The two options combine: the test reads
     the streams selected here for each config selected there.
@@ -118,10 +121,13 @@ def read_scenarios(
 
     - [Omitted] or `--read-scenarios=default`: Read the configs whose file name (without `.json`)
       is `config`, `valid_config` or `default`. A connector with none of those reads its first
-      read config instead, so the default never skips every Docker read of a connector.
+      `basic_read` config instead (or its first read config, when none is under `basic_read`), so
+      the default never skips every Docker read of a connector. A `basic_read` config is added
+      when none of the picked configs is one.
     - `--read-scenarios=all`: Read every read config.
     - `--read-scenarios=scenario1,scenario2`: Read only these configs (by file name, with or
-      without `.json`); the others are skipped.
+      without `.json`, in any case); the others are skipped. A name that is not one of the
+      connector's read configs fails the test.
     - `--read-scenarios=none`: Skip the Docker read test, like `--read-from-streams=false`.
 
     An empty value means `default`. A value made only of separators, such as `,`, is a usage

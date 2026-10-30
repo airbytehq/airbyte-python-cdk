@@ -5,7 +5,8 @@
 - `--read-scenarios=default` reads the `config`, `valid_config` and `default` configs, or the first
   read config of a connector that has none of those, so it never skips every read. It adds a
   `basic_read` config when none of the picked ones is listed under `basic_read`.
-- A value of either option that names nothing is an error, not a silent skip.
+- A value of either option that names nothing is an error, not a silent skip; so is a config name
+  that is not a read config, or a stream name that `discover` does not report (matched exactly).
 - `--read-from-streams=default` reads the streams `test_basic_read` reads; `suggestedStreams` play
   no part.
 - A `basic_read` config must return records from every stream it reads, and the records must
@@ -32,6 +33,7 @@ from unit_tests.test.standard_test_stubs import (
     catalog_message,
     entry,
     record_message,
+    run_without_skip,
     scenario,
     state_message,
     stream_json,
@@ -87,14 +89,8 @@ def _docker_read_suite(
 def _read(
     suite: DockerConnectorTestSuite, test_scenario: ConnectorTestScenario, **options: Any
 ) -> None:
-    """Run the Docker read test, which must not skip.
-
-    A skip raised by the test under test would otherwise skip this unit test too, and pass in CI.
-    """
-    try:
-        suite.test_docker_image_build_and_read(test_scenario, **(DEFAULTS | options))
-    except pytest.skip.Exception as skip:
-        pytest.fail(f"The Docker read was skipped instead of run: {skip}")
+    """Run the Docker read test, which must not skip."""
+    run_without_skip(suite.test_docker_image_build_and_read, test_scenario, **(DEFAULTS | options))
 
 
 def _read_skips(
@@ -207,7 +203,14 @@ def test_docker_read_scenario_list_skips_other_configs(
         monkeypatch,
         {"discover": DISCOVER, "read": _read_output("users", "events")},
     )
-    suite = _docker_read_suite(tmp_path)
+    suite = _docker_read_suite(
+        tmp_path,
+        {
+            "basic_read": {
+                "tests": [entry("secrets/config.json"), entry("secrets/Config_OAuth.json")]
+            }
+        },
+    )
     _read_skips(
         suite,
         scenario("basic_read"),
@@ -218,6 +221,29 @@ def test_docker_read_scenario_list_skips_other_configs(
 
     _read(suite, scenario("basic_read", name="Config_OAuth"), read_scenarios=["config_oauth"])
     assert len(_read_commands(calls)) == 1
+
+
+def test_docker_read_fails_on_an_unknown_config_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A misspelled config name used to skip every Docker read, and the run passed."""
+    calls = stub_docker(monkeypatch, {"discover": DISCOVER})
+    suite = _docker_read_suite(
+        tmp_path,
+        {
+            "connection": {"tests": [entry("secrets/check_only.json")]},
+            "basic_read": {"tests": [entry("secrets/config.json")]},
+        },
+    )
+    # `check_only` is a config, but not a read config.
+    for read_scenarios in (["confg"], ["config", "check_only"]):
+        with pytest.raises(
+            pytest.fail.Exception,
+            match=r"names configs that are not listed under `basic_read` or `full_refresh`.*"
+            r"The read configs are: 'config'\.",
+        ):
+            _read(suite, scenario("basic_read"), read_scenarios=read_scenarios)
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -348,15 +374,41 @@ def test_docker_read_streams(
     assert [stream["stream"]["name"] for stream in catalogs[-1]["streams"]] == expected
 
 
-def test_docker_read_skips_when_the_stream_list_matches_nothing(
+@pytest.mark.parametrize(
+    "read_from_streams, unknown",
+    [
+        pytest.param(["other", "more"], "'other', 'more'", id="unknown-streams"),
+        pytest.param(["users", "Events"], "'Events'", id="case-differs"),
+    ],
+)
+def test_docker_read_fails_on_a_stream_that_is_not_discovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, read_from_streams: list[str], unknown: str
+) -> None:
+    """A misspelled stream name used to skip every Docker read, and the run passed."""
+    calls = stub_docker(monkeypatch, {"discover": DISCOVER})
+    with pytest.raises(
+        pytest.fail.Exception,
+        match=re.escape(f"does not report for config 'config': {unknown}. ")
+        + r".*The discovered streams are: 'events', 'users'\.",
+    ):
+        _read(
+            _docker_read_suite(tmp_path),
+            scenario("basic_read"),
+            read_from_streams=read_from_streams,
+        )
+    assert _read_commands(calls) == []
+
+
+def test_docker_read_skips_a_config_that_reads_none_of_the_listed_streams(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A discovered stream that this config leaves out skips the config instead of failing it."""
     calls = stub_docker(monkeypatch, {"discover": DISCOVER})
     _read_skips(
         _docker_read_suite(tmp_path),
-        scenario("basic_read"),
-        r"`--read-from-streams=other,more`",
-        read_from_streams=["other", "more"],
+        scenario("basic_read", empty_streams=[{"name": "events", "bypass_reason": "no data"}]),
+        r"none of the streams in `--read-from-streams=events` is read for it",
+        read_from_streams=["events"],
     )
     assert _read_commands(calls) == []
 

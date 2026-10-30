@@ -60,6 +60,7 @@ from unit_tests.test.standard_test_stubs import Reached as _Reached
 from unit_tests.test.standard_test_stubs import catalog_message as _catalog_message
 from unit_tests.test.standard_test_stubs import entry as _entry
 from unit_tests.test.standard_test_stubs import record_message as _record_message
+from unit_tests.test.standard_test_stubs import run_without_skip as _run_without_skip
 from unit_tests.test.standard_test_stubs import scenario as _scenario
 from unit_tests.test.standard_test_stubs import state_message as _state_message
 from unit_tests.test.standard_test_stubs import stream_json as _stream_json
@@ -353,7 +354,7 @@ def test_source_suite_runs_each_test_for_its_sections(
 
     if SECTION_COMMANDS[section] & commands:
         with pytest.raises(_Reached):
-            getattr(suite, test_name)(scenario)
+            _run_without_skip(getattr(suite, test_name), scenario)
     else:
         with pytest.raises(pytest.skip.Exception, match=r"do(es)? not run for scenario"):
             getattr(suite, test_name)(scenario)
@@ -365,7 +366,7 @@ def test_source_suite_runs_every_test_for_hand_built_scenarios(
 ) -> None:
     suite = _suite_class(tmp_path, ALL_SECTIONS_CONFIG, base=SourceTestSuiteBase)()
     with pytest.raises(_Reached):
-        getattr(suite, test_name)(_scenario())
+        _run_without_skip(getattr(suite, test_name), _scenario())
 
 
 @pytest.mark.parametrize("test_name", ["test_check", "test_config_matches_spec"])
@@ -391,7 +392,7 @@ def _docker_kwargs(test_name: str) -> dict[str, Any]:
         "connector_base_image_override": None,
     }
     if test_name == "test_docker_image_build_and_read":
-        kwargs |= {"read_from_streams": "all", "read_scenarios": "all"}
+        kwargs |= {"read_from_streams": "default", "read_scenarios": "all"}
     return kwargs
 
 
@@ -417,7 +418,7 @@ def test_docker_suite_runs_each_test_for_its_sections(
 
     if SECTION_COMMANDS[section] & commands:
         with pytest.raises(_Reached):
-            getattr(suite, test_name)(scenario, **_docker_kwargs(test_name))
+            _run_without_skip(getattr(suite, test_name), scenario, **_docker_kwargs(test_name))
     else:
         with pytest.raises(pytest.skip.Exception, match=r"do(es)? not run for scenario"):
             getattr(suite, test_name)(scenario, **_docker_kwargs(test_name))
@@ -454,7 +455,7 @@ def test_config_matches_spec_validates_the_config_without_leaking_it(
 ) -> None:
     suite = _suite_class(tmp_path, {}, base=base, make_connector=_SpecSource)()
 
-    suite.test_config_matches_spec(_scenario("spec", config=VALID_CONFIG))
+    _run_without_skip(suite.test_config_matches_spec, _scenario("spec", config=VALID_CONFIG))
 
     with pytest.raises(
         AssertionError,
@@ -585,8 +586,9 @@ def test_discover_fails_on_an_empty_catalog(tmp_path: Path) -> None:
 def test_basic_read_reads_every_stream_full_refresh(tmp_path: Path) -> None:
     catalogs: list[ConfiguredAirbyteCatalog] = []
     suite = _read_suite(tmp_path, "records", [USERS, EVENTS, STATIC], catalogs)
-    suite.test_basic_read(
-        _scenario("basic_read", empty_streams=[{"name": "static", "bypass_reason": "no data"}])
+    _run_without_skip(
+        suite.test_basic_read,
+        _scenario("basic_read", empty_streams=[{"name": "static", "bypass_reason": "no data"}]),
     )
     assert _configured(catalogs[-1]) == [
         ("users", SyncMode.full_refresh, None),
@@ -628,12 +630,13 @@ def test_basic_read_reads_the_declared_catalog_full_refresh(tmp_path: Path, sect
     suite = _read_suite(tmp_path, "records", [USERS, EVENTS, STATIC], catalogs)
     catalog_path = _write_declared_catalog(tmp_path, "static", "users", "static", "events")
 
-    suite.test_basic_read(
+    _run_without_skip(
+        suite.test_basic_read,
         _scenario(
             section,
             configured_catalog_path=catalog_path,
             empty_streams=[{"name": "events", "bypass_reason": "no data"}],
-        )
+        ),
     )
 
     assert _configured(catalogs[-1]) == [
@@ -719,8 +722,10 @@ def test_docker_config_matches_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     suite = _suite_class(tmp_path, {}, base=DockerConnectorTestSuite)()
     kwargs = _docker_kwargs("test_docker_image_build_and_config_matches_spec")
 
-    suite.test_docker_image_build_and_config_matches_spec(
-        _scenario("spec", config=VALID_CONFIG), **kwargs
+    _run_without_skip(
+        suite.test_docker_image_build_and_config_matches_spec,
+        _scenario("spec", config=VALID_CONFIG),
+        **kwargs,
     )
     assert calls[-1][-2:] == [IMAGE, "spec"]
 
@@ -737,8 +742,10 @@ def test_docker_discover(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     )
     suite = _suite_class(tmp_path, {}, base=DockerConnectorTestSuite)()
 
-    suite.test_docker_image_build_and_discover(
-        _scenario("discovery"), **_docker_kwargs("test_docker_image_build_and_discover")
+    _run_without_skip(
+        suite.test_docker_image_build_and_discover,
+        _scenario("discovery"),
+        **_docker_kwargs("test_docker_image_build_and_discover"),
     )
     assert calls[-1][-4:-1] == [IMAGE, "discover", "--config"]
     assert calls[-1][3:7] == list(CONNECTOR_WORKDIR_ARGS)
@@ -805,7 +812,8 @@ def test_docker_read_configures_the_catalog_for_the_section(
     )
     suite = _suite_class(tmp_path, {}, base=DockerConnectorTestSuite)()
 
-    suite.test_docker_image_build_and_read(
+    _run_without_skip(
+        suite.test_docker_image_build_and_read,
         # `empty_streams` used to crash the Docker read (names compared as streams).
         _scenario(*sections, empty_streams=[{"name": "static", "bypass_reason": "no data"}]),
         **_docker_kwargs("test_docker_image_build_and_read"),
@@ -839,7 +847,8 @@ def test_docker_read_uses_the_declared_catalog(
     catalog_path = _write_declared_catalog(tmp_path, "static", "users", "events")
     kwargs = _docker_kwargs("test_docker_image_build_and_read")
 
-    suite.test_docker_image_build_and_read(
+    _run_without_skip(
+        suite.test_docker_image_build_and_read,
         _scenario(
             "full_refresh",
             configured_catalog_path=catalog_path,
@@ -855,10 +864,15 @@ def test_docker_read_uses_the_declared_catalog(
         ("events", "full_refresh", None, {"type": "object"}),
     ], "the catalog's streams, full refresh even when incremental comes first, discovered schemas"
 
-    # `--read-from-streams` narrows the declared catalog further.
-    suite.test_docker_image_build_and_read(
-        _scenario("full_refresh", configured_catalog_path=catalog_path),
-        **(kwargs | {"read_from_streams": ["users", "not_in_catalog"]}),
+    # `--read-from-streams` narrows the declared catalog, minus `empty_streams`, further.
+    _run_without_skip(
+        suite.test_docker_image_build_and_read,
+        _scenario(
+            "full_refresh",
+            configured_catalog_path=catalog_path,
+            empty_streams=[{"name": "static", "bypass_reason": "no data"}],
+        ),
+        **(kwargs | {"read_from_streams": ["users", "static"]}),
     )
     assert [s["stream"]["name"] for s in catalogs[-1]["streams"]] == ["users"]
 
