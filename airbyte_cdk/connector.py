@@ -31,8 +31,15 @@ TConfig = TypeVar("TConfig", bound=Mapping[str, Any])
 
 
 class BaseConnector(ABC, Generic[TConfig]):
-    # configure whether the `check_config_against_spec_or_exit()` needs to be called
     check_config_against_spec: bool = True
+    """Configure whether `check_config_against_spec_or_exit()` needs to be called."""
+
+    check_config_during_discover: bool = True
+    """Whether `discover` requires a config and validates it against the spec.
+
+    Set to `False` for sources that can build their catalog without a config (and therefore
+    without credentials), which allows `discover` to run without `--config`.
+    """
 
     @abstractmethod
     def configure(self, config: Mapping[str, Any], temp_dir: str) -> TConfig:

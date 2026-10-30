@@ -293,6 +293,8 @@ class ConcurrentDeclarativeSource(Source):
             message_repository=self._message_repository,
         )
 
+        self.check_config_during_discover = self._requires_config_for_discover()
+
     def _pre_process_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
         Preprocesses the provided manifest dictionary by resolving any manifest references.
@@ -1091,3 +1093,35 @@ class ConcurrentDeclarativeSource(Source):
                     as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
                 )
         return abstract_streams
+
+    def _requires_config_for_discover(self) -> bool:
+        """Return whether `discover` needs a config to build this source's catalog.
+
+        A config is required when the set of streams depends on the config (`ConditionalStreams`,
+        or `dynamic_streams` resolved from the API or the config rather than static parameters), or
+        when any stream schema is fetched from the API (`DynamicSchemaLoader`).
+        """
+        for dynamic_definition in self._source_config.get("dynamic_streams", []):
+            resolver_type = dynamic_definition.get("components_resolver", {}).get("type")
+            if resolver_type != "ParametrizedComponentsResolver":
+                return True
+
+        stream_definitions = [
+            self._source_config.get("streams", []),
+            self._source_config.get("dynamic_streams", []),
+        ]
+        return any(
+            _contains_component_type(stream_definitions, component_type)
+            for component_type in ("ConditionalStreams", "DynamicSchemaLoader")
+        )
+
+
+def _contains_component_type(node: Any, component_type: str) -> bool:
+    """Return whether any mapping nested under `node` has the given component `type`."""
+    if isinstance(node, Mapping):
+        return node.get("type") == component_type or any(
+            _contains_component_type(value, component_type) for value in node.values()
+        )
+    if isinstance(node, list):
+        return any(_contains_component_type(item, component_type) for item in node)
+    return False
