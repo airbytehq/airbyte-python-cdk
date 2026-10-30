@@ -4851,7 +4851,7 @@ def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_
     resume_state = _resume_state(attempt_a, initial_state)
     windows_a = list(comment_request_windows)
     before_b = len(vote_requests)
-    attempt_b = run(resume_state, fail_post_two=False, expecting_exception=False)
+    run(resume_state, fail_post_two=False, expecting_exception=False)
     requests_b = vote_requests[before_b:]
     windows_b = comment_request_windows[len(windows_a) :]
     assert state_a is not None
