@@ -3,7 +3,7 @@ import copy
 import re
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Callable, List, Mapping, MutableMapping, Optional, Union
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -4667,7 +4667,9 @@ def test_given_failed_slice_generation_after_records_when_ensure_state_emitted_t
     assert cursor.state.get("state") == expected_global_state
 
 
-def _pr_a_manifest(global_substream_cursor=True, middle_parent_cursor=False):
+def _dated_substream_manifest(
+    global_substream_cursor: bool = True, middle_parent_cursor: bool = False
+) -> MutableMapping[str, Any]:
     manifest = deepcopy(SUBSTREAM_MANIFEST)
     manifest["definitions"]["posts_stream"]["incremental_sync"] = {
         "type": "DatetimeBasedCursor",
@@ -4725,11 +4727,17 @@ def _pr_a_manifest(global_substream_cursor=True, middle_parent_cursor=False):
     return manifest
 
 
-def _pr_a_posts_response(posts, failed_days=()):
-    def response(request, context):
+def _posts_response(
+    posts: List[Mapping[str, Any]],
+    failed_days: tuple[str, ...] = (),
+    request_windows: Optional[List[tuple[str, str]]] = None,
+) -> Callable[[Any, Any], Mapping[str, Any]]:
+    def response(request: Any, context: Any) -> Mapping[str, Any]:
         query = parse_qs(urlparse(request.url).query)
         start_time = query["start_time"][0]
         end_time = query["end_time"][0]
+        if request_windows is not None:
+            request_windows.append((start_time, end_time))
         if start_time[:10] in failed_days:
             context.status_code = 500
             return {"error": {"message": "parent slice failed"}}
@@ -4739,7 +4747,7 @@ def _pr_a_posts_response(posts, failed_days=()):
     return response
 
 
-def _pr_a_state_message(stream_name, stream_state):
+def _state_message(stream_name: str, stream_state: Mapping[str, Any]) -> AirbyteStateMessage:
     return AirbyteStateMessage(
         type=AirbyteStateType.STREAM,
         stream=AirbyteStreamState(
@@ -4749,12 +4757,14 @@ def _pr_a_state_message(stream_name, stream_state):
     )
 
 
-def _pr_a_last_state(output):
+def _last_state(output: EntrypointOutput) -> Optional[AirbyteStateBlob]:
     return output.state_messages[-1].state.stream.stream_state if output.state_messages else None
 
 
-def test_pr_a_t1_nested_parent_failure_non_regression_replays_comments_on_resume():
-    manifest = _pr_a_manifest(middle_parent_cursor=True)
+def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_grandchild_is_read() -> (
+    None
+):
+    manifest = _dated_substream_manifest(middle_parent_cursor=True)
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
     posts = [
         {"id": 1, "updated_at": "2024-01-01T10:00:00Z"},
@@ -4772,12 +4782,16 @@ def test_pr_a_t1_nested_parent_failure_non_regression_replays_comments_on_resume
         .build()
     )
 
-    def run(state, fail_post_two, expecting_exception):
+    def run(
+        state: Optional[List[AirbyteStateMessage]],
+        fail_post_two: bool,
+        expecting_exception: bool,
+    ) -> EntrypointOutput:
         source = ConcurrentDeclarativeSource(
-            source_config=manifest, config=config, catalog=None, state=None
+            source_config=manifest, config=config, catalog=None, state=state
         )
 
-        def comments_response(request, context):
+        def comments_response(request: Any, context: Any) -> Mapping[str, Any]:
             post_id = request.path.split("/")[-2]
             query = parse_qs(urlparse(request.url).query)
             window = (
@@ -4804,14 +4818,14 @@ def test_pr_a_t1_nested_parent_failure_non_regression_replays_comments_on_resume
                 )
             }
 
-        def votes_response(request, context):
+        def votes_response(request: Any, context: Any) -> Mapping[str, Any]:
             vote_requests.append(request.path.split("/")[-2])
             return {"votes": []}
 
         with requests_mock.Mocker() as mocker:
             mocker.get(
                 re.compile(r"https://api\.example\.com/community/posts.*"),
-                json=_pr_a_posts_response(posts),
+                json=_posts_response(posts),
             )
             mocker.get(
                 re.compile(r"https://api\.example\.com/community/posts/.*/comments.*"),
@@ -4833,44 +4847,47 @@ def test_pr_a_t1_nested_parent_failure_non_regression_replays_comments_on_resume
     before_a = len(vote_requests)
     attempt_a = run(initial_state, fail_post_two=True, expecting_exception=True)
     requests_a = vote_requests[before_a:]
-    state_a = _pr_a_last_state(attempt_a)
-    resume_state = [attempt_a.state_messages[-1].state] if state_a is not None else initial_state
+    state_a = _last_state(attempt_a)
+    resume_state = _resume_state(attempt_a, initial_state)
     windows_a = list(comment_request_windows)
     before_b = len(vote_requests)
     attempt_b = run(resume_state, fail_post_two=False, expecting_exception=False)
     requests_b = vote_requests[before_b:]
     windows_b = comment_request_windows[len(windows_a) :]
+    assert state_a is not None
+    post_comments_state = (state_a.parent_state or {}).get("post_comments", {})
+    persisted_comments_cursor = post_comments_state.get("state", {}).get("updated_at")
+    expected_comments_start = persisted_comments_cursor or config["start_date"]
+    first_comments_window_b = windows_b[0]
 
     assert "11" not in requests_a
     assert {"11", "12"}.issubset(set(requests_a) | set(requests_b))
-    assert (
-        "1",
-        "2024-01-01T00:00:00Z",
-        "2024-01-01T23:59:59Z",
-    ) in windows_b
+    assert first_comments_window_b[0] == "1"
+    assert first_comments_window_b[1] == expected_comments_start
+    assert first_comments_window_b[2] == "2024-01-01T23:59:59Z"
 
 
-def _pr_a_read(
-    manifest,
-    stream_name,
-    posts,
-    comments_by_post,
-    config,
-    state=None,
-    failed_parent_days=(),
-    expecting_exception=False,
-):
-    requests = {"comments": [], "comment_windows": [], "votes": []}
+def _read_with_requests(
+    manifest: MutableMapping[str, Any],
+    stream_name: str,
+    posts: List[Mapping[str, Any]],
+    comments_by_post: Mapping[str, List[Mapping[str, Any]]],
+    config: Mapping[str, Any],
+    state: Optional[List[AirbyteStateMessage]] = None,
+    failed_parent_days: tuple[str, ...] = (),
+    expecting_exception: bool = False,
+) -> tuple[EntrypointOutput, dict[str, List[Any]]]:
+    requests = {"post_windows": [], "comments": [], "comment_windows": [], "votes": []}
     catalog = (
         CatalogBuilder()
         .with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name))
         .build()
     )
     source = ConcurrentDeclarativeSource(
-        source_config=manifest, config=config, catalog=None, state=None
+        source_config=manifest, config=config, catalog=None, state=state
     )
 
-    def comments_response(request, context):
+    def comments_response(request: Any, context: Any) -> Mapping[str, Any]:
         post_id = request.path.split("/")[-2]
         query = parse_qs(urlparse(request.url).query)
         window = (
@@ -4894,14 +4911,18 @@ def _pr_a_read(
             )
         }
 
-    def votes_response(request, context):
+    def votes_response(request: Any, context: Any) -> Mapping[str, Any]:
         requests["votes"].append(request.path.split("/")[-2])
         return {"votes": []}
 
     with requests_mock.Mocker() as mocker:
         mocker.get(
             re.compile(r"https://api\.example\.com/community/posts.*"),
-            json=_pr_a_posts_response(posts, failed_days=failed_parent_days),
+            json=_posts_response(
+                posts,
+                failed_days=failed_parent_days,
+                request_windows=requests["post_windows"],
+            ),
         )
         mocker.get(
             re.compile(r"https://api\.example\.com/community/posts/.*/comments.*"),
@@ -4921,19 +4942,21 @@ def _pr_a_read(
     return output, requests
 
 
-def _pr_a_resume_state(output, input_state):
+def _resume_state(
+    output: EntrypointOutput, input_state: Optional[List[AirbyteStateMessage]]
+) -> Optional[List[AirbyteStateMessage]]:
     return [output.state_messages[-1].state] if output.state_messages else input_state
 
 
-def _pr_a_posts_parent_cursor(output):
-    state = _pr_a_last_state(output)
+def _posts_parent_cursor(output: EntrypointOutput) -> Optional[str]:
+    state = _last_state(output)
     if state is None:
         return None
     parent_state = state.parent_state or {}
     return parent_state.get("posts", {}).get("updated_at")
 
 
-def _pr_a_input_state(global_substream_cursor):
+def _initial_state(global_substream_cursor: bool) -> List[AirbyteStateMessage]:
     stream_state = {
         "use_global_cursor": global_substream_cursor,
         "state": {"updated_at": "2024-01-01T00:00:00Z"},
@@ -4941,14 +4964,14 @@ def _pr_a_input_state(global_substream_cursor):
     }
     if not global_substream_cursor:
         stream_state["states"] = []
-    return [_pr_a_state_message("post_comments", stream_state)]
+    return [_state_message("post_comments", stream_state)]
 
 
 @pytest.mark.parametrize("global_substream_cursor", [True, False])
-def test_parent_state_does_not_advance_past_child_slice_with_failed_next_parent_request(
-    global_substream_cursor,
-):
-    manifest = _pr_a_manifest(global_substream_cursor=global_substream_cursor)
+def test_given_failed_next_parent_request_when_resume_then_last_child_of_previous_parent_slice_is_read(
+    global_substream_cursor: bool,
+) -> None:
+    manifest = _dated_substream_manifest(global_substream_cursor=global_substream_cursor)
     manifest["streams"] = [
         {"$ref": "#/definitions/posts_stream"},
         {"$ref": "#/definitions/post_comments_stream"},
@@ -4962,8 +4985,8 @@ def test_parent_state_does_not_advance_past_child_slice_with_failed_next_parent_
         "101": [{"id": 1001, "post_id": 101, "updated_at": "2024-01-01T10:30:00Z"}],
         "102": [{"id": 1002, "post_id": 102, "updated_at": "2024-01-01T23:30:00Z"}],
     }
-    input_state = _pr_a_input_state(global_substream_cursor)
-    attempt_a, requests_a = _pr_a_read(
+    input_state = _initial_state(global_substream_cursor)
+    attempt_a, requests_a = _read_with_requests(
         manifest,
         "post_comments",
         posts,
@@ -4973,8 +4996,8 @@ def test_parent_state_does_not_advance_past_child_slice_with_failed_next_parent_
         failed_parent_days=("2024-01-02",),
         expecting_exception=True,
     )
-    resume_state = _pr_a_resume_state(attempt_a, input_state)
-    attempt_b, requests_b = _pr_a_read(
+    resume_state = _resume_state(attempt_a, input_state)
+    attempt_b, requests_b = _read_with_requests(
         manifest,
         "post_comments",
         posts,
@@ -4985,14 +5008,17 @@ def test_parent_state_does_not_advance_past_child_slice_with_failed_next_parent_
 
     assert "101" not in requests_a["comments"]
     assert "101" in set(requests_a["comments"]) | set(requests_b["comments"])
+    assert requests_b["post_windows"][0][0] == _posts_parent_cursor(attempt_a)
     assert (
-        _pr_a_posts_parent_cursor(attempt_a) is None
-        or _pr_a_posts_parent_cursor(attempt_a) < "2024-01-01T23:00:00Z"
+        _posts_parent_cursor(attempt_a) is None
+        or _posts_parent_cursor(attempt_a) < "2024-01-01T23:00:00Z"
     )
 
 
-def test_pr_a_t2_empty_parent_window_does_not_skip_child_on_resume():
-    manifest = _pr_a_manifest()
+def test_given_empty_parent_window_and_failed_next_parent_request_when_resume_then_child_is_read() -> (
+    None
+):
+    manifest = _dated_substream_manifest()
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
     posts = [
         {"id": 201, "updated_at": "2024-01-02T10:00:00Z"},
@@ -5002,8 +5028,8 @@ def test_pr_a_t2_empty_parent_window_does_not_skip_child_on_resume():
         "201": [{"id": 2001, "post_id": 201, "updated_at": "2024-01-02T10:30:00Z"}],
         "202": [{"id": 2002, "post_id": 202, "updated_at": "2024-01-02T23:30:00Z"}],
     }
-    input_state = _pr_a_input_state(True)
-    attempt_a, requests_a = _pr_a_read(
+    input_state = _initial_state(True)
+    attempt_a, requests_a = _read_with_requests(
         manifest,
         "post_comments",
         posts,
@@ -5013,20 +5039,20 @@ def test_pr_a_t2_empty_parent_window_does_not_skip_child_on_resume():
         failed_parent_days=("2024-01-03",),
         expecting_exception=True,
     )
-    resume_state = _pr_a_resume_state(attempt_a, input_state)
-    attempt_b, requests_b = _pr_a_read(
+    resume_state = _resume_state(attempt_a, input_state)
+    attempt_b, requests_b = _read_with_requests(
         manifest, "post_comments", posts, comments, config, state=resume_state
     )
 
     assert "201" in set(requests_a["comments"]) | set(requests_b["comments"])
     assert (
-        _pr_a_posts_parent_cursor(attempt_a) is None
-        or _pr_a_posts_parent_cursor(attempt_a) < "2024-01-02T10:00:00Z"
+        _posts_parent_cursor(attempt_a) is None
+        or _posts_parent_cursor(attempt_a) < "2024-01-02T10:00:00Z"
     )
 
 
-def test_pr_a_t2b_empty_parent_window_success_advances_to_newest_post():
-    manifest = _pr_a_manifest()
+def test_given_empty_parent_window_when_sync_succeeds_then_parent_state_is_newest_record() -> None:
+    manifest = _dated_substream_manifest()
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
     posts = [
         {"id": 201, "updated_at": "2024-01-02T10:00:00Z"},
@@ -5043,15 +5069,15 @@ def test_pr_a_t2b_empty_parent_window_success_advances_to_newest_post():
         ]
         for post in posts
     }
-    output, requests = _pr_a_read(manifest, "post_comments", posts, comments, config)
+    output, requests = _read_with_requests(manifest, "post_comments", posts, comments, config)
 
     assert not output.errors
     assert set(requests["comments"]) == {"201", "202", "301"}
-    assert _pr_a_posts_parent_cursor(output) == "2024-01-03T12:00:00Z"
+    assert _posts_parent_cursor(output) == "2024-01-03T12:00:00Z"
 
 
-def test_pr_a_t3_first_parent_failure_preserves_or_replays_lost_child():
-    manifest = _pr_a_manifest()
+def test_given_no_state_and_failed_next_parent_request_when_resume_then_child_is_read() -> None:
+    manifest = _dated_substream_manifest()
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
     posts = [
         {"id": 101, "updated_at": "2024-01-01T10:00:00Z"},
@@ -5062,7 +5088,7 @@ def test_pr_a_t3_first_parent_failure_preserves_or_replays_lost_child():
         "102": [{"id": 1002, "post_id": 102, "updated_at": "2024-01-01T23:30:00Z"}],
     }
     input_state = None
-    attempt_a, requests_a = _pr_a_read(
+    attempt_a, requests_a = _read_with_requests(
         manifest,
         "post_comments",
         posts,
@@ -5071,24 +5097,24 @@ def test_pr_a_t3_first_parent_failure_preserves_or_replays_lost_child():
         failed_parent_days=("2024-01-02",),
         expecting_exception=True,
     )
-    state_a = _pr_a_last_state(attempt_a)
-    resume_state = _pr_a_resume_state(attempt_a, input_state)
-    attempt_b, requests_b = _pr_a_read(
+    state_a = _last_state(attempt_a)
+    resume_state = _resume_state(attempt_a, input_state)
+    attempt_b, requests_b = _read_with_requests(
         manifest, "post_comments", posts, comments, config, state=resume_state
     )
 
     if state_a is not None:
-        parent_cursor = _pr_a_posts_parent_cursor(attempt_a)
+        parent_cursor = _posts_parent_cursor(attempt_a)
         assert parent_cursor is not None
         assert parent_cursor < "2024-01-01T10:00:00Z"
     assert "101" in set(requests_a["comments"]) | set(requests_b["comments"])
 
 
 @pytest.mark.parametrize("global_substream_cursor", [True, False])
-def test_pr_a_t4_successful_completion_advances_all_state_and_requests_each_child_once(
-    global_substream_cursor,
-):
-    manifest = _pr_a_manifest(global_substream_cursor=global_substream_cursor)
+def test_given_successful_sync_when_read_then_parent_and_child_state_advance_to_newest_record(
+    global_substream_cursor: bool,
+) -> None:
+    manifest = _dated_substream_manifest(global_substream_cursor=global_substream_cursor)
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
     posts = [
         {"id": 101, "updated_at": "2024-01-01T10:00:00Z"},
@@ -5105,12 +5131,12 @@ def test_pr_a_t4_successful_completion_advances_all_state_and_requests_each_chil
         ]
         for post in posts
     }
-    output, requests = _pr_a_read(manifest, "post_comments", posts, comments, config)
-    state = _pr_a_last_state(output)
+    output, requests = _read_with_requests(manifest, "post_comments", posts, comments, config)
+    state = _last_state(output)
 
     assert not output.errors
     assert state.use_global_cursor is global_substream_cursor
-    assert _pr_a_posts_parent_cursor(output) == "2024-01-03T10:00:00Z"
+    assert _posts_parent_cursor(output) == "2024-01-03T10:00:00Z"
     assert set(requests["comments"]) == {"101", "201", "301"}
     assert len(requests["comments"]) == 3
     if global_substream_cursor:
@@ -5120,10 +5146,12 @@ def test_pr_a_t4_successful_completion_advances_all_state_and_requests_each_chil
         assert state.state["updated_at"] == "2024-01-03T10:00:00Z"
 
 
-def test_pr_a_t5_global_cursor_first_parent_request_failure_emits_no_state():
-    manifest = _pr_a_manifest(global_substream_cursor=True)
+def test_given_global_cursor_and_failed_first_parent_request_when_read_then_no_state_emitted() -> (
+    None
+):
+    manifest = _dated_substream_manifest(global_substream_cursor=True)
     config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
-    output, _ = _pr_a_read(
+    output, _ = _read_with_requests(
         manifest,
         "post_comments",
         posts=[],
