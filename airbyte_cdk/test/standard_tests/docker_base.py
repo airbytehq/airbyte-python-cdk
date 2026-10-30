@@ -168,18 +168,25 @@ def get_default_read_scenario_ids(scenarios: list[ConnectorTestScenario]) -> set
     """Return the ids of the configs that the Docker read test reads under `--read-scenarios=default`.
 
     These are the read configs named in `DEFAULT_READ_SCENARIO_IDS`. A connector that names none of
-    its read configs that way reads its first read config instead, so the default never skips
-    every Docker read of a connector. Configs expected to fail are never picked.
+    its read configs that way reads its first `basic_read` config instead, or its first read
+    config when it has no `basic_read` config, so the default never skips every Docker read of a
+    connector. When none of the picked configs is listed under `basic_read` but another read config
+    is, the first `basic_read` config is read too, so the read gets the `basic_read` checks.
+    Configs expected to fail are never picked.
     """
-    read_ids = [
-        scenario.id
+    read_scenarios = [
+        scenario
         for scenario in scenarios
         if scenario.runs("read") and not scenario.expected_outcome.expect_exception()
     ]
-    preferred = {
+    read_ids = [scenario.id for scenario in read_scenarios]
+    basic_read_ids = [scenario.id for scenario in read_scenarios if scenario.is_basic_read_config]
+    picked = {
         scenario_id for scenario_id in read_ids if scenario_id in DEFAULT_READ_SCENARIO_IDS
-    }
-    return preferred or set(read_ids[:1])
+    } or set((basic_read_ids or read_ids)[:1])
+    if basic_read_ids and picked.isdisjoint(basic_read_ids):
+        picked.add(basic_read_ids[0])
+    return picked
 
 
 def select_docker_read_streams(
@@ -200,7 +207,9 @@ def select_docker_read_streams(
 
 
 CONNECTOR_WORKDIR = "/source"
-"""The connector's working directory in the Docker tests: the platform's, for a source."""
+"""The connector's working directory in the Docker tests: the one the platform gives a source's
+`read`. The platform runs `check` and `discover` in `/config`; any writable directory outside the
+image serves those tests equally."""
 
 CONNECTOR_WORKDIR_ARGS: tuple[str, ...] = (
     "--tmpfs",
@@ -210,10 +219,14 @@ CONNECTOR_WORKDIR_ARGS: tuple[str, ...] = (
 )
 """`docker run` arguments that give the connector a writable working directory, as the platform does.
 
-The platform runs a connector with its working directory on a writable volume. An image's own
-`WORKDIR` is usually not writable by the image's non-root user, so a connector that writes a
-temporary file to its working directory (a bulk export download, for example) would fail only in
-the tests.
+The platform runs a connector with its working directory on a writable volume outside the image.
+The `WORKDIR` of a Python connector image is owned by root, not by the image's `airbyte` user, so
+a connector that writes a temporary file to its working directory (a bulk export download, for
+example) would fail only in the tests.
+
+The directory is a `tmpfs`, so what the connector writes there uses memory, where the platform's
+volume uses disk. A bind-mounted temporary directory would use disk, but the connector's `airbyte`
+user would own what it writes there, and the test could not delete the subdirectories it creates.
 """
 
 
@@ -943,11 +956,12 @@ class DockerConnectorTestSuite:
         `full_refresh` must return some records.
 
         The test is skipped unless `--read-from-streams` turns it on: the in-process
-        `test_basic_read` already reads every connector whose in-process tests run, and connector
-        CI turns this read on only for a connector whose in-process tests cannot run.
+        `test_basic_read` already reads every connector whose in-process tests run, and this read
+        is meant to be turned on only for a connector whose in-process tests cannot run.
         `--read-from-streams=default` reads the streams above; a stream list narrows them.
         `--read-scenarios` picks which configs are read (by default `config`, `valid_config` and
-        `default`, or the first read config when a connector has none of those). See the
+        `default`, plus a `basic_read` config if none of those is one; see
+        `get_default_read_scenario_ids`). See the
         `read_from_streams` and `read_scenarios` fixtures.
 
         Note:

@@ -67,13 +67,14 @@ def read_from_streams(
     already reads every connector whose in-process tests run:
 
     - [Omitted], `--read-from-streams=false` or `=none`: Skip the Docker read test. Prefer `false`
-      in CI files: CDK 7.36.0 and earlier read `none` as a stream name.
+      in CI files: CDK 7.42.0 and earlier read `none` as a stream name.
     - `--read-from-streams=default` (also `true`, `all` and `suggested`): Read the streams that
       `test_basic_read` reads: those of the config's `configured_catalog_path`, or every
       discovered stream, minus its `empty_streams`. The connector's `suggestedStreams` play no
       part.
     - `--read-from-streams=stream1,stream2`: Read only these of those streams. A config that reads
-      none of them is skipped.
+      none of them is skipped. A value that names no stream, such as an empty one, is a usage
+      error, so a CI variable that expands to nothing cannot turn the read off unnoticed.
 
     Which configs are read is set by `--read-scenarios`. The two options combine: the test reads
     the streams selected here for each config selected there.
@@ -84,9 +85,9 @@ def read_from_streams(
     )
     if input_val is None:
         input_val = READ_FROM_STREAMS_DEFAULT
-    if not isinstance(input_val, str):
-        # Only a bool can get here, from a caller that sets the option programmatically.
-        return "default" if input_val else "none"
+    # `str()` also turns a bool, from a caller that sets the option programmatically, into
+    # `True` or `False`.
+    input_val = str(input_val)
 
     normalized = input_val.strip().lower()
     if normalized in ("false", "none"):
@@ -97,7 +98,13 @@ def read_from_streams(
         return "default"
 
     # A comma-separated list of stream names; a single name gives a one-element list.
-    return [name.strip() for name in input_val.split(",") if name.strip()]
+    stream_names = [name.strip() for name in input_val.split(",") if name.strip()]
+    if not stream_names:
+        raise pytest.UsageError(
+            f"`--read-from-streams={input_val}` names no stream. Pass `default`, `false` or a "
+            "comma-separated list of stream names."
+        )
+    return stream_names
 
 
 @pytest.fixture
@@ -117,6 +124,9 @@ def read_scenarios(
       without `.json`); the others are skipped.
     - `--read-scenarios=none`: Skip the Docker read test, like `--read-from-streams=false`.
 
+    An empty value means `default`. A value made only of separators, such as `,`, is a usage
+    error.
+
     This option only matters when `--read-from-streams` turns the Docker read on; that option then
     picks the streams read for each selected config. The in-process read test (`test_basic_read`)
     ignores both options and reads every read config.
@@ -133,11 +143,17 @@ def read_scenarios(
     if normalized in ("default", "all", "none"):
         return cast(Literal["all", "none", "default"], normalized)
 
-    return [
+    scenario_names = [
         scenario_name.strip().lower().removesuffix(".json")
         for scenario_name in input_val.split(",")
         if scenario_name.strip()
     ]
+    if not scenario_names:
+        raise pytest.UsageError(
+            f"`--read-scenarios={input_val}` names no config. Pass `default`, `all`, `none` or a "
+            "comma-separated list of config names."
+        )
+    return scenario_names
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

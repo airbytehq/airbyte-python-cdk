@@ -37,7 +37,10 @@ from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
 from airbyte_cdk.test.standard_tests import ConnectorTestSuiteBase, SourceTestSuiteBase
 from airbyte_cdk.test.standard_tests._assertions import assert_check_outcome
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
-from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
+from airbyte_cdk.test.standard_tests.docker_base import (
+    CONNECTOR_WORKDIR_ARGS,
+    DockerConnectorTestSuite,
+)
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 POKEAPI_RESOURCE_DIR = Path(__file__).parent.parent / "resources" / "source_pokeapi_w_components_py"
@@ -55,6 +58,11 @@ STATUS_STR_BY_OUTCOME: dict[ExpectedOutcome, Literal["succeed", "failed", "excep
     ExpectedOutcome.EXPECT_UNCAUGHT_ERROR: "exception",
     ExpectedOutcome.ALLOW_ANY: None,
 }
+
+
+_SPEC_MESSAGE = json.dumps(
+    {"type": "SPEC", "spec": {"connectionSpecification": {"type": "object", "properties": {}}}}
+)
 
 
 def _check_output(*statuses: str, error: bool = False) -> EntrypointOutput:
@@ -549,6 +557,9 @@ def test_docker_image_build_and_check_asserts_reported_status(
         *,
         raise_if_errors: bool = False,
     ) -> EntrypointOutput:
+        if "spec" in cmd:
+            # The secret leak check reads the spec first; without one, the test skips.
+            return EntrypointOutput(messages=[_SPEC_MESSAGE], command=cmd)
         recorded_calls.append({"cmd": cmd, "raise_if_errors": raise_if_errors})
         result = _check_output(*([status] if status else []), error=error)
         if raise_if_errors:
@@ -582,5 +593,7 @@ def test_docker_image_build_and_check_asserts_reported_status(
 
     assert len(recorded_calls) == 1
     assert recorded_calls[0]["cmd"][-4:-1] == ["airbyte/source-test:dev", "check", "--config"]
-    # Only `failed` and `exception` scenarios may let a trace error through to the assertion.
-    assert recorded_calls[0]["raise_if_errors"] is (not expected_outcome.expect_exception())
+    assert recorded_calls[0]["cmd"][3:7] == list(CONNECTOR_WORKDIR_ARGS)
+    # The test raises on errors itself, after the secret leak check, and only for scenarios that
+    # are not expected to fail.
+    assert recorded_calls[0]["raise_if_errors"] is False
