@@ -19,7 +19,7 @@ class ParquetFormat(BaseModel):
     )
     # This option is not recommended, but necessary for backwards compatibility
     decimal_as_float: bool = Field(
-        title="Convert Decimal Fields to Floats",
+        title="Convert decimal fields to floats",
         description="Whether to convert decimal fields to floats. There is a loss of precision when converting decimals to floats, so this is not recommended.",
         default=False,
     )

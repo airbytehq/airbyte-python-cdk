@@ -34,7 +34,7 @@ class DeliverRawFiles(BaseModel):
     delivery_type: Literal["use_file_transfer"] = Field("use_file_transfer", const=True)
 
     preserve_directory_structure: bool = Field(
-        title="Preserve Sub-Directories in File Paths",
+        title="Preserve sub-directories in file paths",
         description=(
             "If enabled, sends subdirectory folder structure "
             "along with source file names to the destination. "
@@ -52,7 +52,7 @@ class AbstractFileBasedSpec(BaseModel):
     """
 
     start_date: Optional[str] = Field(
-        title="Start Date",
+        title="Start date",
         description="UTC date and time in the format 2017-01-25T00:00:00.000000Z. Any file modified before this date will not be replicated.",
         examples=[
             "2021-01-01",
@@ -94,7 +94,7 @@ class AbstractFileBasedSpec(BaseModel):
     )
 
     delivery_method: Union[DeliverRecords, DeliverRawFiles, DeliverPermissions] = Field(
-        title="Delivery Method",
+        title="Delivery method",
         discriminator="delivery_type",
         type="object",
         order=7,
