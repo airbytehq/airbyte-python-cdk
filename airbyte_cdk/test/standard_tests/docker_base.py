@@ -42,6 +42,12 @@ from airbyte_cdk.test.standard_tests._assertions import (
     assert_check_outcome,
     assert_config_matches_spec,
 )
+from airbyte_cdk.test.standard_tests._read_assertions import (
+    StreamStatusWarning,
+    assert_read_records,
+    assert_schema_validation_opt_out_allowed,
+    find_stream_status_problems,
+)
 from airbyte_cdk.test.standard_tests._spec_compatibility import (
     DEPLOYMENT_MODE_ENV_VARS,
     REGISTRY_UNAVAILABLE_ERRORS,
@@ -152,6 +158,120 @@ def get_read_streams(
         streams = [stream for stream in streams if stream.name not in empty_stream_names]
 
     return streams
+
+
+DEFAULT_READ_SCENARIO_IDS: tuple[str, ...] = ("config", "valid_config", "default")
+"""The config ids (file names without `.json`) that `--read-scenarios=default` reads."""
+
+
+def get_default_read_scenario_ids(scenarios: list[ConnectorTestScenario]) -> set[str]:
+    """Return the ids of the configs that the Docker read test reads under `--read-scenarios=default`.
+
+    These are the read configs named in `DEFAULT_READ_SCENARIO_IDS`. A connector that names none of
+    its read configs that way reads its first `basic_read` config instead, or its first read
+    config when it has no `basic_read` config, so the default never skips every Docker read of a
+    connector. When none of the picked configs is listed under `basic_read` but another read config
+    is, the first `basic_read` config is read too, so the read gets the `basic_read` checks.
+    Configs expected to fail are never picked.
+    """
+    read_scenarios = [
+        scenario
+        for scenario in scenarios
+        if scenario.runs("read") and not scenario.expected_outcome.expect_exception()
+    ]
+    read_ids = [scenario.id for scenario in read_scenarios]
+    basic_read_ids = [scenario.id for scenario in read_scenarios if scenario.is_basic_read_config]
+    picked = {
+        scenario_id for scenario_id in read_ids if scenario_id in DEFAULT_READ_SCENARIO_IDS
+    } or set((basic_read_ids or read_ids)[:1])
+    if basic_read_ids and picked.isdisjoint(basic_read_ids):
+        picked.add(basic_read_ids[0])
+    return picked
+
+
+def fail_on_unknown_read_scenarios(
+    read_scenarios: list[str],
+    scenarios: list[ConnectorTestScenario],
+) -> None:
+    """Fail when `--read-scenarios` names a config that is not one of the connector's read configs.
+
+    The names were lowercased by the `read_scenarios` fixture, and match config ids in any case.
+    Without this check a misspelled name would skip every Docker read, and the run would pass.
+    """
+    read_ids = sorted({scenario.id for scenario in scenarios if scenario.runs("read")})
+    known = {scenario_id.lower() for scenario_id in read_ids}
+    unknown = [name for name in read_scenarios if name not in known]
+    if unknown:
+        pytest.fail(
+            f"`--read-scenarios={','.join(read_scenarios)}` names configs that are not listed "
+            f"under `basic_read` or `full_refresh` in `acceptance-test-config.yml`: "
+            f"{', '.join(map(repr, unknown))}. The read configs are: "
+            f"{', '.join(map(repr, read_ids)) or 'none'}."
+        )
+
+
+def fail_on_undiscovered_read_streams(
+    read_from_streams: list[str],
+    discovered_streams: list[AirbyteStream],
+    *,
+    scenario_id: str,
+) -> None:
+    """Fail when `--read-from-streams` names a stream that `discover` does not report for a config.
+
+    Stream names match exactly, case included, as they do in a catalog. Without this check a
+    misspelled name would skip every Docker read, and the run would pass.
+    """
+    discovered_names = sorted(stream.name for stream in discovered_streams)
+    unknown = [name for name in read_from_streams if name not in set(discovered_names)]
+    if unknown:
+        pytest.fail(
+            f"`--read-from-streams={','.join(read_from_streams)}` names streams that `discover` "
+            f"does not report for config '{scenario_id}': {', '.join(map(repr, unknown))}. "
+            "Stream names match exactly, case included. The discovered streams "
+            f"are: {', '.join(map(repr, discovered_names)) or 'none'}. If only another config "
+            "discovers the stream, pick that config with `--read-scenarios`."
+        )
+
+
+def select_docker_read_streams(
+    read_streams: list[AirbyteStream],
+    *,
+    read_from_streams: Literal["default"] | list[str],
+) -> list[AirbyteStream]:
+    """Narrow a config's read streams by `--read-from-streams` (see the `read_from_streams` fixture).
+
+    `default` keeps every stream that `get_read_streams` returns, the same streams the in-process
+    `test_basic_read` reads. A stream list keeps the listed streams, which may leave none.
+    """
+    if isinstance(read_from_streams, list):
+        wanted = set(read_from_streams)
+        return [stream for stream in read_streams if stream.name in wanted]
+
+    return read_streams
+
+
+CONNECTOR_WORKDIR = "/source"
+"""The connector's working directory in the Docker tests: the one the platform gives a source's
+`read`. The platform runs `check` and `discover` in `/config`; any writable directory outside the
+image serves those tests equally."""
+
+CONNECTOR_WORKDIR_ARGS: tuple[str, ...] = (
+    "--tmpfs",
+    f"{CONNECTOR_WORKDIR}:rw,exec,mode=1777",
+    "--workdir",
+    CONNECTOR_WORKDIR,
+)
+"""`docker run` arguments that give the connector a writable working directory, as the platform does.
+
+The platform runs a connector with its working directory on a writable volume outside the image.
+The `WORKDIR` of a Python connector image is owned by root, not by the image's `airbyte` user, so
+a connector that writes a temporary file to its working directory (a bulk export download, for
+example) would fail only in the tests.
+
+The directory is a `tmpfs`, so what the connector writes there uses memory, where the platform's
+volume uses disk. A bind-mounted temporary directory would use disk, but the connector's `airbyte`
+user would own what it writes there, and the test could not delete the subdirectories it creates.
+"""
 
 
 _SPEC_FAILURE_OUTPUT_LINES = 50
@@ -719,6 +839,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -834,6 +955,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -856,16 +978,36 @@ class DockerConnectorTestSuite:
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
         connector_base_image_override: str | None,
-        read_from_streams: Literal["all", "none", "default"] | list[str],
+        read_from_streams: Literal["default", "none"] | list[str],
         read_scenarios: Literal["all", "none", "default"] | list[str],
     ) -> None:
-        """Read from the connector's Docker image.
+        """Read from the connector's Docker image, and check the records as `test_basic_read` does.
 
         This test builds the connector image and runs a full-refresh `read` command inside the
         container, for configs listed under `basic_read` or `full_refresh` in
         `acceptance-test-config.yml`. The read covers the streams of the config's
         `configured_catalog_path`, or every discovered stream when it declares none, minus its
         `empty_streams` (see `get_read_streams`), narrowed further by `--read-from-streams`.
+
+        The read gets the same checks as `test_basic_read`. For a config listed under
+        `basic_read`: every stream it reads must return at least one record; every record must
+        match its stream's JSON schema (opt out with `validate_schema: false`, which a connector
+        at `test_strictness_level: high` cannot); every record of a stream with a
+        `source_defined_primary_key` must have a usable primary key (opt out with
+        `validate_primary_keys_data_type: false`); and every stream must emit state with
+        `sourceStats` (opt out with `validate_state_messages: false`). Incomplete stream statuses
+        are reported as a `StreamStatusWarning`, not enforced. A config listed only under
+        `full_refresh` must return some records.
+
+        The test is skipped unless `--read-from-streams` turns it on: the in-process
+        `test_basic_read` already reads every connector whose in-process tests run, and this read
+        is meant to be turned on only for a connector whose in-process tests cannot run.
+        `--read-from-streams=default` reads the streams above; a stream list narrows them.
+        `--read-scenarios` picks which configs are read (by default `config`, `valid_config` and
+        `default`, plus a `basic_read` config if none of those is one; see
+        `get_default_read_scenario_ids`). A config or stream name that matches nothing fails the
+        test, so a typo cannot skip every read. See the `read_from_streams` and `read_scenarios`
+        fixtures.
 
         Note:
           - If the --connector-image arg is provided, it will be used instead of building the image.
@@ -879,30 +1021,38 @@ class DockerConnectorTestSuite:
             pytest.skip("Skipping (expected to fail).")
 
         if read_from_streams == "none":
-            pytest.skip("Skipping read test (`--read-from-streams=false`).")
+            pytest.skip(
+                "Skipping the Docker read test: it is off unless `--read-from-streams` turns it "
+                "on (for example `--read-from-streams=default`)."
+            )
 
         if read_scenarios == "none":
-            pytest.skip("Skipping (`--read-scenarios=none`).")
+            pytest.skip("Skipping the Docker read test: it was disabled with `--read-scenarios`.")
 
-        default_scenario_ids = ["config", "valid_config", "default"]
-        if read_scenarios == "all":
-            pass
-        elif read_scenarios == "default":
-            if scenario.id not in default_scenario_ids:
+        if read_scenarios == "default":
+            default_ids = get_default_read_scenario_ids(self.get_scenarios())
+            if scenario.id not in default_ids:
                 pytest.skip(
-                    f"Skipping read test for scenario '{scenario.id}' "
-                    f"(not in default scenarios list '{default_scenario_ids}')."
+                    f"Skipping the Docker read of config '{scenario.id}': "
+                    f"`--read-scenarios=default` reads {', '.join(sorted(map(repr, default_ids)))}. "
+                    "Pass `--read-scenarios=all` to read every config."
                 )
-        elif scenario.id not in read_scenarios:
-            # pytest.skip(
-            raise ValueError(
-                f"Skipping read test for scenario '{scenario.id}' "
-                f"(not in --read-scenarios={read_scenarios})."
+        elif read_scenarios != "all":
+            fail_on_unknown_read_scenarios(read_scenarios, self.get_scenarios())
+            if scenario.id.lower() not in read_scenarios:
+                pytest.skip(
+                    f"Skipping the Docker read of config '{scenario.id}': not in "
+                    f"`--read-scenarios={','.join(read_scenarios)}`."
+                )
+
+        if scenario.is_basic_read_config:
+            assert_schema_validation_opt_out_allowed(
+                validate_schema=scenario.validate_schema,
+                test_strictness_level=scenario.test_strictness_level,
             )
 
         connector_root = self.get_connector_root_dir()
         connector_name = connector_root.absolute().name
-        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
         connector_image = self._connector_image(
             connector_image_override, connector_base_image_override
         )
@@ -925,6 +1075,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -935,19 +1086,21 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
-            read_streams = get_read_streams(
-                scenario,
-                get_discovered_streams(discover_result, connector_name),
-                connector_root,
-            )
-            if read_from_streams == "default" and metadata.data.suggestedStreams:
-                # Read only the suggested streams.
-                suggested_streams = set(metadata.data.suggestedStreams.streams)
-                read_streams = [s for s in read_streams if s.name in suggested_streams]
-
+            discovered_streams = get_discovered_streams(discover_result, connector_name)
             if isinstance(read_from_streams, list):
-                # If `read_from_streams` is a list, read only those streams.
-                read_streams = [s for s in read_streams if s.name in read_from_streams]
+                fail_on_undiscovered_read_streams(
+                    read_from_streams, discovered_streams, scenario_id=scenario.id
+                )
+            read_streams = select_docker_read_streams(
+                get_read_streams(scenario, discovered_streams, connector_root),
+                read_from_streams=read_from_streams,
+            )
+            if not read_streams and isinstance(read_from_streams, list):
+                pytest.skip(
+                    f"Skipping the Docker read of config '{scenario.id}': none of the streams in "
+                    f"`--read-from-streams={','.join(read_from_streams)}` is read for it (its "
+                    "`configured_catalog_path` leaves them out, or its `empty_streams` lists them)."
+                )
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
@@ -968,6 +1121,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     "-v",
@@ -981,3 +1135,28 @@ class DockerConnectorTestSuite:
                 ],
                 raise_if_errors=True,
             )
+
+        if scenario.is_basic_read_config:
+            status_problems = find_stream_status_problems(
+                read_result.trace_messages, configured_catalog
+            )
+            if status_problems:
+                warnings.warn(
+                    "The read's stream statuses are incomplete. This check is not enforced "
+                    "yet:\n" + "\n".join(status_problems),
+                    category=StreamStatusWarning,
+                    stacklevel=1,
+                )
+            # Also asserts that the read returned records, in the same pass over them.
+            assert_read_records(
+                records=read_result.records_iterator,
+                configured_catalog=configured_catalog,
+                require_records_per_stream=True,
+                validate_schema=scenario.validate_schema,
+                validate_primary_keys=scenario.validate_primary_keys_data_type,
+                state_messages=(
+                    read_result.state_messages if scenario.validate_state_messages else None
+                ),
+            )
+        elif next(read_result.records_iterator, None) is None:
+            raise AssertionError("Expected records but got none.")
