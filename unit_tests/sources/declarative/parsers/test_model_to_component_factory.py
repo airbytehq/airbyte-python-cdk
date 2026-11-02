@@ -795,6 +795,117 @@ def test_single_use_oauth_branch():
     assert authenticator._refresh_token_error_status_codes == (400,)
     assert authenticator._refresh_token_error_key == "error"
     assert authenticator._refresh_token_error_values == ("invalid_grant",)
+    assert authenticator._refresh_token_error_messages == {}
+
+
+def _create_oauth_authenticator_from_manifest(content, config=input_config):
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    authenticator_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["authenticator"], {}
+    )
+    return factory.create_component(
+        model_type=OAuthAuthenticatorModel,
+        component_definition=authenticator_manifest,
+        config=config,
+    )
+
+
+def test_oauth_refresh_token_error_messages_only_keeps_default_gate(requests_mock):
+    content = """
+    authenticator:
+      type: OAuthAuthenticator
+      client_id: "some_client_id"
+      client_secret: "some_client_secret"
+      token_refresh_endpoint: "https://api.sendgrid.com/v3/auth"
+      refresh_token: "{{ config['apikey'] }}"
+      refresh_token_error_messages:
+        AADSTS50078: "Configured guidance."
+    """
+
+    authenticator = _create_oauth_authenticator_from_manifest(content)
+
+    assert isinstance(authenticator, DeclarativeOauth2Authenticator)
+    assert authenticator._refresh_token_error_status_codes == (400,)
+    assert authenticator._refresh_token_error_key == "error"
+    assert authenticator._refresh_token_error_values == (
+        "invalid_grant",
+        "invalid_permissions",
+    )
+    assert authenticator._refresh_token_error_messages == {"AADSTS50078": "Configured guidance."}
+
+    requests_mock.post(
+        "https://api.sendgrid.com/v3/auth",
+        status_code=400,
+        json={
+            "error": "invalid_grant",
+            "error_description": "AADSTS50078: MFA required.\r\nTrace ID: x",
+        },
+    )
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        authenticator.refresh_access_token()
+
+    assert (
+        exc_info.value.message == "Configured guidance. Provider error: invalid_grant: AADSTS50078"
+    )
+    assert exc_info.value.failure_type == FailureType.config_error
+
+
+def test_single_use_oauth_with_refresh_token_error_messages_keeps_default_gate():
+    single_use_input_config = {
+        "apikey": "verysecrettoken",
+        "repos": ["airbyte", "airbyte-cloud"],
+        "credentials": {"access_token": "access_token", "token_expiry_date": "1970-01-01"},
+    }
+    content = """
+    authenticator:
+      type: OAuthAuthenticator
+      client_id: "some_client_id"
+      client_secret: "some_client_secret"
+      token_refresh_endpoint: "https://api.sendgrid.com/v3/auth"
+      refresh_token: "{{ config['apikey'] }}"
+      refresh_token_error_messages:
+        AADSTS50078: "Configured guidance."
+      refresh_token_updater:
+        refresh_token_name: "the_refresh_token"
+        refresh_token_config_path:
+          - apikey
+    """
+
+    authenticator = _create_oauth_authenticator_from_manifest(content, single_use_input_config)
+
+    assert isinstance(authenticator, SingleUseRefreshTokenOauth2Authenticator)
+    assert authenticator._refresh_token_error_status_codes == (400,)
+    assert authenticator._refresh_token_error_key == "error"
+    assert authenticator._refresh_token_error_values == (
+        "invalid_grant",
+        "invalid_permissions",
+    )
+    assert authenticator._refresh_token_error_messages == {"AADSTS50078": "Configured guidance."}
+
+
+def test_oauth_refresh_token_error_messages_preserves_explicit_gate():
+    content = """
+    authenticator:
+      type: OAuthAuthenticator
+      client_id: "some_client_id"
+      client_secret: "some_client_secret"
+      token_refresh_endpoint: "https://api.sendgrid.com/v3/auth"
+      refresh_token: "{{ config['apikey'] }}"
+      refresh_token_error_status_codes: [422]
+      refresh_token_error_key: "errorCode"
+      refresh_token_error_values: ["refresh_invalid"]
+      refresh_token_error_messages:
+        AADSTS50078: "Configured guidance."
+    """
+
+    authenticator = _create_oauth_authenticator_from_manifest(content)
+
+    assert isinstance(authenticator, DeclarativeOauth2Authenticator)
+    assert authenticator._refresh_token_error_status_codes == (422,)
+    assert authenticator._refresh_token_error_key == "errorCode"
+    assert authenticator._refresh_token_error_values == ("refresh_invalid",)
+    assert authenticator._refresh_token_error_messages == {"AADSTS50078": "Configured guidance."}
 
 
 def test_list_based_stream_slicer_with_values_refd():

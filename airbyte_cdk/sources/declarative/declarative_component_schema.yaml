@@ -1428,6 +1428,69 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  SyncTokenCursor:
+    title: Sync Token Cursor
+    description: >-
+      Incremental sync driven by a sync token that the API returns at the end of a pagination
+      pass. The token is opaque. It is committed to state only after the pass's records are
+      emitted and sent back on the next sync. Tokens are never parsed, compared or derived
+      from records.
+    type: object
+    required: [type, token_path, token_option]
+    additionalProperties: true
+    properties:
+      type:
+        type: string
+        enum: [SyncTokenCursor]
+      token_path:
+        title: Token Path
+        description: >-
+          Path to the next token in the decoded response that ends a pagination pass. The
+          value must be a string or an integer, and is stored and sent as a string. A missing,
+          null or empty value means the response carried no token.
+        type: array
+        items:
+          type: string
+        interpolation_context: [config]
+        examples:
+          - ["syncToken"]
+          - ["nextSyncToken"]
+          - ["meta", "sync_token"]
+      token_option:
+        title: Send Token In
+        description: >-
+          Where to send the stored token on each request of a pass: the JSON body, the query
+          string, a header or the form body.
+        "$ref": "#/definitions/RequestOption"
+      completion_condition:
+        title: Completion Condition
+        description: >-
+          Must be true on the last response of a pass for its token to be committed. Defaults
+          to a token being present at token_path. Set it when the API repeats the old token on
+          intermediate pages or returns a position on every page.
+        type: string
+        interpolation_context: [config, headers, response, stream_partition, stream_slice]
+        examples:
+          - "{{ not response.moreDataAvailable }}"
+      initial_token:
+        title: Initial Token
+        description: >-
+          Value to send when no token is stored, for an API that needs one to start a full
+          pass, such as Todoist's "*". When unset, nothing is sent.
+        type: string
+        interpolation_context: [config]
+        examples: ["*"]
+      cursor_field:
+        title: Destination Cursor Field
+        description: >-
+          Optional top-level record field advertised as the stream's cursor, so destinations
+          can order versions of a record when deduplicating. It is never used to filter
+          records or to build state.
+        type: string
+        interpolation_context: [config]
+      $parameters:
+        type: object
+        additionalProperties: true
   JwtAuthenticator:
     title: JWT Authenticator
     description: Authenticator for requests using JWT authentication flow.
@@ -1736,6 +1799,15 @@ definitions:
           type: string
         examples:
           - ["invalid_grant", "invalid_permissions"]
+      refresh_token_error_messages:
+        title: Refresh Token Error Messages
+        description: >-
+          Fixed user-facing messages for refresh token errors. Keys are matched in order against the provider error code leading error_description (a token such as ABC12345 followed by a word boundary), the whitespace-normalized full error_description, then the OAuth error value; the first match replaces the default re-authentication guidance, and the provider error detail is still appended. Only applies to responses already flagged as config errors by Refresh Token Error Status Codes, Refresh Token Error Key and Refresh Token Error Values (or their defaults); it does not flag any additional responses. Values are used verbatim, without interpolation, so the message is identical on every attempt.
+        type: object
+        additionalProperties:
+          type: string
+        examples:
+          - invalid_grant: "The refresh token expired or was revoked. Re-authenticate this source to restore syncs."
       refresh_token_updater:
         title: Refresh Token Updater
         description: When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
@@ -1845,6 +1917,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
+          - "$ref": "#/definitions/SyncTokenCursor"
       primary_key:
         title: Primary Key
         "$ref": "#/definitions/PrimaryKey"

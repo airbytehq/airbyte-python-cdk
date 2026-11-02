@@ -38,10 +38,15 @@ The spec tests lint the spec in the same way: problems found by spec lints that 
 yet are reported as a `SpecLintWarning`, which `-W error::...SpecLintWarning` also turns into a
 failure.
 
+`SourceTestSuiteBase.test_basic_read` likewise reports incomplete stream statuses as a
+`StreamStatusWarning`, which `-W error::airbyte_cdk.test.standard_tests.StreamStatusWarning`
+turns into a failure.
+
 '''
 
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._catalog_checks import DiscoveredCatalogWarning
+from airbyte_cdk.test.standard_tests._read_assertions import StreamStatusWarning
 from airbyte_cdk.test.standard_tests._spec_lint import SpecLintWarning
 from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.standard_tests.declarative_sources import (
@@ -58,4 +63,5 @@ __all__ = [
     "DiscoveredCatalogWarning",
     "SourceTestSuiteBase",
     "SpecLintWarning",
+    "StreamStatusWarning",
 ]

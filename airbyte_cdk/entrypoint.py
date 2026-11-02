@@ -35,6 +35,12 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
+from airbyte_cdk.sources.utils.check_section import (
+    is_last_section,
+    requested_section,
+    section_spec,
+    strip_check_section,
+)
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit, split_config
 
 # from airbyte_cdk.utils import PrintBuffer, is_cloud_environment, message_utils  # add PrintBuffer back once fixed
@@ -223,7 +229,15 @@ class AirbyteEntrypoint(object):
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
         try:
-            self.validate_connection(source_spec, config)
+            # A section check (`check-section` key) only carries the fields collected up to the section, so it is
+            # validated against the specification narrowed to that section; see `airbyte_cdk.sources.utils.check_section`.
+            section = requested_section(config, source_spec)
+            if section is None:
+                self.validate_connection(source_spec, config)
+            else:
+                self.validate_connection(
+                    section_spec(source_spec, section), strip_check_section(config)
+                )
         except AirbyteTracedException as traced_exc:
             connection_status = traced_exc.as_connection_status_message()
             # The platform uses the exit code to surface unexpected failures so we raise the exception if the failure type not a config error
@@ -236,7 +250,7 @@ class AirbyteEntrypoint(object):
                 return
 
         try:
-            check_result = self.source.check(self.logger, config)
+            check_result = self._check(source_spec, section, config)
         except AirbyteTracedException as traced_exc:
             yield traced_exc.as_sanitized_airbyte_message()
             # The platform uses the exit code to surface unexpected failures so we raise the exception if the failure type not a config error
@@ -255,6 +269,22 @@ class AirbyteEntrypoint(object):
 
         yield from self._emit_queued_messages(self.source)
         yield AirbyteMessage(type=Type.CONNECTION_STATUS, connectionStatus=check_result)
+
+    def _check(
+        self, source_spec: ConnectorSpecification, section: Optional[str], config: TConfig
+    ) -> AirbyteConnectionStatus:
+        """
+        The full check, or, for a section check, the full check when the section is the last one declared (the
+        configuration is complete by then) and the connector's `check_section` otherwise.
+        """
+        if section is None:
+            return self.source.check(self.logger, config)
+        section_config = strip_check_section(config)
+        if is_last_section(source_spec, section):
+            self.logger.info(f"Section '{section}' is the last one, running the full config check.")
+            return self.source.check(self.logger, section_config)
+        self.logger.info(f"Checking configuration section '{section}'.")
+        return self.source.check_section(self.logger, section, section_config)
 
     def discover(
         self, source_spec: ConnectorSpecification, config: TConfig

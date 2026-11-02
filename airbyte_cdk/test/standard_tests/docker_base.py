@@ -17,7 +17,6 @@ import pytest
 import requests
 import yaml
 from boltons.typeutils import classproperty
-from pydantic import ValidationError
 
 from airbyte_cdk.models import (
     AirbyteStream,
@@ -30,14 +29,24 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
-from airbyte_cdk.test.models.scenario import (
-    SCENARIO_SECTIONS,
-    ScenarioCommand,
-    entry_key_problems,
+from airbyte_cdk.test.models.scenario import ScenarioCommand
+from airbyte_cdk.test.standard_tests._acceptance_test_config import (
+    JAVA_BYPASS_REASON,
+    CollectedScenarios,
+    ScenarioBypass,
+    collect_scenarios,
+    is_java_connector,
+    load_acceptance_test_config,
 )
 from airbyte_cdk.test.standard_tests._assertions import (
     assert_check_outcome,
     assert_config_matches_spec,
+)
+from airbyte_cdk.test.standard_tests._read_assertions import (
+    StreamStatusWarning,
+    assert_read_records,
+    assert_schema_validation_opt_out_allowed,
+    find_stream_status_problems,
 )
 from airbyte_cdk.test.standard_tests._spec_compatibility import (
     DEPLOYMENT_MODE_ENV_VARS,
@@ -149,6 +158,120 @@ def get_read_streams(
         streams = [stream for stream in streams if stream.name not in empty_stream_names]
 
     return streams
+
+
+DEFAULT_READ_SCENARIO_IDS: tuple[str, ...] = ("config", "valid_config", "default")
+"""The config ids (file names without `.json`) that `--read-scenarios=default` reads."""
+
+
+def get_default_read_scenario_ids(scenarios: list[ConnectorTestScenario]) -> set[str]:
+    """Return the ids of the configs that the Docker read test reads under `--read-scenarios=default`.
+
+    These are the read configs named in `DEFAULT_READ_SCENARIO_IDS`. A connector that names none of
+    its read configs that way reads its first `basic_read` config instead, or its first read
+    config when it has no `basic_read` config, so the default never skips every Docker read of a
+    connector. When none of the picked configs is listed under `basic_read` but another read config
+    is, the first `basic_read` config is read too, so the read gets the `basic_read` checks.
+    Configs expected to fail are never picked.
+    """
+    read_scenarios = [
+        scenario
+        for scenario in scenarios
+        if scenario.runs("read") and not scenario.expected_outcome.expect_exception()
+    ]
+    read_ids = [scenario.id for scenario in read_scenarios]
+    basic_read_ids = [scenario.id for scenario in read_scenarios if scenario.is_basic_read_config]
+    picked = {
+        scenario_id for scenario_id in read_ids if scenario_id in DEFAULT_READ_SCENARIO_IDS
+    } or set((basic_read_ids or read_ids)[:1])
+    if basic_read_ids and picked.isdisjoint(basic_read_ids):
+        picked.add(basic_read_ids[0])
+    return picked
+
+
+def fail_on_unknown_read_scenarios(
+    read_scenarios: list[str],
+    scenarios: list[ConnectorTestScenario],
+) -> None:
+    """Fail when `--read-scenarios` names a config that is not one of the connector's read configs.
+
+    The names were lowercased by the `read_scenarios` fixture, and match config ids in any case.
+    Without this check a misspelled name would skip every Docker read, and the run would pass.
+    """
+    read_ids = sorted({scenario.id for scenario in scenarios if scenario.runs("read")})
+    known = {scenario_id.lower() for scenario_id in read_ids}
+    unknown = [name for name in read_scenarios if name not in known]
+    if unknown:
+        pytest.fail(
+            f"`--read-scenarios={','.join(read_scenarios)}` names configs that are not listed "
+            f"under `basic_read` or `full_refresh` in `acceptance-test-config.yml`: "
+            f"{', '.join(map(repr, unknown))}. The read configs are: "
+            f"{', '.join(map(repr, read_ids)) or 'none'}."
+        )
+
+
+def fail_on_undiscovered_read_streams(
+    read_from_streams: list[str],
+    discovered_streams: list[AirbyteStream],
+    *,
+    scenario_id: str,
+) -> None:
+    """Fail when `--read-from-streams` names a stream that `discover` does not report for a config.
+
+    Stream names match exactly, case included, as they do in a catalog. Without this check a
+    misspelled name would skip every Docker read, and the run would pass.
+    """
+    discovered_names = sorted(stream.name for stream in discovered_streams)
+    unknown = [name for name in read_from_streams if name not in set(discovered_names)]
+    if unknown:
+        pytest.fail(
+            f"`--read-from-streams={','.join(read_from_streams)}` names streams that `discover` "
+            f"does not report for config '{scenario_id}': {', '.join(map(repr, unknown))}. "
+            "Stream names match exactly, case included. The discovered streams "
+            f"are: {', '.join(map(repr, discovered_names)) or 'none'}. If only another config "
+            "discovers the stream, pick that config with `--read-scenarios`."
+        )
+
+
+def select_docker_read_streams(
+    read_streams: list[AirbyteStream],
+    *,
+    read_from_streams: Literal["default"] | list[str],
+) -> list[AirbyteStream]:
+    """Narrow a config's read streams by `--read-from-streams` (see the `read_from_streams` fixture).
+
+    `default` keeps every stream that `get_read_streams` returns, the same streams the in-process
+    `test_basic_read` reads. A stream list keeps the listed streams, which may leave none.
+    """
+    if isinstance(read_from_streams, list):
+        wanted = set(read_from_streams)
+        return [stream for stream in read_streams if stream.name in wanted]
+
+    return read_streams
+
+
+CONNECTOR_WORKDIR = "/source"
+"""The connector's working directory in the Docker tests: the one the platform gives a source's
+`read`. The platform runs `check` and `discover` in `/config`; any writable directory outside the
+image serves those tests equally."""
+
+CONNECTOR_WORKDIR_ARGS: tuple[str, ...] = (
+    "--tmpfs",
+    f"{CONNECTOR_WORKDIR}:rw,exec,mode=1777",
+    "--workdir",
+    CONNECTOR_WORKDIR,
+)
+"""`docker run` arguments that give the connector a writable working directory, as the platform does.
+
+The platform runs a connector with its working directory on a writable volume outside the image.
+The `WORKDIR` of a Python connector image is owned by root, not by the image's `airbyte` user, so
+a connector that writes a temporary file to its working directory (a bulk export download, for
+example) would fail only in the tests.
+
+The directory is a `tmpfs`, so what the connector writes there uses memory, where the platform's
+volume uses disk. A bind-mounted temporary directory would use disk, but the connector's `airbyte`
+user would own what it writes there, and the test could not delete the subdirectories it creates.
+"""
 
 
 _SPEC_FAILURE_OUTPUT_LINES = 50
@@ -266,6 +389,14 @@ _SPEC_FAILED_SKIP_REASON = (
     "the check outcome is not asserted without it. The spec tests report the `spec` failure."
 )
 
+_READ_CHECK_OPT_OUTS = (
+    "validate_schema",
+    "validate_primary_keys_data_type",
+    "validate_state_messages",
+    "expect_trace_message_on_failure",
+)
+"""The `basic_read` opt-outs that a config keeps if any of its entries declares them `false`."""
+
 
 class DockerConnectorTestSuite:
     """Base class for connector test suites."""
@@ -297,22 +428,15 @@ class DockerConnectorTestSuite:
     def acceptance_test_config(cls) -> Any:
         """Get the contents of acceptance test config file.
 
-        Also perform some basic validation that the file has the expected structure.
+        Also perform some basic validation that the file has the expected structure: an
+        `acceptance_tests` mapping, or only a top-level `bypass_reason`.
+
+        Raises:
+            MissingAcceptanceTestConfigError: The file does not exist (a `FileNotFoundError`).
+            AcceptanceTestConfigError: The file has an unusable layout, such as the legacy
+                top-level `tests:` key (a `ValueError`).
         """
-        acceptance_test_config_path = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
-        if not acceptance_test_config_path.exists():
-            raise FileNotFoundError(
-                f"Acceptance test config file not found at: {str(acceptance_test_config_path)}"
-            )
-
-        tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
-
-        if "acceptance_tests" not in tests_config:
-            raise ValueError(
-                f"Acceptance tests config not found in {acceptance_test_config_path}."
-                f" Found only: {str(tests_config)}."
-            )
-        return tests_config
+        return load_acceptance_test_config(cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG)
 
     @staticmethod
     def _dedup_scenarios(scenarios: list[ConnectorTestScenario]) -> list[ConnectorTestScenario]:
@@ -332,7 +456,9 @@ class DockerConnectorTestSuite:
         `discovery` and `basic_read` runs both `discover` and `read` (see
         `ConnectorTestScenario.commands`).
 
-        A `validate_schema: false` opt-out declared by any entry for the config is kept.
+        An opt-out (`validate_schema`, `validate_primary_keys_data_type`,
+        `validate_state_messages` or `expect_trace_message_on_failure` set to `false`) declared
+        by any entry for the config is kept.
 
         A config is read once, however many read sections (`basic_read`, `full_refresh`) list it.
         It keeps a `configured_catalog_path` only when every read entry for it declares that same
@@ -371,8 +497,11 @@ class DockerConnectorTestSuite:
                         update={
                             "empty_streams": list(set(all_empty_streams)),
                             "status": existing_scenario.status or scenario.status,
-                            "validate_schema": existing_scenario.validate_schema
-                            and scenario.validate_schema,
+                            **{
+                                opt_out: getattr(existing_scenario, opt_out)
+                                and getattr(scenario, opt_out)
+                                for opt_out in _READ_CHECK_OPT_OUTS
+                            },
                             "sections": tuple(
                                 dict.fromkeys(existing_scenario.sections + scenario.sections)
                             ),
@@ -397,14 +526,21 @@ class DockerConnectorTestSuite:
         return deduped_scenarios
 
     @classmethod
-    def _raise_if_invalid(cls, problems: list[str]) -> None:
-        """Fail collection with every problem found in `acceptance-test-config.yml`, if any."""
-        if problems:
-            config_file = cls.get_connector_root_dir().absolute() / ACCEPTANCE_TEST_CONFIG
-            raise ValueError(
-                f"`{config_file}` is not valid for the standard tests:\n"
-                + "\n".join(f"- {problem}" for problem in problems)
+    def _collect_scenarios(cls) -> CollectedScenarios:
+        """Read the runnable scenarios and the declared bypasses of `acceptance-test-config.yml`.
+
+        A Java connector without the file is reported as bypassed: Java connectors are tested by
+        their Gradle suites. Every other connector without it fails, with
+        `MissingAcceptanceTestConfigError`.
+        """
+        connector_root = cls.get_connector_root_dir()
+        config_path = (connector_root / ACCEPTANCE_TEST_CONFIG).absolute()
+        if not config_path.exists() and is_java_connector(connector_root):
+            return CollectedScenarios(
+                config_path=config_path,
+                bypasses=[ScenarioBypass(reason=JAVA_BYPASS_REASON, location="metadata.yaml")],
             )
+        return collect_scenarios(cls.acceptance_test_config, config_path)
 
     @classmethod
     def get_scenarios(
@@ -417,84 +553,52 @@ class DockerConnectorTestSuite:
         against the spec, `connection` runs `check` against the declared `status`, `discovery`
         runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read` of the
         streams of the config's `configured_catalog_path`, or of every discovered stream when it
-        declares none (`SECTION_COMMANDS`). The `incremental` section is not collected.
+        declares none (`SECTION_COMMANDS`). The `incremental` section is not collected. A section
+        in the legacy list layout (`spec: [...]`) is read as its `tests` list.
+
+        The file is required (except for Java connectors), and a legacy top-level `tests:` key
+        fails; see `load_acceptance_test_config`. An empty result is not an error here:
+        `pytest_generate_tests` fails collection when there is no scenario and no declared
+        bypass (`get_scenario_bypasses`).
 
         An entry of a collected section that sets a key the standard tests do not read, or one
         they fill in themselves (`sections`, `test_strictness_level`), fails collection, with one
         line per key naming the key, the section and the config, including entries that are
-        skipped (no `config_path`, or an `iam_role` config). See `entry_key_problems`.
+        skipped (no `config_path`, or an `iam_role` config). See `collect_scenarios`.
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        try:
-            all_tests_config = cls.acceptance_test_config
-        except FileNotFoundError as e:
-            # Destinations sometimes do not have an acceptance tests file.
-            warnings.warn(
-                f"Acceptance test config file not found: {e!s}. No scenarios will be loaded.",
-                category=UserWarning,
-                stacklevel=1,
-            )
+        return cls._dedup_scenarios(cls._collect_scenarios().scenarios)
+
+    @classmethod
+    def get_scenario_bypasses(cls) -> list[ScenarioBypass]:
+        """The `bypass_reason`s that `acceptance-test-config.yml` declares for collected parts.
+
+        A top-level `bypass_reason` bypasses the connector; one on a collected section with no
+        runnable config, or on an entry without `config_path`, bypasses that section or entry.
+        `pytest_generate_tests` reports them as skipped tests, and accepts a connector with no
+        scenario only when it declares at least one.
+
+        A suite that overrides `get_scenarios` supplies its own scenarios, so the file is not read
+        and nothing is bypassed.
+        """
+        if cls._supplies_own_scenarios():
             return []
+        return cls._collect_scenarios().bypasses
 
-        test_strictness_level = all_tests_config.get("test_strictness_level")
-        entries: list[tuple[str, dict[str, Any]]] = []
-        for category in SCENARIO_SECTIONS:
-            if (
-                category not in all_tests_config["acceptance_tests"]
-                or "tests" not in all_tests_config["acceptance_tests"][category]
-            ):
-                continue
+    @classmethod
+    def describe_empty_scenarios(cls) -> str:
+        """Why `acceptance-test-config.yml` yields neither a scenario nor a bypass."""
+        if cls._supplies_own_scenarios():
+            return f"{cls.__name__}.get_scenarios() returned no test scenarios."
+        return cls._collect_scenarios().describe_empty(cast(str, cls.connector_name))
 
-            for test in all_tests_config["acceptance_tests"][category]["tests"]:
-                if isinstance(test, dict):
-                    entries.append((category, test))
-
-        # Every entry is checked, including those skipped below, so that a key that is not read
-        # fails collection wherever it is set.
-        cls._raise_if_invalid(
-            [
-                problem
-                for category, test in entries
-                for problem in entry_key_problems(test, (category,))
-            ]
-        )
-
-        problems: list[str] = []
-        test_scenarios: list[ConnectorTestScenario] = []
-        for category, test in entries:
-            if "config_path" not in test:
-                # Skip tests without a config_path
-                continue
-
-            if "iam_role" in test["config_path"]:
-                # We skip iam_role tests for now, as they are not supported in the test suite.
-                continue
-
-            try:
-                scenario = ConnectorTestScenario.model_validate(
-                    {
-                        **test,
-                        "sections": (category,),
-                        "test_strictness_level": test_strictness_level,
-                    }
-                )
-            except ValidationError as error:
-                # Reported without the input, which can hold config values.
-                problems.extend(
-                    f"`{category}` entry for config `{test['config_path']}`: "
-                    f"`{'.'.join(str(part) for part in detail['loc'])}`: {detail['msg']}"
-                    for detail in error.errors()
-                )
-                continue
-
-            test_scenarios.append(scenario)
-        cls._raise_if_invalid(problems)
-
-        deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
-
-        return deduped_test_scenarios
+    @classmethod
+    def _supplies_own_scenarios(cls) -> bool:
+        """Whether the suite overrides `get_scenarios`, so its scenarios do not come from the file."""
+        subclasses = cls.__mro__[: cls.__mro__.index(DockerConnectorTestSuite)]
+        return any("get_scenarios" in vars(subclass) for subclass in subclasses)
 
     @classmethod
     def _connector_image(
@@ -735,6 +839,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -850,6 +955,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -872,16 +978,36 @@ class DockerConnectorTestSuite:
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
         connector_base_image_override: str | None,
-        read_from_streams: Literal["all", "none", "default"] | list[str],
+        read_from_streams: Literal["default", "none"] | list[str],
         read_scenarios: Literal["all", "none", "default"] | list[str],
     ) -> None:
-        """Read from the connector's Docker image.
+        """Read from the connector's Docker image, and check the records as `test_basic_read` does.
 
         This test builds the connector image and runs a full-refresh `read` command inside the
         container, for configs listed under `basic_read` or `full_refresh` in
         `acceptance-test-config.yml`. The read covers the streams of the config's
         `configured_catalog_path`, or every discovered stream when it declares none, minus its
         `empty_streams` (see `get_read_streams`), narrowed further by `--read-from-streams`.
+
+        The read gets the same checks as `test_basic_read`. For a config listed under
+        `basic_read`: every stream it reads must return at least one record; every record must
+        match its stream's JSON schema (opt out with `validate_schema: false`, which a connector
+        at `test_strictness_level: high` cannot); every record of a stream with a
+        `source_defined_primary_key` must have a usable primary key (opt out with
+        `validate_primary_keys_data_type: false`); and every stream must emit state with
+        `sourceStats` (opt out with `validate_state_messages: false`). Incomplete stream statuses
+        are reported as a `StreamStatusWarning`, not enforced. A config listed only under
+        `full_refresh` must return some records.
+
+        The test is skipped unless `--read-from-streams` turns it on: the in-process
+        `test_basic_read` already reads every connector whose in-process tests run, and this read
+        is meant to be turned on only for a connector whose in-process tests cannot run.
+        `--read-from-streams=default` reads the streams above; a stream list narrows them.
+        `--read-scenarios` picks which configs are read (by default `config`, `valid_config` and
+        `default`, plus a `basic_read` config if none of those is one; see
+        `get_default_read_scenario_ids`). A config or stream name that matches nothing fails the
+        test, so a typo cannot skip every read. See the `read_from_streams` and `read_scenarios`
+        fixtures.
 
         Note:
           - If the --connector-image arg is provided, it will be used instead of building the image.
@@ -895,30 +1021,38 @@ class DockerConnectorTestSuite:
             pytest.skip("Skipping (expected to fail).")
 
         if read_from_streams == "none":
-            pytest.skip("Skipping read test (`--read-from-streams=false`).")
+            pytest.skip(
+                "Skipping the Docker read test: it is off unless `--read-from-streams` turns it "
+                "on (for example `--read-from-streams=default`)."
+            )
 
         if read_scenarios == "none":
-            pytest.skip("Skipping (`--read-scenarios=none`).")
+            pytest.skip("Skipping the Docker read test: it was disabled with `--read-scenarios`.")
 
-        default_scenario_ids = ["config", "valid_config", "default"]
-        if read_scenarios == "all":
-            pass
-        elif read_scenarios == "default":
-            if scenario.id not in default_scenario_ids:
+        if read_scenarios == "default":
+            default_ids = get_default_read_scenario_ids(self.get_scenarios())
+            if scenario.id not in default_ids:
                 pytest.skip(
-                    f"Skipping read test for scenario '{scenario.id}' "
-                    f"(not in default scenarios list '{default_scenario_ids}')."
+                    f"Skipping the Docker read of config '{scenario.id}': "
+                    f"`--read-scenarios=default` reads {', '.join(sorted(map(repr, default_ids)))}. "
+                    "Pass `--read-scenarios=all` to read every config."
                 )
-        elif scenario.id not in read_scenarios:
-            # pytest.skip(
-            raise ValueError(
-                f"Skipping read test for scenario '{scenario.id}' "
-                f"(not in --read-scenarios={read_scenarios})."
+        elif read_scenarios != "all":
+            fail_on_unknown_read_scenarios(read_scenarios, self.get_scenarios())
+            if scenario.id.lower() not in read_scenarios:
+                pytest.skip(
+                    f"Skipping the Docker read of config '{scenario.id}': not in "
+                    f"`--read-scenarios={','.join(read_scenarios)}`."
+                )
+
+        if scenario.is_basic_read_config:
+            assert_schema_validation_opt_out_allowed(
+                validate_schema=scenario.validate_schema,
+                test_strictness_level=scenario.test_strictness_level,
             )
 
         connector_root = self.get_connector_root_dir()
         connector_name = connector_root.absolute().name
-        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
         connector_image = self._connector_image(
             connector_image_override, connector_base_image_override
         )
@@ -941,6 +1075,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -951,19 +1086,21 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
-            read_streams = get_read_streams(
-                scenario,
-                get_discovered_streams(discover_result, connector_name),
-                connector_root,
-            )
-            if read_from_streams == "default" and metadata.data.suggestedStreams:
-                # Read only the suggested streams.
-                suggested_streams = set(metadata.data.suggestedStreams.streams)
-                read_streams = [s for s in read_streams if s.name in suggested_streams]
-
+            discovered_streams = get_discovered_streams(discover_result, connector_name)
             if isinstance(read_from_streams, list):
-                # If `read_from_streams` is a list, read only those streams.
-                read_streams = [s for s in read_streams if s.name in read_from_streams]
+                fail_on_undiscovered_read_streams(
+                    read_from_streams, discovered_streams, scenario_id=scenario.id
+                )
+            read_streams = select_docker_read_streams(
+                get_read_streams(scenario, discovered_streams, connector_root),
+                read_from_streams=read_from_streams,
+            )
+            if not read_streams and isinstance(read_from_streams, list):
+                pytest.skip(
+                    f"Skipping the Docker read of config '{scenario.id}': none of the streams in "
+                    f"`--read-from-streams={','.join(read_from_streams)}` is read for it (its "
+                    "`configured_catalog_path` leaves them out, or its `empty_streams` lists them)."
+                )
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
@@ -984,6 +1121,7 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     "-v",
@@ -997,3 +1135,28 @@ class DockerConnectorTestSuite:
                 ],
                 raise_if_errors=True,
             )
+
+        if scenario.is_basic_read_config:
+            status_problems = find_stream_status_problems(
+                read_result.trace_messages, configured_catalog
+            )
+            if status_problems:
+                warnings.warn(
+                    "The read's stream statuses are incomplete. This check is not enforced "
+                    "yet:\n" + "\n".join(status_problems),
+                    category=StreamStatusWarning,
+                    stacklevel=1,
+                )
+            # Also asserts that the read returned records, in the same pass over them.
+            assert_read_records(
+                records=read_result.records_iterator,
+                configured_catalog=configured_catalog,
+                require_records_per_stream=True,
+                validate_schema=scenario.validate_schema,
+                validate_primary_keys=scenario.validate_primary_keys_data_type,
+                state_messages=(
+                    read_result.state_messages if scenario.validate_state_messages else None
+                ),
+            )
+        elif next(read_result.records_iterator, None) is None:
+            raise AssertionError("Expected records but got none.")

@@ -223,12 +223,16 @@ jobs:
             --pytest-arg=--connector-base-image \
             --pytest-arg=airbyte/source-declarative-manifest:dev
 
+      # The Docker read is off by default; turn it on here so the read inside the connector image
+      # keeps running in CI for the connectors of this matrix. `airbyte-cdk image test` has no
+      # pytest passthrough, so the option goes through PYTEST_ADDOPTS.
       - name: Container Build and Test [All Connectors]
         if: steps.no_changes.outputs.status != 'cancelled'
         working-directory: airbyte-python-cdk
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+          PYTEST_ADDOPTS: --read-from-streams=default
         run: |
           if [ "$CONNECTOR_LANGUAGE" = "manifest-only" ]; then
             poetry run airbyte-cdk image test ${{ matrix.connector }} \

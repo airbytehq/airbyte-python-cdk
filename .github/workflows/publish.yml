@@ -468,3 +468,86 @@ jobs:
                     }
                 ]
             }
+
+  notify-publish-failure:
+    # Alert when any part of a tag-triggered release fails. Without this, a failed
+    # `publish_sdm` or `publish_cdk` is only visible as a red job in the Actions run,
+    # and a failed `publish_manifest_server` skips the Builder job and its Slack message.
+    # Prereleases (workflow_dispatch) are excluded, since whoever starts one is watching it.
+    name: Alert on Slack if a release publish job failed
+    needs:
+      - build
+      - publish_cdk
+      - publish_sdm
+      - publish_manifest_server
+    # `failure()` is needed so this job runs even though an upstream job failed;
+    # it is false on success and on cancellation, so a successful release posts nothing.
+    if: >
+      failure() &&
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Summarize job results
+        id: summary
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_CDK_RESULT: ${{ needs.publish_cdk.result }}
+          PUBLISH_SDM_RESULT: ${{ needs.publish_sdm.result }}
+          PUBLISH_MANIFEST_SERVER_RESULT: ${{ needs.publish_manifest_server.result }}
+        run: |
+          set -euo pipefail
+          failed=()
+          not_run=()
+          classify() {
+            case "$2" in
+              failure) failed+=("$1") ;;
+              skipped|cancelled) not_run+=("$1") ;;
+            esac
+          }
+          classify "Build Python Package" "$BUILD_RESULT"
+          classify "Publish CDK to PyPI" "$PUBLISH_CDK_RESULT"
+          classify "Publish SDM to DockerHub" "$PUBLISH_SDM_RESULT"
+          classify "Publish Manifest Server to DockerHub" "$PUBLISH_MANIFEST_SERVER_RESULT"
+          join() { local out; out="$(printf '%s, ' "$@")"; echo "${out%, }"; }
+          FAILED_JOBS="$(join "${failed[@]}")"
+          NOT_RUN_JOBS="$(join "${not_run[@]}")"
+          echo "FAILED_JOBS=${FAILED_JOBS:-none}" | tee -a "$GITHUB_OUTPUT"
+          echo "NOT_RUN_JOBS=${NOT_RUN_JOBS:-none}" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Post publish failure to Slack channel dev-connectors-extensibility
+        uses: slackapi/slack-github-action@v1.23.0
+        continue-on-error: true
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
+        with:
+          channel-id: C04J1M66D8B
+          # Channel: #dev-connectors-extensibility-releases
+          # Link (internal): https://airbytehq-team.slack.com/archives/C04J1M66D8B
+          payload: |
+            {
+                "text": ":rotating_light: Python CDK release `${{ needs.build.outputs.VERSION || github.ref_name }}` failed to publish: ${{ steps.summary.outputs.FAILED_JOBS }}",
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": ":rotating_light: Python CDK release `${{ needs.build.outputs.VERSION || github.ref_name }}` did not fully publish.\n\n"
+                        }
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "*Failed:* ${{ steps.summary.outputs.FAILED_JOBS }}\n*Did not run:* ${{ steps.summary.outputs.NOT_RUN_JOBS }}\n"
+                        }
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "See details on <https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}|GitHub>\n"
+                        }
+                    }
+                ]
+            }

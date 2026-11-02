@@ -19,6 +19,7 @@ from pydantic import ValidationError
 import airbyte_cdk.test
 from airbyte_cdk.test.models import scenario as scenario_module
 from airbyte_cdk.test.models.scenario import (
+    BASIC_READ_ONLY_FIELDS,
     LEGACY_ENTRY_KEYS,
     POPULATED_FIELDS,
     REMOVED_ENTRY_KEYS,
@@ -34,9 +35,7 @@ SECRET = "hunter2-do-not-print"
 
 # Fields with no reader yet, each with the change that adds the reader. The guard below fails once
 # such a field is read, so the entry is removed by the change that starts reading it.
-AWAITING_READER: dict[str, str] = {
-    "bypass_reason": "the zero-scenario rule, airbyte-internal-issues#17131",
-}
+AWAITING_READER: dict[str, str] = {}
 
 
 # --- Guard: every field is read outside the model --------------------------------------------
@@ -115,12 +114,14 @@ def test_every_scenario_field_is_read_outside_the_model() -> None:
     )
 
 
-@pytest.mark.parametrize("field", sorted(AWAITING_READER))
-def test_fields_awaiting_a_reader_are_still_unread(field: str) -> None:
-    assert field in ConnectorTestScenario.model_fields
-    assert field in _fields_without_reader(), (
-        f"`{field}` is read now ({AWAITING_READER[field]}): remove it from `AWAITING_READER`."
-    )
+def test_fields_awaiting_a_reader_are_still_unread() -> None:
+    # A plain loop, not a parametrization: an empty `AWAITING_READER` passes instead of skipping.
+    unread = _fields_without_reader()
+    for field, change in AWAITING_READER.items():
+        assert field in ConnectorTestScenario.model_fields
+        assert field in unread, (
+            f"`{field}` is read now ({change}): remove it from `AWAITING_READER`."
+        )
 
 
 def test_guard_detects_an_unread_field() -> None:
@@ -218,6 +219,41 @@ def test_legacy_key_is_rejected_outside_its_section() -> None:
                 "sections": ("basic_read",),
             }
         )
+
+
+@pytest.mark.parametrize("key", sorted(BASIC_READ_ONLY_FIELDS))
+@pytest.mark.parametrize("section", [s for s in SCENARIO_SECTIONS if s != "basic_read"])
+def test_basic_read_opt_out_is_rejected_outside_basic_read(key: str, section: str) -> None:
+    entry = {"config_path": "secrets/config.json", key: False}
+
+    assert entry_key_problems(entry, [section]) == [
+        f"`{key}` in the `{section}` entry for config `secrets/config.json` is read only from a "
+        "`basic_read` entry: it opts the config out of a check of the basic read test. Move it to "
+        "the config's `basic_read` entry, or remove it."
+    ]
+    assert entry_key_problems(entry, ["basic_read"]) == []
+
+
+@pytest.mark.parametrize("key", sorted(BASIC_READ_ONLY_FIELDS))
+def test_basic_read_opt_out_is_accepted_when_building_a_scenario(key: str) -> None:
+    # A merged or copied scenario carries every field, whatever its sections.
+    scenario = ConnectorTestScenario.model_validate(
+        {"config_path": "secrets/config.json", key: False, "sections": ("full_refresh",)}
+    )
+    assert getattr(scenario, key) is False
+    assert getattr(scenario.without_expected_outcome(), key) is False
+
+
+def test_basic_read_only_fields_are_fields_not_legacy_keys() -> None:
+    assert BASIC_READ_ONLY_FIELDS == {
+        "validate_schema",
+        "validate_primary_keys_data_type",
+        "validate_state_messages",
+        "expect_trace_message_on_failure",
+    }
+    assert BASIC_READ_ONLY_FIELDS <= set(ConnectorTestScenario.model_fields)
+    assert not BASIC_READ_ONLY_FIELDS & set(POPULATED_FIELDS)
+    assert not any(BASIC_READ_ONLY_FIELDS & keys for keys in LEGACY_ENTRY_KEYS.values())
 
 
 def test_unknown_key_of_an_empty_stream_is_rejected() -> None:
@@ -378,6 +414,53 @@ def test_get_scenarios_rejects_entries_setting_populated_fields(tmp_path: Path) 
     assert "is not an entry key: it is read only at the top level" in str(error.value)
 
 
+def test_get_scenarios_rejects_basic_read_opt_outs_in_other_sections(tmp_path: Path) -> None:
+    # Merged into the config's scenario, these would silently turn its `basic_read` checks off.
+    suite = _suite(
+        tmp_path,
+        {
+            "connection": {
+                "tests": [
+                    {
+                        "config_path": "secrets/config.json",
+                        "status": "succeed",
+                        "expect_trace_message_on_failure": False,
+                    }
+                ]
+            },
+            "discovery": {
+                "tests": [
+                    {"config_path": "secrets/config.json", "validate_primary_keys_data_type": False}
+                ]
+            },
+            "basic_read": {"tests": [{"config_path": "secrets/config.json"}]},
+            "full_refresh": {
+                "tests": [
+                    {
+                        "config_path": "secrets/config.json",
+                        "validate_schema": False,
+                        "validate_state_messages": False,
+                    }
+                ]
+            },
+        },
+    )
+
+    with pytest.raises(ValueError) as error:
+        suite.get_scenarios()
+
+    lines = str(error.value).splitlines()[1:]
+    assert [line.split(" is ")[0] for line in lines] == [
+        "- `expect_trace_message_on_failure` in the `connection` entry for config "
+        "`secrets/config.json`",
+        "- `validate_primary_keys_data_type` in the `discovery` entry for config "
+        "`secrets/config.json`",
+        "- `validate_schema` in the `full_refresh` entry for config `secrets/config.json`",
+        "- `validate_state_messages` in the `full_refresh` entry for config `secrets/config.json`",
+    ]
+    assert all("is read only from a `basic_read` entry" in line for line in lines)
+
+
 def test_get_scenarios_reports_invalid_values_without_printing_them(tmp_path: Path) -> None:
     suite = _suite(
         tmp_path,
@@ -462,3 +545,5 @@ def test_get_scenarios_accepts_the_keys_still_in_use(tmp_path: Path) -> None:
 
     assert scenario.sections == ("spec", "connection", "discovery", "basic_read", "full_refresh")
     assert scenario.validate_schema is False
+    assert scenario.expect_trace_message_on_failure is False
+    assert scenario.validate_state_messages is False

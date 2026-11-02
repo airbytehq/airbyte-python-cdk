@@ -2241,6 +2241,16 @@ class OAuthAuthenticator(BaseModel):
         examples=[["invalid_grant", "invalid_permissions"]],
         title="Refresh Token Error Values",
     )
+    refresh_token_error_messages: Optional[Dict[str, str]] = Field(
+        None,
+        description="Fixed user-facing messages for refresh token errors. Keys are matched in order against the provider error code leading error_description (a token such as ABC12345 followed by a word boundary), the whitespace-normalized full error_description, then the OAuth error value; the first match replaces the default re-authentication guidance, and the provider error detail is still appended. Only applies to responses already flagged as config errors by Refresh Token Error Status Codes, Refresh Token Error Key and Refresh Token Error Values (or their defaults); it does not flag any additional responses. Values are used verbatim, without interpolation, so the message is identical on every attempt.",
+        examples=[
+            {
+                "invalid_grant": "The refresh token expired or was revoked. Re-authenticate this source to restore syncs."
+            }
+        ],
+        title="Refresh Token Error Messages",
+    )
     refresh_token_updater: Optional[RefreshTokenUpdater] = Field(
         None,
         description="When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.",
@@ -2973,6 +2983,42 @@ class FileUploader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class SyncTokenCursor(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["SyncTokenCursor"]
+    token_path: List[str] = Field(
+        ...,
+        description="Path to the next token in the decoded response that ends a pagination pass. The value must be a string or an integer, and is stored and sent as a string. A missing, null or empty value means the response carried no token.",
+        examples=[["syncToken"], ["nextSyncToken"], ["meta", "sync_token"]],
+        title="Token Path",
+    )
+    token_option: RequestOption = Field(
+        ...,
+        description="Where to send the stored token on each request of a pass: the JSON body, the query string, a header or the form body.",
+        title="Send Token In",
+    )
+    completion_condition: Optional[str] = Field(
+        None,
+        description="Must be true on the last response of a pass for its token to be committed. Defaults to a token being present at token_path. Set it when the API repeats the old token on intermediate pages or returns a position on every page.",
+        examples=["{{ not response.moreDataAvailable }}"],
+        title="Completion Condition",
+    )
+    initial_token: Optional[str] = Field(
+        None,
+        description='Value to send when no token is stored, for an API that needs one to start a full pass, such as Todoist\'s "*". When unset, nothing is sent.',
+        examples=["*"],
+        title="Initial Token",
+    )
+    cursor_field: Optional[str] = Field(
+        None,
+        description="Optional top-level record field advertised as the stream's cursor, so destinations can order versions of a record when deduplicating. It is never used to filter records or to build state.",
+        title="Destination Cursor Field",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DeclarativeStream(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2984,7 +3030,9 @@ class DeclarativeStream(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    incremental_sync: Optional[Union[DatetimeBasedCursor, IncrementingCountCursor]] = Field(
+    incremental_sync: Optional[
+        Union[DatetimeBasedCursor, IncrementingCountCursor, SyncTokenCursor]
+    ] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",

@@ -51,6 +51,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         refresh_token_error_status_codes (Tuple[int, ...]): Status codes to identify refresh token errors in response
         refresh_token_error_key (str): Key to identify refresh token error in response
         refresh_token_error_values (Tuple[str, ...]): List of values to check for exception during token refresh process
+        refresh_token_error_messages (Optional[Mapping[str, str]]): Fixed user-facing messages for refresh token errors
     """
 
     config: Mapping[str, Any]
@@ -81,12 +82,14 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token_error_status_codes: Tuple[int, ...] = ()
     refresh_token_error_key: str = ""
     refresh_token_error_values: Tuple[str, ...] = ()
+    refresh_token_error_messages: Optional[Mapping[str, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__(
             refresh_token_error_status_codes=self.refresh_token_error_status_codes,
             refresh_token_error_key=self.refresh_token_error_key,
             refresh_token_error_values=self.refresh_token_error_values,
+            refresh_token_error_messages=self.refresh_token_error_messages,
         )
         if self.token_refresh_endpoint is not None:
             self._token_refresh_endpoint: Optional[InterpolatedString] = InterpolatedString.create(
