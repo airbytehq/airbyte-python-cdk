@@ -357,7 +357,6 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
                     }
                 ]
             },
-            # Not collected: its keys are not checked.
             "incremental": {
                 "tests": [{"config_path": "secrets/config.json", "timeout_seconds": 3600}]
             },
@@ -379,9 +378,11 @@ def test_get_scenarios_reports_every_key_not_read(tmp_path: Path) -> None:
         "- `fail_on_extra_columns` in the `basic_read` entry for config `secrets/config.json`",
         "- `ignored_fields` in the `full_refresh` entry for config `secrets/config.json`",
         "- `unknown_key` in the `full_refresh` entry for config `secrets/config.json`",
+        "- `timeout_seconds` in the `incremental` entry for config `secrets/config.json`",
     ]
     assert "no longer read" in lines[1]
-    assert "is not a key the standard tests read" in lines[-1]
+    assert "is not a key the standard tests read" in lines[-2]
+    assert "no longer read" in lines[-1]
     assert SECRET not in message
 
 

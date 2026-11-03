@@ -47,7 +47,7 @@ BYPASSED_SECTIONS_CONFIG: dict[str, Any] = {
     },
 }
 
-# No runnable config and no bypass of a collected section: only `incremental` declares one.
+# No runnable config, and only an `incremental` bypass, which skips only the future-state read.
 ZERO_SCENARIOS_CONFIG: dict[str, Any] = {
     "acceptance_tests": {
         "spec": {"tests": [{"spec_path": "manifest.yaml"}]},
@@ -105,8 +105,8 @@ def test_bypassed_sections_yield_no_scenario_and_one_bypass_per_collected_sectio
             location=f"acceptance_tests.{section}.bypass_reason",
             sections=(section,),
         )
-        for section in ("connection", "discovery", "basic_read", "full_refresh")
-    ], "the `incremental` bypass is not a bypass of anything the standard tests run"
+        for section in ("connection", "discovery", "basic_read", "full_refresh", "incremental")
+    ]
 
 
 def test_zero_scenarios_without_bypass_lists_why_each_part_produced_nothing(
@@ -115,7 +115,7 @@ def test_zero_scenarios_without_bypass_lists_why_each_part_produced_nothing(
     suite = _suite(_write_connector(tmp_path / "source-test", ZERO_SCENARIOS_CONFIG))
 
     assert suite.get_scenarios() == []
-    assert suite.get_scenario_bypasses() == []
+    assert [bypass.explains_no_scenarios for bypass in suite.get_scenario_bypasses()] == [False]
     message = suite.describe_empty_scenarios()
     assert message.startswith("No test scenarios for connector 'source-test': ")
     assert str(tmp_path / "source-test" / ACCEPTANCE_TEST_CONFIG) in message
@@ -124,7 +124,8 @@ def test_zero_scenarios_without_bypass_lists_why_each_part_produced_nothing(
         + "(keys: `spec_path`).",
         "`acceptance_tests.connection.tests[0]`: an IAM-role config",
         "`acceptance_tests.basic_read.tests`: empty list.",
-        "`acceptance_tests.incremental`: not a section the standard tests collect.",
+        "`acceptance_tests.incremental.bypass_reason`: bypasses only the future-state read, "
+        + "not the other tests.",
         "a top-level `bypass_reason` for the whole connector",
     ]:
         assert expected in message
@@ -443,10 +444,11 @@ def test_bypasses_are_reported_as_skipped_tests_and_at_collection(
     result.assert_outcomes(skipped=1)
     result.stdout.fnmatch_lines(
         [
-            "source-test: acceptance-test-config.yml declares 4 bypass(es), reported as skipped "
-            "tests: connection, discovery, basic_read, full_refresh: " + BUILDER_REASON,
+            "source-test: acceptance-test-config.yml declares 5 bypass(es), reported as skipped "
+            "tests: connection, discovery, basic_read, full_refresh, incremental: "
+            + BUILDER_REASON,
             "SKIPPED [[]1[]] *: acceptance-test-config.yml bypasses connection, discovery, "
-            "basic_read, full_refresh: " + BUILDER_REASON,
+            "basic_read, full_refresh, incremental: " + BUILDER_REASON,
         ]
     )
 

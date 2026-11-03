@@ -25,8 +25,11 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping
 
 
-ScenarioCommand = Literal["spec", "check", "discover", "read"]
-"""A connector command the standard tests run for a scenario. See `SECTION_COMMANDS`."""
+ScenarioCommand = Literal["spec", "check", "discover", "read", "read_from_future_state"]
+"""A command the standard tests run for a scenario. See `SECTION_COMMANDS`.
+
+`read_from_future_state` is a `read` that starts from the scenario's future state.
+"""
 
 SECTION_COMMANDS: Mapping[str, frozenset[ScenarioCommand]] = MappingProxyType(
     {
@@ -35,6 +38,7 @@ SECTION_COMMANDS: Mapping[str, frozenset[ScenarioCommand]] = MappingProxyType(
         "discovery": frozenset({"discover"}),
         "basic_read": frozenset({"read"}),
         "full_refresh": frozenset({"read"}),
+        "incremental": frozenset({"read_from_future_state"}),
     }
 )
 """The command that runs for a config listed under each section of `acceptance-test-config.yml`.
@@ -50,9 +54,13 @@ with, and the standard tests run that command for the config:
   `configured_catalog_path`, or every discovered stream when it declares none, minus its
   `empty_streams`.
 
-A config listed under several sections runs the union of their commands. Configs listed only
-under `incremental` are not collected: without input state, an incremental `read` checks the same
-thing as a full-refresh one.
+- `incremental`: an incremental `read` that starts from the entry's `future_state`, a state
+  with cursors far in the future, must succeed, return no records, and emit state for every stream
+  it reads (`test_read_from_future_state`). Only entries with a `future_state.future_state_path`
+  run; an entry is never merged with the config's entries of other sections, as its catalog and
+  state are its own.
+
+A config listed under several sections runs the union of their commands.
 """
 
 SCENARIO_SECTIONS: tuple[str, ...] = tuple(SECTION_COMMANDS)
@@ -99,6 +107,9 @@ LEGACY_ENTRY_KEYS: Mapping[str, frozenset[str]] = MappingProxyType(
         "discovery": frozenset({"backward_compatibility_tests_config"}),
         "basic_read": frozenset({"client_container_config"}),
         "full_refresh": frozenset({"client_container_config"}),
+        "incremental": frozenset(
+            {"client_container_config", "skip_comprehensive_incremental_tests"}
+        ),
     }
 )
 """CAT keys that an entry of each section may still set, although the scenario does not read them.
@@ -129,6 +140,10 @@ fields).
 """
 
 
+INCREMENTAL_ONLY_FIELDS: frozenset[str] = frozenset({"future_state"})
+"""Fields that only an `incremental` entry may set: the state the future-state read starts from."""
+
+
 POPULATED_FIELDS: Mapping[str, str] = MappingProxyType(
     {
         "sections": "the standard tests set it from the section that lists the entry",
@@ -155,13 +170,14 @@ def entry_key_problems(
     `LEGACY_ENTRY_KEYS` of the section that lists it; the `BASIC_READ_ONLY_FIELDS` only from a
     `basic_read` entry. A key of `REMOVED_ENTRY_KEYS` is reported as no longer read, a key of
     `POPULATED_FIELDS` as not an entry key, and a key of `BASIC_READ_ONLY_FIELDS` outside
-    `basic_read` as read only there, with the reason; any other key as unknown. Each message names the key, the section and the entry's
+    `basic_read` as read only there, with the reason; a key of `INCREMENTAL_ONLY_FIELDS` outside
+    `incremental` likewise; any other key as unknown. Each message names the key, the section and the entry's
     `config_path`, never a value.
 
     `from_file=False` checks the data a scenario is built from (by `get_scenarios()` or by hand),
-    where the `POPULATED_FIELDS` are accepted, and so are the `BASIC_READ_ONLY_FIELDS` in every
-    section: a scenario merged from several entries, or copied with every field written out,
-    carries them whatever its sections.
+    where the `POPULATED_FIELDS` are accepted, and so are the `BASIC_READ_ONLY_FIELDS` and
+    `INCREMENTAL_ONLY_FIELDS` in every section: a scenario merged from several entries, or copied
+    with every field written out, carries them whatever its sections.
     """
     sections = tuple(sections)
     accepted = set(ConnectorTestScenario.model_fields)
@@ -171,6 +187,8 @@ def entry_key_problems(
         accepted |= LEGACY_ENTRY_KEYS.get(section, frozenset())
     if from_file and "basic_read" not in sections:
         accepted -= BASIC_READ_ONLY_FIELDS
+    if from_file and "incremental" not in sections:
+        accepted -= INCREMENTAL_ONLY_FIELDS
     where = (f"the `{'`/`'.join(sections)}` entry" if sections else "the scenario") + (
         f" for config `{entry['config_path']}`"
         if entry.get("config_path")
@@ -191,6 +209,17 @@ def entry_key_problems(
                 f"`{key}` in {where} is read only from a `basic_read` entry: it opts the config "
                 "out of a check of the basic read test. Move it to the config's `basic_read` "
                 "entry, or remove it."
+            )
+        elif key in INCREMENTAL_ONLY_FIELDS:
+            problems.append(
+                f"`{key}` in {where} is read only from an `incremental` entry: it is the state "
+                "the future-state read starts from. Move it to the config's `incremental` entry, "
+                "or remove it."
+            )
+        elif key == "future_state_path" and "incremental" in sections:
+            problems.append(
+                f"`{key}` in {where} must be nested under `future_state` "
+                "(`future_state: {future_state_path: ...}`)."
             )
         elif key in POPULATED_FIELDS:
             problems.append(
@@ -235,6 +264,18 @@ class ConnectorTestScenario(BaseModel):
         def __hash__(self) -> int:
             return hash(self.name)
 
+    class FutureState(BaseModel):
+        """An `incremental` entry's `future_state`: the state the future-state read starts from."""
+
+        model_config = ConfigDict(frozen=True, extra="forbid")
+
+        # A JSON list of `STREAM` or `GLOBAL` state messages with cursors far in the future.
+        future_state_path: Path | None = None
+        # Incremental streams the state file has no state for; they are not read.
+        missing_streams: tuple[ConnectorTestScenario.AcceptanceTestEmptyStream, ...] = ()
+        # Why the entry has no future state; the read is reported as skipped with it.
+        bypass_reason: str | None = None
+
     config_path: Path | None = None
     config_dict: dict[str, Any] | None = None
 
@@ -254,6 +295,8 @@ class ConnectorTestScenario(BaseModel):
     validate_state_messages: bool = True
     # CAT's `basic_read` opt-out from requiring a well-formed error trace from a failing read.
     expect_trace_message_on_failure: bool = True
+    # An `incremental` entry's future state, read by `test_read_from_future_state`.
+    future_state: FutureState | None = None
     # The connector's top-level `test_strictness_level` in `acceptance-test-config.yml`. Populated
     # by `get_scenarios()`; at `high`, `validate_schema: false` is rejected, as in CAT.
     test_strictness_level: Literal["low", "high"] | None = None
@@ -361,6 +404,14 @@ class ConnectorTestScenario(BaseModel):
         declare those exceptions in, so its `read` only has to return some records.
         """
         return not self.sections or "basic_read" in self.sections
+
+    @property
+    def is_future_state_read(self) -> bool:
+        """Whether this scenario is an `incremental` entry's future-state read.
+
+        It is kept apart from the config's entries of other sections (see `SECTION_COMMANDS`).
+        """
+        return "incremental" in self.sections
 
     @property
     def id(self) -> str:

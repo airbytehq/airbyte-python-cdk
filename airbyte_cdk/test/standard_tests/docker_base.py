@@ -42,6 +42,13 @@ from airbyte_cdk.test.standard_tests._assertions import (
     assert_check_outcome,
     assert_config_matches_spec,
 )
+from airbyte_cdk.test.standard_tests._future_state import (
+    assert_future_state_covers_streams,
+    assert_future_state_read,
+    build_future_state_catalog,
+    load_future_state,
+    resolve_future_state_path,
+)
 from airbyte_cdk.test.standard_tests._read_assertions import (
     StreamStatusWarning,
     assert_read_records,
@@ -460,6 +467,10 @@ class DockerConnectorTestSuite:
         `validate_state_messages` or `expect_trace_message_on_failure` set to `false`) declared
         by any entry for the config is kept.
 
+        An `incremental` entry is never merged: its future-state read has its own catalog and
+        state, and one config may have several. It takes the `empty_streams` of the config's
+        read entries, so it skips the streams `test_basic_read` skips.
+
         A config is read once, however many read sections (`basic_read`, `full_refresh`) list it.
         It keeps a `configured_catalog_path` only when every read entry for it declares that same
         catalog. If one of them declares none, or they declare different catalogs, the merged
@@ -474,8 +485,11 @@ class DockerConnectorTestSuite:
                 )
 
         deduped_scenarios: list[ConnectorTestScenario] = []
+        future_state_reads = [scenario for scenario in scenarios if scenario.is_future_state_read]
 
         for scenario in scenarios:
+            if scenario.is_future_state_read:
+                continue
             for existing_scenario in deduped_scenarios:
                 if scenario.config_path == existing_scenario.config_path:
                     # If a scenario with the same config_path already exists, we merge the empty streams.
@@ -523,6 +537,22 @@ class DockerConnectorTestSuite:
                 deduped_scenarios[index] = scenario.model_copy(
                     update={"configured_catalog_path": catalog}
                 )
+
+        empty_streams_by_config = {
+            scenario.config_path: scenario.empty_streams or []
+            for scenario in deduped_scenarios
+            if scenario.runs("read")
+        }
+        for scenario in future_state_reads:
+            empty_streams = list(
+                dict.fromkeys(
+                    (scenario.empty_streams or [])
+                    + empty_streams_by_config.get(scenario.config_path, [])
+                )
+            )
+            deduped_scenarios.append(
+                scenario.model_copy(update={"empty_streams": empty_streams or None})
+            )
         return deduped_scenarios
 
     @classmethod
@@ -553,7 +583,8 @@ class DockerConnectorTestSuite:
         against the spec, `connection` runs `check` against the declared `status`, `discovery`
         runs `discover`, and `basic_read` and `full_refresh` run a full-refresh `read` of the
         streams of the config's `configured_catalog_path`, or of every discovered stream when it
-        declares none (`SECTION_COMMANDS`). The `incremental` section is not collected. A section
+        declares none, and `incremental` runs a `read` from the entry's future state
+        (`SECTION_COMMANDS`). A section
         in the legacy list layout (`spec: [...]`) is read as its `tests` list.
 
         The file is required (except for Java connectors), and a legacy top-level `tests:` key
@@ -578,7 +609,8 @@ class DockerConnectorTestSuite:
         A top-level `bypass_reason` bypasses the connector; one on a collected section with no
         runnable config, or on an entry without `config_path`, bypasses that section or entry.
         `pytest_generate_tests` reports them as skipped tests, and accepts a connector with no
-        scenario only when it declares at least one.
+        scenario only when it declares one outside `incremental`, which skips only the future-state
+        read.
 
         A suite that overrides `get_scenarios` supplies its own scenarios, so the file is not read
         and nothing is bypassed.
@@ -1160,3 +1192,131 @@ class DockerConnectorTestSuite:
             )
         elif next(read_result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")
+
+    def test_docker_image_build_and_read_from_future_state(
+        self,
+        scenario: ConnectorTestScenario,
+        connector_image_override: str | None,
+        connector_base_image_override: str | None,
+        read_from_streams: Literal["default", "none"] | list[str],
+        read_scenarios: Literal["all", "none", "default"] | list[str],
+    ) -> None:
+        """Read from the connector's Docker image from a future state, as `test_read_from_future_state` does.
+
+        Runs for `incremental` entries with a `future_state.future_state_path`, when the Docker
+        read is on: it is off unless `--read-from-streams` turns it on, as for
+        `test_docker_image_build_and_read`. A stream list narrows the streams read;
+        `--read-scenarios=none` skips it, and a config list picks configs by id. The streams,
+        state file and checks are those of the in-process test, except the cursor format check,
+        which needs the declarative source's cursors.
+        """
+        if self.is_destination_connector():
+            pytest.skip("Skipping read test for destination connector.")
+
+        skip_unless_runs(scenario, "read_from_future_state")
+        if scenario.future_state is None or scenario.future_state.future_state_path is None:
+            pytest.skip(f"Scenario '{scenario.id}' has no future state to read from.")
+        if read_from_streams == "none":
+            pytest.skip(
+                "Skipping the Docker read test: it is off unless `--read-from-streams` turns it "
+                "on (for example `--read-from-streams=default`)."
+            )
+        if read_scenarios == "none":
+            pytest.skip("Skipping the Docker read test: it was disabled with `--read-scenarios`.")
+        if isinstance(read_scenarios, list) and scenario.id.lower() not in read_scenarios:
+            pytest.skip(
+                f"Skipping the Docker read of config '{scenario.id}': not in "
+                f"`--read-scenarios={','.join(read_scenarios)}`."
+            )
+
+        connector_root = self.get_connector_root_dir()
+        connector_name = connector_root.absolute().name
+        display_path = scenario.future_state.future_state_path
+        state_path = resolve_future_state_path(scenario, connector_root)
+        state = load_future_state(state_path, display_path=display_path)
+        connector_image = self._connector_image(
+            connector_image_override, connector_base_image_override
+        )
+
+        container_config_path = "/secrets/config.json"
+        container_catalog_path = "/secrets/catalog.json"
+        container_state_path = "/secrets/state.json"
+        with (
+            scenario.with_temp_config_file(connector_root=connector_root) as temp_config_file,
+            tempfile.TemporaryDirectory(
+                prefix=f"{connector_name}-test", ignore_cleanup_errors=True
+            ) as temp_dir_str,
+        ):
+            temp_dir = Path(temp_dir_str)
+            discover_result = run_docker_airbyte_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
+                    "-v",
+                    f"{temp_config_file}:{container_config_path}:rw",
+                    connector_image,
+                    "discover",
+                    "--config",
+                    container_config_path,
+                ],
+                raise_if_errors=True,
+            )
+            discovered_streams = get_discovered_streams(discover_result, connector_name)
+            if isinstance(read_from_streams, list):
+                fail_on_undiscovered_read_streams(
+                    read_from_streams, discovered_streams, scenario_id=scenario.id
+                )
+            catalog = build_future_state_catalog(
+                scenario,
+                get_read_streams(scenario, discovered_streams, connector_root),
+                connector_root,
+            )
+            assert_future_state_covers_streams(state, catalog, display_path=display_path)
+            if isinstance(read_from_streams, list):
+                wanted = set(read_from_streams)
+                catalog = ConfiguredAirbyteCatalog(
+                    streams=[s for s in catalog.streams if s.stream.name in wanted]
+                )
+                if not catalog.streams:
+                    pytest.skip(
+                        f"Skipping the Docker future-state read of config '{scenario.id}': none "
+                        f"of the streams in `--read-from-streams={','.join(read_from_streams)}` "
+                        "is an incremental stream it reads."
+                    )
+
+            catalog_path = temp_dir / "catalog.json"
+            catalog_path.write_text(orjson.dumps(asdict(catalog)).decode("utf-8"))
+            state_file = temp_dir / "state.json"
+            state_file.write_text(orjson.dumps(state).decode("utf-8"))
+            read_result: EntrypointOutput = run_docker_airbyte_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    *CONNECTOR_WORKDIR_ARGS,
+                    "-v",
+                    f"{temp_config_file}:{container_config_path}:rw",
+                    "-v",
+                    f"{catalog_path}:{container_catalog_path}",
+                    "-v",
+                    f"{state_file}:{container_state_path}",
+                    connector_image,
+                    "read",
+                    "--config",
+                    container_config_path,
+                    "--catalog",
+                    container_catalog_path,
+                    "--state",
+                    container_state_path,
+                ],
+                raise_if_errors=True,
+            )
+
+        assert_future_state_read(
+            records=read_result.records_iterator,
+            state_messages=read_result.state_messages,
+            catalog=catalog,
+            display_path=display_path,
+        )

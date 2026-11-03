@@ -41,9 +41,13 @@ def run_test_job(
     connector_root: Path,
     test_scenario: ConnectorTestScenario | None = None,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
+    state: list[dict[str, Any]] | None = None,
     inspect_output: Callable[[entrypoint_wrapper.EntrypointOutput], None] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
     """Run a test scenario from provided CLI args and return the result.
+
+    `state`, if given, is the input state of a `read`: a list of state messages, passed to the
+    connector with `--state` as the platform passes it.
 
     `inspect_output`, if given, is called with the output before any assertion on it, so it
     runs whatever the outcome. The secret leak check uses it, since the assertions below
@@ -101,6 +105,16 @@ def run_test_job(
 
         if catalog_path:
             args += ["--catalog", str(catalog_path)]
+
+    if state is not None:
+        if verb != "read":
+            raise ValueError(f"Input state is only passed to `read`, not to `{verb}`.")
+        state_path = (
+            Path(tempfile.gettempdir()) / "airbyte-test" / f"temp_state_{uuid.uuid4().hex}.json"
+        )
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(orjson.dumps(state).decode())
+        args += ["--state", str(state_path)]
 
     # This is a bit of a hack because the source needs the catalog early.
     # Because it *also* can fail, we have to redundantly wrap it in a try/except block.

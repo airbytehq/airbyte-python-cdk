@@ -1,4 +1,6 @@
+import logging
 import os
+from collections.abc import Iterator, Mapping
 from hashlib import md5
 from pathlib import Path
 from typing import Any, cast
@@ -6,6 +8,7 @@ from typing import Any, cast
 import yaml
 from boltons.typeutils import classproperty
 
+from airbyte_cdk.models import AirbyteMessage, AirbyteStateMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -71,6 +74,10 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
         instead of requiring a custom python source object.
 
         Subclasses should not need to override this method.
+
+        `ConcurrentDeclarativeSource` reads only the state it was built with, not the state its
+        `read` is given. A `read` with input state therefore reads from a source built with that
+        state and the read's catalog, as `source-declarative-manifest` builds it for the platform.
         """
         scenario = scenario or ConnectorTestScenario()  # Use default (empty) scenario if None
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
@@ -91,12 +98,30 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
                 "md5": md5_checksum(cls.components_py_path),
             }
 
-        return cast(
-            IConnector,
-            ConcurrentDeclarativeSource(
-                config=config,
-                catalog=None,
-                state=None,
-                source_config=manifest_dict,
-            ),
+        source = ConcurrentDeclarativeSource(
+            config=config,
+            catalog=None,
+            state=None,
+            source_config=manifest_dict,
         )
+        read_without_state = source.read
+        injected_config = config
+
+        def read(
+            logger: logging.Logger,
+            config: Mapping[str, Any],
+            catalog: ConfiguredAirbyteCatalog,
+            state: list[AirbyteStateMessage] | None = None,
+        ) -> Iterator[AirbyteMessage]:
+            if not state:
+                return read_without_state(logger, config, catalog, state)
+            # The source reads its own config, which holds the manifest; `config` does not.
+            return ConcurrentDeclarativeSource(
+                config=injected_config,
+                catalog=catalog,
+                state=state,
+                source_config=manifest_dict,
+            ).read(logger, config, catalog, state)
+
+        source.read = read  # type: ignore[method-assign]
+        return cast(IConnector, source)

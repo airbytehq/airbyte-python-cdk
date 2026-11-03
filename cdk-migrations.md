@@ -29,6 +29,37 @@ Migration steps:
 - A command that passed `--read-from-streams=suggested` or `=default` to read a connector's `suggestedStreams` now reads every stream of the config. Pass the stream names as a list to keep the narrower read.
 - A connector whose Docker read fails gets the same fixes as a failing `test_basic_read`: refresh an expired secret, declare a stream without data in `empty_streams` with a `bypass_reason`, fix the schema or the records, or set `validate_schema: false`, `validate_primary_keys_data_type: false` or `validate_state_messages: false` (with a reason) where that is allowed.
 
+### Incremental streams must honour a state far in the future (`incremental`)
+
+A new test, `test_read_from_future_state` (and its Docker twin, `test_docker_image_build_and_read_from_future_state`), replaces CAT's `test_state_with_abnormally_large_values`. Every `incremental` entry of `acceptance-test-config.yml` with a `future_state.future_state_path` is now a test scenario of its own. It is not merged with the config's other entries, because its catalog and state belong to it, and one config may list several state files. It takes the `empty_streams` of the config's `basic_read` and `full_refresh` entries. The test:
+
+- Loads the state file. It must be a non-empty JSON list of `STREAM` or `GLOBAL` state messages. The legacy layout (a mapping of stream names to states) and messages without a `type` fail, naming the file and the message index.
+- Reads the incremental streams of the entry: those its `configured_catalog_path` configures `incremental`, or, without one, every discovered stream that supports incremental sync. It leaves out `empty_streams` and the entry's `future_state.missing_streams`. Each stream is read with `sync_mode: incremental` and the cursor field of the declared catalog, or its default cursor field.
+- Fails when a stream it reads has no state in the file. Without one, the stream reads from its start date, and the test could not tell whether it honours state.
+- Runs `read` with the state as `--state`. The read must succeed, every stream must return no records, and every stream must emit a `STREAM` or `GLOBAL` state message.
+- For a declarative source, checks that the cursor values in the emitted state are in the cursor's declared format (`datetime_format`, or the ISO 8601 and epoch formats of the other datetime cursors).
+
+Failure messages name the state file, streams and fields, never record or state values. The Docker test stays off unless `--read-from-streams` turns it on, as for `test_docker_image_build_and_read`, and does not run the cursor format check.
+
+The in-process test of a declarative connector (`DeclarativeSourceTestSuite`) now builds the source with the read's state and catalog, as `source-declarative-manifest` does on the platform. `ConcurrentDeclarativeSource` reads only the state it was built with.
+
+`acceptance-test-config.yml` keys:
+
+- `future_state: {future_state_path: ..., missing_streams: [...], bypass_reason: ...}` is read in an `incremental` entry. Any other key under `future_state` (for example CAT's `cursor_format`) fails collection, and so does `future_state` in an entry of any other section.
+- A `future_state_path` directly in the entry (not under `future_state`) fails collection.
+- `skip_comprehensive_incremental_tests` and `client_container_config` are accepted in an `incremental` entry and not read. Any other key that the standard tests do not read fails collection, as in the other sections since 7.39.0.
+- A `future_state.bypass_reason`, or a `bypass_reason` on the `incremental` section, is reported as a skipped test. Neither one explains a connector with no other runnable scenario, so such a connector still fails collection.
+- An `incremental` entry without a `future_state.future_state_path` runs nothing.
+
+Manifest-only connectors get the test when this version is released, because the connector monorepo installs the `airbyte-cdk` CLI unpinned. Python sources get it when they bump the CDK.
+
+Migration steps:
+
+- Write the state file as a list of state messages, in the shape the connector emits now, with cursor values far in the future and in the stream's declared format, for example `[{"type": "STREAM", "stream": {"stream_descriptor": {"name": "users"}, "stream_state": {"updated_at": "2999-01-01T00:00:00Z"}}}]`. A partitioned declarative stream emits `{"states": [{"partition": ..., "cursor": {...}}], "state": {...}, "use_global_cursor": ...}`. Copy the shape from a real read's final state, and set every cursor to the far-future value.
+- Add a state for every incremental stream the entry reads. A stream that cannot honour a future state (for example, one whose API ignores the start date) goes under `future_state.missing_streams` with a `bypass_reason`.
+- Move a flat `future_state_path` under `future_state`, and remove `cursor_format`.
+- A connector that cannot run the test at all declares `future_state: {bypass_reason: ...}` in its `incremental` entry.
+
 ## Upgrading to 7.42.0
 
 This release of the CDK adds three checks of the Connector Acceptance Tests (CAT) basic read test to the Standard Tests, and reports a fourth (stream statuses) without enforcing it. There is no change to how connectors run. The release is a minor one, since only the test harness changes, but the connector test suites of connectors that do not satisfy the new expectations start failing. Manifest-only connectors get the new checks with this release, because the connector monorepo installs the `airbyte-cdk` CLI unpinned. Python sources run the same suite in-process with the CDK they pin (airbytehq/airbyte#88945), so they get the new checks when they bump to this release.

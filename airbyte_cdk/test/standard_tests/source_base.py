@@ -25,6 +25,14 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
     find_catalog_problems,
     format_catalog_problems,
 )
+from airbyte_cdk.test.standard_tests._future_state import (
+    assert_future_state_covers_streams,
+    assert_future_state_read,
+    build_future_state_catalog,
+    find_cursor_format_problems,
+    load_future_state,
+    resolve_future_state_path,
+)
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests._read_assertions import (
     StreamStatusWarning,
@@ -262,6 +270,74 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             )
         elif next(result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")
+
+    def test_read_from_future_state(
+        self,
+        scenario: ConnectorTestScenario,
+    ) -> None:
+        """Read incrementally from a state far in the future: no records may come back.
+
+        Runs for `incremental` entries of `acceptance-test-config.yml` with a
+        `future_state.future_state_path` (CAT's `test_state_with_abnormally_large_values`). The
+        file must be a list of `STREAM` or `GLOBAL` state messages, with cursors far in the future,
+        in the shape the connector emits.
+
+        The read covers the incremental streams of the entry's `configured_catalog_path` (those it
+        configures `incremental`), or every discovered stream that supports incremental sync when it
+        declares none, minus the config's `empty_streams` and the entry's
+        `future_state.missing_streams` (see `build_future_state_catalog`). The test fails when:
+
+        - a stream it reads has no state in the file;
+        - the read fails, for example because the connector cannot parse the state;
+        - a stream returns any record, or emits no state message;
+        - a declarative stream's emitted state holds a cursor value that is not in the format its
+          cursor declares (`datetime_format`; see `find_cursor_format_problems`).
+        """
+        skip_unless_runs(scenario, "read_from_future_state")
+        if scenario.future_state is None or scenario.future_state.future_state_path is None:
+            pytest.skip(f"Scenario '{scenario.id}' has no future state to read from.")
+
+        connector_root = self.get_connector_root_dir()
+        display_path = scenario.future_state.future_state_path
+        state = load_future_state(
+            resolve_future_state_path(scenario, connector_root), display_path=display_path
+        )
+        discover_result = run_test_job(
+            self.create_connector(scenario),
+            "discover",
+            connector_root=connector_root,
+            test_scenario=scenario.without_expected_outcome(),
+        )
+        if discover_result.errors:
+            raise discover_result.as_exception()
+        catalog = build_future_state_catalog(
+            scenario,
+            get_read_streams(
+                scenario,
+                get_discovered_streams(discover_result, connector_root.absolute().name),
+                connector_root,
+            ),
+            connector_root,
+        )
+        assert_future_state_covers_streams(state, catalog, display_path=display_path)
+
+        result = run_test_job(
+            self.create_connector(scenario),
+            "read",
+            test_scenario=scenario.with_expecting_success(),
+            connector_root=connector_root,
+            catalog=catalog,
+            state=state,
+        )
+        assert_future_state_read(
+            records=result.records_iterator,
+            state_messages=result.state_messages,
+            catalog=catalog,
+            display_path=display_path,
+            cursor_format_problems=find_cursor_format_problems(
+                self.create_connector(scenario), catalog, result.state_messages
+            ),
+        )
 
     def test_fail_read_with_bad_catalog(
         self,
