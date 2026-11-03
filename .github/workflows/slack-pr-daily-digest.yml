@@ -1,9 +1,11 @@
 name: Slack PR Daily Digest
 
-# Posts one weekday summary of PRs that became ready for review, instead of a
-# Slack message per PR. A PR counts when it was opened as non-draft, or marked
-# ready for review, inside the window and is still open and non-draft when the
-# digest runs. Monday's window starts Friday 08:00 PT so weekend PRs are kept.
+# Posts one weekday summary instead of a Slack message per PR, in two sections:
+# - Needs review: opened as non-draft, or marked ready, inside the window, and
+#   still open, non-draft and not approved when the digest runs.
+# - Approved or merged: PRs from the first set that are now approved, plus PRs
+#   merged inside the window.
+# Monday's window starts Friday 08:00 PT so weekend PRs are kept.
 #
 # Contributor-controlled text (titles, author logins) is escaped before it
 # reaches Slack, so a crafted title cannot inject markup such as <!channel>.
@@ -58,46 +60,60 @@ jobs:
             printf "run_at=%s\n" "$run_at"
           } | tee -a "$GITHUB_OUTPUT"
 
-      - name: Fetch PRs ready for review
+      - name: Fetch PRs
         id: fetch-prs
         env:
           GH_TOKEN: ${{ github.token }}
           START_ISO: ${{ steps.resolve-vars.outputs.start_iso }}
-          PRS_FILE: ${{ runner.temp }}/ready-prs.json
+          PRS_FILE: ${{ runner.temp }}/prs.json
           PRS_QUERY: |
-            query($searchQuery: String!) {
-              search(query: $searchQuery, type: ISSUE, first: 100) {
-                nodes {
-                  ... on PullRequest {
-                    number
-                    title
-                    url
-                    createdAt
-                    additions
-                    deletions
-                    changedFiles
-                    isCrossRepository
-                    author { login url }
-                    timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
-                      nodes { ... on ReadyForReviewEvent { createdAt } }
-                    }
-                  }
-                }
+            fragment prFields on PullRequest {
+              number
+              title
+              url
+              createdAt
+              mergedAt
+              additions
+              deletions
+              changedFiles
+              isCrossRepository
+              reviewDecision
+              author { login url }
+              timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
+                nodes { ... on ReadyForReviewEvent { createdAt } }
+              }
+            }
+            query($readyQuery: String!, $mergedQuery: String!) {
+              ready: search(query: $readyQuery, type: ISSUE, first: 100) {
+                nodes { ...prFields }
+              }
+              merged: search(query: $mergedQuery, type: ISSUE, first: 100) {
+                nodes { ...prFields }
               }
             }
         run: |
           set -euo pipefail
           # Marking a PR ready bumps its `updatedAt`, so `updated:>=` is a superset
-          # of the PRs we want; the jq filter then keeps only those whose ready
-          # time (last ready-for-review event, else creation) is in the window.
+          # of the open PRs we want; the jq filter then keeps only those whose
+          # ready time (last ready-for-review event, else creation) is in the window.
           gh api graphql \
-            -f searchQuery="repo:${GITHUB_REPOSITORY} is:pr is:open draft:false updated:>=${START_ISO}" \
+            -f readyQuery="repo:${GITHUB_REPOSITORY} is:pr is:open draft:false updated:>=${START_ISO}" \
+            -f mergedQuery="repo:${GITHUB_REPOSITORY} is:pr is:merged merged:>=${START_ISO}" \
             -f query="$PRS_QUERY" \
             | jq --arg start_iso "$START_ISO" '
-                [.data.search.nodes[]
+                ([.data.ready.nodes[]
                   | . + {readyAt: (.timelineItems.nodes[0].createdAt // .createdAt)}
                   | select(.readyAt >= $start_iso)]
-                | sort_by(.readyAt)' \
+                  | sort_by(.readyAt)) as $ready
+                | ([.data.merged.nodes[] | select(.mergedAt >= $start_iso)]
+                  | sort_by(.mergedAt)) as $merged
+                | {
+                    needs_review: [$ready[] | select(.reviewDecision != "APPROVED") | . + {emoji: "new_pr"}],
+                    approved_or_merged: (
+                      [$ready[] | select(.reviewDecision == "APPROVED") | . + {emoji: "white_check_mark"}]
+                      + [$merged[] | . + {emoji: "merged"}]
+                    )
+                  }' \
             | tee "$PRS_FILE"
           echo "file=$PRS_FILE" | tee -a "$GITHUB_OUTPUT"
 
@@ -120,26 +136,37 @@ jobs:
             --arg run_at "$RUN_AT" \
             '
             def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+            def count_label: "\(length) \(if length == 1 then "PR" else "PRs" end)";
             def line:
-              "• <\(.url)|#\(.number)> \(.title | esc)"
+              "• :\(.emoji): <\(.url)|#\(.number)> \(.title | esc)"
               + " — by <\(.author.url)|\(.author.login | esc)>"
               + (if .isCrossRepository then " :globe_with_meridians: community fork" else "" end)
               + "  ·  `+\(.additions)` `-\(.deletions)` across \(.changedFiles) file(s)";
-            length as $count
-            | {
-                channel: $channel,
-                unfurl_links: false,
-                unfurl_media: false,
-                text: (
-                  ":mag: *PRs Ready for Review: Daily Summary* in `\($repo)`\n\($run_at)\n"
-                  + if $count == 0 then
-                      ":white_check_mark: No PRs became ready for review \($window_phrase)."
-                    else
-                      "<!subteam^\($group_id)> *\($count) \(if $count == 1 then "PR" else "PRs" end)* became ready for review \($window_phrase):\n"
-                      + (map(line) | join("\n"))
-                    end
-                )
-              }
+            def needs_review_section:
+              if length == 0 then
+                "No PRs marked ready for review \($window_phrase) still need review."
+              else
+                "<!subteam^\($group_id)> *\(count_label)* marked ready for review \($window_phrase) still \(if length == 1 then "needs" else "need" end) review:\n"
+                + (map(line) | join("\n"))
+              end;
+            def approved_or_merged_section:
+              if length == 0 then
+                "*Approved or merged:* none \($window_phrase)."
+              else
+                "*Approved or merged:* \(count_label) \($window_phrase):\n"
+                + (map(line) | join("\n"))
+              end;
+            {
+              channel: $channel,
+              unfurl_links: false,
+              unfurl_media: false,
+              text: (
+                ":mag: *PR Daily Summary* in `\($repo)`\n\($run_at)\n"
+                + (.needs_review | needs_review_section)
+                + "\n\n"
+                + (.approved_or_merged | approved_or_merged_section)
+              )
+            }
             ' "$PRS_FILE" | tee "$PAYLOAD_FILE"
           echo "file=$PAYLOAD_FILE" | tee -a "$GITHUB_OUTPUT"
 
