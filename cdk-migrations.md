@@ -1,12 +1,10 @@
 # CDK Migration Guide
 
-## Upgrading to the next major release (unreleased)
+## Upgrading to the next minor release (unreleased)
 
 ### Python 3.11 or newer is required
 
-Python 3.10 is no longer supported. Upgrade connector runtimes, Docker base images, and local development environments to Python 3.11 or newer before upgrading the CDK. The supported Python versions are 3.11–3.14.
-
-## Upgrading to the next minor release (unreleased)
+The CDK now supports Python 3.11–3.14. Before upgrading, raise the Python lower bound in your connector's `pyproject.toml` to 3.11 (for example `python = "^3.11,<3.14"`); otherwise Poetry keeps resolving the last CDK release that supports Python 3.10, or fails to resolve if you pin the new version.
 
 ### The Docker read test checks its records, and reads the streams `test_basic_read` reads
 
