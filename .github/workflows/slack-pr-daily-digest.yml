@@ -1,9 +1,10 @@
 name: Slack PR Daily Digest
 
 # Posts one weekday summary instead of a Slack message per PR, in two sections:
-# - Ready for review: opened as non-draft, or marked ready, inside the window,
-#   and still open and non-draft when the digest runs.
-# - Merged: merged inside the window.
+# - Needs review: opened as non-draft, or marked ready, inside the window, and
+#   still open, non-draft and not approved when the digest runs.
+# - Approved or merged: PRs from the first set that are now approved, plus PRs
+#   merged inside the window.
 # Monday's window starts Friday 08:00 PT so weekend PRs are kept.
 #
 # Contributor-controlled text (titles, author logins) is escaped before it
@@ -76,6 +77,7 @@ jobs:
               deletions
               changedFiles
               isCrossRepository
+              reviewDecision
               author { login url }
               timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
                 nodes { ... on ReadyForReviewEvent { createdAt } }
@@ -99,14 +101,19 @@ jobs:
             -f mergedQuery="repo:${GITHUB_REPOSITORY} is:pr is:merged merged:>=${START_ISO}" \
             -f query="$PRS_QUERY" \
             | jq --arg start_iso "$START_ISO" '
-                {
-                  ready: [.data.ready.nodes[]
-                    | . + {readyAt: (.timelineItems.nodes[0].createdAt // .createdAt)}
-                    | select(.readyAt >= $start_iso)]
-                    | sort_by(.readyAt),
-                  merged: [.data.merged.nodes[] | select(.mergedAt >= $start_iso)]
-                    | sort_by(.mergedAt)
-                }' \
+                ([.data.ready.nodes[]
+                  | . + {readyAt: (.timelineItems.nodes[0].createdAt // .createdAt)}
+                  | select(.readyAt >= $start_iso)]
+                  | sort_by(.readyAt)) as $ready
+                | ([.data.merged.nodes[] | select(.mergedAt >= $start_iso)]
+                  | sort_by(.mergedAt)) as $merged
+                | {
+                    needs_review: [$ready[] | select(.reviewDecision != "APPROVED") | . + {emoji: "new_pr"}],
+                    approved_or_merged: (
+                      [$ready[] | select(.reviewDecision == "APPROVED") | . + {emoji: "white_check_mark"}]
+                      + [$merged[] | . + {emoji: "merged"}]
+                    )
+                  }' \
             | tee "$PRS_FILE"
           echo "file=$PRS_FILE" | tee -a "$GITHUB_OUTPUT"
 
@@ -131,22 +138,22 @@ jobs:
             def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
             def count_label: "\(length) \(if length == 1 then "PR" else "PRs" end)";
             def line:
-              "• <\(.url)|#\(.number)> \(.title | esc)"
+              "• :\(.emoji): <\(.url)|#\(.number)> \(.title | esc)"
               + " — by <\(.author.url)|\(.author.login | esc)>"
               + (if .isCrossRepository then " :globe_with_meridians: community fork" else "" end)
               + "  ·  `+\(.additions)` `-\(.deletions)` across \(.changedFiles) file(s)";
-            def ready_section:
+            def needs_review_section:
               if length == 0 then
-                ":white_check_mark: No PRs became ready for review \($window_phrase)."
+                "No PRs marked ready for review \($window_phrase) still need review."
               else
-                "<!subteam^\($group_id)> *\(count_label)* ready for review \($window_phrase):\n"
+                "<!subteam^\($group_id)> *\(count_label)* marked ready for review \($window_phrase) still \(if length == 1 then "needs" else "need" end) review:\n"
                 + (map(line) | join("\n"))
               end;
-            def merged_section:
+            def approved_or_merged_section:
               if length == 0 then
-                "*Merged:* none \($window_phrase)."
+                "*Approved or merged:* none \($window_phrase)."
               else
-                "*Merged:* \(count_label) \($window_phrase):\n"
+                "*Approved or merged:* \(count_label) \($window_phrase):\n"
                 + (map(line) | join("\n"))
               end;
             {
@@ -155,9 +162,9 @@ jobs:
               unfurl_media: false,
               text: (
                 ":mag: *PR Daily Summary* in `\($repo)`\n\($run_at)\n"
-                + (.ready | ready_section)
+                + (.needs_review | needs_review_section)
                 + "\n\n"
-                + (.merged | merged_section)
+                + (.approved_or_merged | approved_or_merged_section)
               )
             }
             ' "$PRS_FILE" | tee "$PAYLOAD_FILE"
