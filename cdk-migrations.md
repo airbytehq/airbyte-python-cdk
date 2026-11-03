@@ -1,5 +1,11 @@
 # CDK Migration Guide
 
+## Upgrading to the next major release (unreleased)
+
+### Python 3.11 or newer is required
+
+Python 3.10 is no longer supported. Upgrade connector runtimes, Docker base images, and local development environments to Python 3.11 or newer before upgrading the CDK. The supported Python versions are 3.11–3.14.
+
 ## Upgrading to the next minor release (unreleased)
 
 ### The Docker read test checks its records, and reads the streams `test_basic_read` reads
