@@ -1,0 +1,163 @@
+name: Slack PR Daily Digest
+
+# Posts one weekday summary of PRs that became ready for review, instead of a
+# Slack message per PR. A PR counts when it was opened as non-draft, or marked
+# ready for review, inside the window and is still open and non-draft when the
+# digest runs. Monday's window starts Friday 08:00 PT so weekend PRs are kept.
+#
+# Contributor-controlled text (titles, author logins) is escaped before it
+# reaches Slack, so a crafted title cannot inject markup such as <!channel>.
+
+on:
+  schedule:
+    # Weekdays at 08:00 Pacific Time
+    - cron: "0 8 * * 1-5"
+      timezone: "America/Los_Angeles"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Dry run. Write the digest to the job summary without posting it to Slack."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: slack-pr-daily-digest
+  cancel-in-progress: false
+
+env:
+  # Destination channel for the digest.
+  SLACK_CHANNEL_ID: C0BHDAPNPCY
+  # Slack user group mentioned when the digest lists at least one PR.
+  SLACK_GROUP_ID: S077U1TH43D
+
+jobs:
+  post-digest:
+    name: Post PR Daily Digest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Resolve Variables
+        id: resolve-vars
+        run: |
+          set -euo pipefail
+          export TZ=America/Los_Angeles
+          is_monday="$([[ "$(date +%u)" == "1" ]] && echo true || echo false)"
+          days_back="$([[ "$is_monday" == "true" ]] && echo 3 || echo 1)"
+          window_phrase="$([[ "$is_monday" == "true" ]] && echo "since Friday at 8:00 AM PT" || echo "in the last 24 hours")"
+          start_day="$(date -d "${days_back} days ago" +%F)"
+          start_iso="$(date -u -d "TZ=\"America/Los_Angeles\" ${start_day} 08:00" +%Y-%m-%dT%H:%M:%SZ)"
+          run_at="$(date "+%A, %B %-d, %Y at %-I:%M %p PT")"
+          {
+            printf "start_iso=%s\n" "$start_iso"
+            printf "window_phrase=%s\n" "$window_phrase"
+            printf "run_at=%s\n" "$run_at"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Fetch PRs ready for review
+        id: fetch-prs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          START_ISO: ${{ steps.resolve-vars.outputs.start_iso }}
+          PRS_FILE: ${{ runner.temp }}/ready-prs.json
+          PRS_QUERY: |
+            query($searchQuery: String!) {
+              search(query: $searchQuery, type: ISSUE, first: 100) {
+                nodes {
+                  ... on PullRequest {
+                    number
+                    title
+                    url
+                    createdAt
+                    additions
+                    deletions
+                    changedFiles
+                    isCrossRepository
+                    author { login url }
+                    timelineItems(itemTypes: [READY_FOR_REVIEW_EVENT], last: 1) {
+                      nodes { ... on ReadyForReviewEvent { createdAt } }
+                    }
+                  }
+                }
+              }
+            }
+        run: |
+          set -euo pipefail
+          # Marking a PR ready bumps its `updatedAt`, so `updated:>=` is a superset
+          # of the PRs we want; the jq filter then keeps only those whose ready
+          # time (last ready-for-review event, else creation) is in the window.
+          gh api graphql \
+            -f searchQuery="repo:${GITHUB_REPOSITORY} is:pr is:open draft:false updated:>=${START_ISO}" \
+            -f query="$PRS_QUERY" \
+            | jq --arg start_iso "$START_ISO" '
+                [.data.search.nodes[]
+                  | . + {readyAt: (.timelineItems.nodes[0].createdAt // .createdAt)}
+                  | select(.readyAt >= $start_iso)]
+                | sort_by(.readyAt)' \
+            | tee "$PRS_FILE"
+          echo "file=$PRS_FILE" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Build Slack payload
+        id: payload
+        env:
+          PRS_FILE: ${{ steps.fetch-prs.outputs.file }}
+          PAYLOAD_FILE: ${{ runner.temp }}/slack-payload.json
+          WINDOW_PHRASE: ${{ steps.resolve-vars.outputs.window_phrase }}
+          RUN_AT: ${{ steps.resolve-vars.outputs.run_at }}
+        run: |
+          set -euo pipefail
+          # Plain mrkdwn `text` rather than blocks, so a long Monday list cannot
+          # hit Slack's 3,000-character section-block limit.
+          jq \
+            --arg channel "$SLACK_CHANNEL_ID" \
+            --arg group_id "$SLACK_GROUP_ID" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg window_phrase "$WINDOW_PHRASE" \
+            --arg run_at "$RUN_AT" \
+            '
+            def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
+            def line:
+              "• <\(.url)|#\(.number)> \(.title | esc)"
+              + " — by <\(.author.url)|\(.author.login | esc)>"
+              + (if .isCrossRepository then " :globe_with_meridians: community fork" else "" end)
+              + "  ·  `+\(.additions)` `-\(.deletions)` across \(.changedFiles) file(s)";
+            length as $count
+            | {
+                channel: $channel,
+                unfurl_links: false,
+                unfurl_media: false,
+                text: (
+                  ":mag: *PRs Ready for Review: Daily Summary* in `\($repo)`\n\($run_at)\n"
+                  + if $count == 0 then
+                      ":white_check_mark: No PRs became ready for review \($window_phrase)."
+                    else
+                      "<!subteam^\($group_id)> *\($count) \(if $count == 1 then "PR" else "PRs" end)* became ready for review \($window_phrase):\n"
+                      + (map(line) | join("\n"))
+                    end
+                )
+              }
+            ' "$PRS_FILE" | tee "$PAYLOAD_FILE"
+          echo "file=$PAYLOAD_FILE" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Write digest to job summary
+        env:
+          PAYLOAD_FILE: ${{ steps.payload.outputs.file }}
+        run: |
+          {
+            echo '```text'
+            jq -r .text "$PAYLOAD_FILE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post digest to Slack channel
+        if: inputs.dry-run != true
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
+          payload-file-path: ${{ steps.payload.outputs.file }}
+          errors: true
