@@ -31,10 +31,10 @@ Migration steps:
 
 ### Incremental streams must honour a state far in the future (`incremental`)
 
-A new test, `test_read_from_future_state` (and its Docker twin, `test_docker_image_build_and_read_from_future_state`), replaces CAT's `test_state_with_abnormally_large_values`. Every `incremental` entry of `acceptance-test-config.yml` with a `future_state.future_state_path` is now a test scenario of its own. It is not merged with the config's other entries, because its catalog and state belong to it, and one config may list several state files. It takes the `empty_streams` of the config's `basic_read` and `full_refresh` entries. The test:
+A new test, `test_read_from_future_state` (and its Docker twin, `test_docker_image_build_and_read_from_future_state`), replaces CAT's `test_state_with_abnormally_large_values`. Every `incremental` entry of `acceptance-test-config.yml` with a `future_state.future_state_path` is now a test scenario of its own. It is not merged with the config's other entries, because its catalog and state belong to it, and one config may list several state files. It does not take the `empty_streams` of the config's `basic_read` entry: a read from a future state expects no records, so a stream without data still shows whether the connector parses its state and emits state. The test:
 
 - Loads the state file. It must be a non-empty JSON list of `STREAM` or `GLOBAL` state messages. The legacy layout (a mapping of stream names to states) and messages without a `type` fail, naming the file and the message index.
-- Reads the incremental streams of the entry: those its `configured_catalog_path` configures `incremental`, or, without one, every discovered stream that supports incremental sync. It leaves out `empty_streams` and the entry's `future_state.missing_streams`. Each stream is read with `sync_mode: incremental` and the cursor field of the declared catalog, or its default cursor field.
+- Reads the incremental streams of the entry: those its `configured_catalog_path` configures `incremental`, or, without one, every discovered stream that supports incremental sync. It leaves out the entry's own `empty_streams` and its `future_state.missing_streams`. Each stream is read with `sync_mode: incremental` and the cursor field of the declared catalog, or its default cursor field.
 - Fails when a stream it reads has no state in the file. Without one, the stream reads from its start date, and the test could not tell whether it honours state.
 - Runs `read` with the state as `--state`. The read must succeed, every stream must return no records, and every stream must emit a `STREAM` or `GLOBAL` state message.
 - For a declarative source, checks that the cursor values in the emitted state are in the cursor's declared format (`datetime_format`, or the ISO 8601 and epoch formats of the other datetime cursors).
@@ -56,7 +56,7 @@ Manifest-only connectors get the test when this version is released, because the
 Migration steps:
 
 - Write the state file as a list of state messages, in the shape the connector emits now, with cursor values far in the future and in the stream's declared format, for example `[{"type": "STREAM", "stream": {"stream_descriptor": {"name": "users"}, "stream_state": {"updated_at": "2999-01-01T00:00:00Z"}}}]`. A partitioned declarative stream emits `{"states": [{"partition": ..., "cursor": {...}}], "state": {...}, "use_global_cursor": ...}`. Copy the shape from a real read's final state, and set every cursor to the far-future value.
-- Add a state for every incremental stream the entry reads. A stream that cannot honour a future state (for example, one whose API ignores the start date) goes under `future_state.missing_streams` with a `bypass_reason`.
+- Add a state for every incremental stream the entry reads, including the streams listed as `empty_streams` under `basic_read`. A stream that cannot honour a future state (for example, one whose API ignores the start date), or that the test config cannot read at all (for example, a report the test account has no permission for), goes under `future_state.missing_streams` with a `bypass_reason`.
 - Move a flat `future_state_path` under `future_state`, and remove `cursor_format`.
 - A connector that cannot run the test at all declares `future_state: {bypass_reason: ...}` in its `incremental` entry.
 

@@ -2,7 +2,7 @@
 """The future-state read: an `incremental` entry reads from a state far in the future.
 
 - An `incremental` entry with a `future_state.future_state_path` is a scenario of its own: it is
-  not merged with the config's other entries, and takes their `empty_streams`.
+  not merged with the config's other entries, and does not take their `empty_streams`.
 - The state file must be a non-empty list of `STREAM` or `GLOBAL` state messages, with a state for
   every incremental stream the entry reads, except its `future_state.missing_streams`.
 - The read must return no records and emit state for every stream; a declarative stream's state
@@ -130,7 +130,7 @@ def _future_scenario(**future_state: Any) -> ConnectorTestScenario:
 # --- Collection ---------------------------------------------------------------------------------
 
 
-def test_incremental_entry_is_its_own_scenario_with_the_read_empty_streams(
+def test_incremental_entry_is_its_own_scenario_without_the_read_empty_streams(
     tmp_path: Path,
 ) -> None:
     suite = suite_class(
@@ -168,7 +168,7 @@ def test_incremental_entry_is_its_own_scenario_with_the_read_empty_streams(
         assert future.commands == {"read_from_future_state"}
         assert future.future_state is not None
         assert future.future_state.future_state_path == Path(state_path)
-        assert [stream.name for stream in future.empty_streams or []] == ["static"]
+        assert future.empty_streams is None, "an empty stream still parses and emits state"
     assert first.configured_catalog_path == Path("integration_tests/incremental_catalog.json")
     assert _scenario_test_ids([read, first, second]) == [
         str(read),

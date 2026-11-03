@@ -284,8 +284,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
         The read covers the incremental streams of the entry's `configured_catalog_path` (those it
         configures `incremental`), or every discovered stream that supports incremental sync when it
-        declares none, minus the config's `empty_streams` and the entry's
-        `future_state.missing_streams` (see `build_future_state_catalog`). The test fails when:
+        declares none, minus the entry's own `empty_streams` and `future_state.missing_streams`
+        (see `build_future_state_catalog`). Streams that the config's `basic_read` entry lists as
+        empty are read: they must still parse their state and emit state. The test fails when:
 
         - a stream it reads has no state in the file;
         - the read fails, for example because the connector cannot parse the state;

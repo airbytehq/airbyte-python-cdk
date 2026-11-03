@@ -136,10 +136,12 @@ def build_future_state_catalog(
     """The incremental catalog the future-state read of `scenario` reads.
 
     `read_streams` are the streams `get_read_streams` returns for the scenario: those of the
-    entry's `configured_catalog_path` (or every discovered stream without one), minus
-    `empty_streams`. The read keeps those that are incremental: configured `incremental` in the declared catalog, or supporting it in
-    `discover` without one. The entry's `future_state.missing_streams` are left out. Each stream
-    keeps the cursor field of the declared catalog, or its default cursor field.
+    entry's `configured_catalog_path` (or every discovered stream without one), minus the entry's
+    own `empty_streams`. Those of the config's `basic_read` entry are read: a stream without data
+    still has to parse its state and emit state. The read keeps the streams that are incremental:
+    configured `incremental` in the declared catalog, or supporting it in `discover` without one.
+    The entry's `future_state.missing_streams` are left out. Each stream keeps the cursor field of
+    the declared catalog, or its default cursor field.
 
     Fails when the selected streams hold no incremental stream: the entry has nothing to read.
     """

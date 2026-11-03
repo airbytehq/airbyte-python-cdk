@@ -468,8 +468,9 @@ class DockerConnectorTestSuite:
         by any entry for the config is kept.
 
         An `incremental` entry is never merged: its future-state read has its own catalog and
-        state, and one config may have several. It takes the `empty_streams` of the config's
-        read entries, so it skips the streams `test_basic_read` skips.
+        state, and one config may have several. It keeps only its own `empty_streams`: a read from
+        a future state expects no records, so a stream without data is still read, to check that
+        the connector parses its state and emits state.
 
         A config is read once, however many read sections (`basic_read`, `full_refresh`) list it.
         It keeps a `configured_catalog_path` only when every read entry for it declares that same
@@ -538,22 +539,7 @@ class DockerConnectorTestSuite:
                     update={"configured_catalog_path": catalog}
                 )
 
-        empty_streams_by_config = {
-            scenario.config_path: scenario.empty_streams or []
-            for scenario in deduped_scenarios
-            if scenario.runs("read")
-        }
-        for scenario in future_state_reads:
-            empty_streams = list(
-                dict.fromkeys(
-                    (scenario.empty_streams or [])
-                    + empty_streams_by_config.get(scenario.config_path, [])
-                )
-            )
-            deduped_scenarios.append(
-                scenario.model_copy(update={"empty_streams": empty_streams or None})
-            )
-        return deduped_scenarios
+        return deduped_scenarios + future_state_reads
 
     @classmethod
     def _collect_scenarios(cls) -> CollectedScenarios:
