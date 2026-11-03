@@ -2,6 +2,16 @@
 
 ## Upgrading to the next minor release (unreleased)
 
+### The secret leak check covers `discover` and `read`
+
+The leak check that 7.36.0 added to the `check` tests now also runs on the output of every `discover` and `read` job of the standard tests: `test_discover`, the discover and the read of `test_basic_read`, the read of `test_fail_read_with_bad_catalog`, and, on the Docker path, `test_docker_image_build_and_discover` and the discover and read of `test_docker_image_build_and_read`. It runs before any assertion prints the connector's messages, so a test whose connector fails (for example with an error trace that quotes a request URL holding the app secret) fails with the leak report, which names the config path of each leaked secret and where it was found, never the secret itself. The Docker tests run the connector without raising on an error, run the check, and then raise as before.
+
+The check searches every message except `CONTROL` and `RECORD` messages, and stderr on the Docker path. Records are left out: the platform never logs them, the standard tests never print their values, and an API can return a value equal to a config secret (an app ID marked `airbyte_secret`, say), which would fail a correct connector. This also applies to the `check` tests, which emit no records.
+
+In process, the check runs `spec` at most once per test; the Docker tests reuse the spec cached per image for the session. When `spec` fails, the test is skipped, as the `check` tests already were, and the spec tests report the failure. The traceback that the in-process harness prints for an unexpected exception is now masked with the CDK's secret filter, as the CDK entrypoint masks an uncaught exception.
+
+Migration steps: a connector that turns red leaks a secret in a log or trace message of a sync, which the platform stores in the sync logs. Stop logging the value. A CDK connector usually leaks through an error message built from an exception that quotes a request (the URL with the secret in a query parameter, or a request body), in a form the CDK's exact-match filter does not mask, such as URL-encoded. Mask it, or keep the secret out of the message.
+
 ### The Docker read test checks its records, and reads the streams `test_basic_read` reads
 
 `test_docker_image_build_and_read`, the `read` inside the connector image, stays off by default: connector CI reads each connector in process, through `test_basic_read`, and the Docker read is meant for a connector whose in-process tests cannot run. Turn it on with `--read-from-streams=default`. Before this release, a Docker read that was turned on read only the connector's `suggestedStreams` when it declared them, did not check the records, and, in a Python connector image, could not write to its working directory.
