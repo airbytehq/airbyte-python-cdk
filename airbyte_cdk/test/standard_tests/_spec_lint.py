@@ -576,6 +576,12 @@ def find_leaked_secrets(
 
     CONTROL messages are skipped: a connector config update carries the full config,
     including its secrets, by design.
+
+    RECORD messages are skipped too. A record is data the connector was asked to emit: the
+    platform never logs it, and the standard-test assertions never print record values. An API
+    may also return a value that equals a secret in the config, such as an app ID marked
+    `airbyte_secret` that a stream lists, which would fail a correct connector. And a read can
+    emit many records, which would make the search the slowest part of the test.
     """
     secrets = list(secrets)
     variants_by_pointer: dict[str, set[str]] = {}
@@ -598,7 +604,7 @@ def find_leaked_secrets(
 
     leaks: list[str] = []
     for number, message in enumerate(output.get_message_iterator(), start=1):
-        if message.type == Type.CONTROL:
+        if message.type in (Type.CONTROL, Type.RECORD):
             continue
         serialized_message = AirbyteMessageSerializer.dump(message)
         pointers = [
@@ -634,9 +640,10 @@ def assert_no_secrets_in_output(
 ) -> None:
     """Assert that no `airbyte_secret` value from `config` appears in the connector's output.
 
-    This searches every message the connector emitted and, on the Docker path, its raw
-    stdout and stderr. In-process, a `print()` to stdout is not captured: only the messages
-    the connector yields and the records of the root logger are searched.
+    This searches every message the connector emitted except records (see
+    `find_leaked_secrets`) and, on the Docker path, its raw stdout and stderr. In-process, a
+    `print()` to stdout is not captured: only the messages the connector yields and the records
+    of the root logger are searched.
 
     Run this before any other assertion on `output`, since those print raw messages.
     """

@@ -22,6 +22,19 @@ POKEAPI_RESOURCE_DIR = Path(__file__).parent.parent / "resources" / "source_poke
 # Long enough for the `minLength: 20` API key of the specs the tests use.
 VALID_CONFIG = {"api_key": "x" * 20}
 
+SPEC_MESSAGE = json.dumps(
+    {
+        "type": "SPEC",
+        "spec": {
+            "connectionSpecification": {
+                "type": "object",
+                "properties": {"api_key": {"type": "string", "airbyte_secret": True}},
+            }
+        },
+    }
+)
+"""The spec `stub_docker` answers with unless `responses` holds one: the secret leak check runs it."""
+
 
 class Reached(Exception):
     """Raised by a fake connector or Docker command to prove a test body ran past its skips."""
@@ -150,9 +163,12 @@ def stub_docker(
 ) -> list[list[str]]:
     """Answer each connector command run "in Docker" with canned messages; record the commands.
 
-    The configured catalog mounted into each `read` is appended to `read_catalogs`.
+    `spec` is answered with `SPEC_MESSAGE` unless `responses` has its own, and the session's
+    cache of image specs starts empty. The configured catalog mounted into each `read` is
+    appended to `read_catalogs`.
     """
     calls: list[list[str]] = []
+    monkeypatch.setattr("airbyte_cdk.test.standard_tests.docker_base._docker_spec_cache", {})
 
     def _fake_run_docker_airbyte_command(
         cmd: list[str], *, raise_if_errors: bool = False
@@ -162,7 +178,10 @@ def stub_docker(
         if command == "read" and read_catalogs is not None:
             mount = next(part for part in cmd if part.endswith(":/secrets/catalog.json"))
             read_catalogs.append(json.loads(Path(mount.rsplit(":", 1)[0]).read_text()))
-        result = EntrypointOutput(messages=responses[command], command=cmd)
+        messages = (
+            responses.get("spec", [SPEC_MESSAGE]) if command == "spec" else responses[command]
+        )
+        result = EntrypointOutput(messages=messages, command=cmd)
         if raise_if_errors:
             result.raise_if_errors()
         return result

@@ -49,6 +49,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
 
 class AirbyteEntrypointException(Exception):
@@ -391,8 +392,15 @@ def _run_command(
             messages.append(message)
     except Exception as exception:
         if expected_outcome.expect_success():
+            # This goes straight to stdout, so mask the config's secrets as the CDK entrypoint
+            # does for an uncaught exception: the exception message can quote a request URL
+            # that holds one.
             print("Printing unexpected error from entrypoint_wrapper")
-            print("".join(traceback.format_exception(None, exception, exception.__traceback__)))
+            print(
+                filter_secrets(
+                    "".join(traceback.format_exception(None, exception, exception.__traceback__))
+                )
+            )
 
         uncaught_exception = exception
 

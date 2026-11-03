@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from boltons.typeutils import classproperty
 
+from airbyte_cdk.models import ConnectorSpecification
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
@@ -110,6 +111,12 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "override `cls.create_connector()` to define a custom initialization process."
         )
 
+    _leak_check_spec: ConnectorSpecification | None = None
+    """The spec that `_assert_no_secrets_in_output` ran, kept for the rest of the test.
+
+    pytest creates a new suite instance for each test, so this caches the spec per test.
+    """
+
     def _assert_no_secrets_in_output(
         self,
         scenario: ConnectorTestScenario,
@@ -119,23 +126,27 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
     ) -> None:
         """Assert that no `airbyte_secret` value from the scenario's config is in `output`.
 
-        Pass this to `run_test_job` as `inspect_output`, so it runs before the job's own
-        assertions print raw messages. It runs `spec` in-process once per call, to learn which
-        config paths are secret. If `spec` fails, the test is skipped: the spec tests report
-        that failure, and the outcome assertions must not print raw messages unchecked.
+        Pass `_secret_leak_check` to `run_test_job` as `inspect_output`, so this runs before
+        the job's own assertions print raw messages. It runs `spec` in-process to learn which
+        config paths are secret, once per test: a test that runs `discover` and then `read`
+        reuses the spec. If `spec` fails, the test is skipped: the spec tests report that
+        failure, and the outcome assertions must not print raw messages unchecked.
         """
-        try:
-            spec_result = run_test_job(
-                self.create_connector(scenario),
-                "spec",
-                connector_root=self.get_connector_root_dir(),
-            )
-            spec = get_single_spec(spec_result, connector_name=self.connector_name)
-        except Exception:
-            pytest.skip(_SPEC_FAILED_SKIP_REASON)
+        if self._leak_check_spec is None:
+            try:
+                spec_result = run_test_job(
+                    self.create_connector(scenario),
+                    "spec",
+                    connector_root=self.get_connector_root_dir(),
+                )
+                self._leak_check_spec = get_single_spec(
+                    spec_result, connector_name=self.connector_name
+                )
+            except Exception:
+                pytest.skip(_SPEC_FAILED_SKIP_REASON)
         assert_no_secrets_in_output(
             output,
-            spec=spec,
+            spec=self._leak_check_spec,
             config=scenario.get_config_dict(
                 connector_root=self.get_connector_root_dir(),
                 empty_if_missing=True,
@@ -143,6 +154,14 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             verb=verb,
             connector_name=self.connector_name,
         )
+
+    def _secret_leak_check(
+        self,
+        scenario: ConnectorTestScenario,
+        verb: str,
+    ) -> Callable[[entrypoint_wrapper.EntrypointOutput], None]:
+        """Return the secret leak check of `verb`'s output, for `run_test_job`'s `inspect_output`."""
+        return lambda output: self._assert_no_secrets_in_output(scenario, output, verb=verb)
 
     # Test Definitions
 
@@ -162,9 +181,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
-            inspect_output=lambda output: self._assert_no_secrets_in_output(
-                scenario, output, verb="check"
-            ),
+            inspect_output=self._secret_leak_check(scenario, "check"),
         )
         if scenario.expected_outcome.expect_uncaught_error():
             # An uncaught error is the expected outcome; no CONNECTION_STATUS is required.
