@@ -2,10 +2,6 @@
 
 ## Upgrading to the next minor release (unreleased)
 
-### Python 3.11 or newer is required
-
-The CDK now supports Python 3.11–3.14. Before upgrading, raise the Python lower bound in your connector's `pyproject.toml` to 3.11 (for example `python = "^3.11,<3.14"`); otherwise Poetry keeps resolving the last CDK release that supports Python 3.10, or fails to resolve if you pin the new version.
-
 ### The Docker read test checks its records, and reads the streams `test_basic_read` reads
 
 `test_docker_image_build_and_read`, the `read` inside the connector image, stays off by default: connector CI reads each connector in process, through `test_basic_read`, and the Docker read is meant for a connector whose in-process tests cannot run. Turn it on with `--read-from-streams=default`. Before this release, a Docker read that was turned on read only the connector's `suggestedStreams` when it declared them, did not check the records, and, in a Python connector image, could not write to its working directory.
