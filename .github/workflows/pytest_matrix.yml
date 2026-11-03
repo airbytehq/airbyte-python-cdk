@@ -40,7 +40,8 @@ jobs:
           ]
       fail-fast: false
 
-    runs-on: "${{ matrix.os }}-latest"
+    # Pinned: on ubuntu-26.04 the tests run under the system Python 3.14 instead of the matrix version.
+    runs-on: "${{ matrix.os }}-24.04"
     env:
       # Enforce UTF-8 encoding so Windows runners don't fail inside the connector code.
       # TODO: See if we can fully enforce this within PyAirbyte itself.
