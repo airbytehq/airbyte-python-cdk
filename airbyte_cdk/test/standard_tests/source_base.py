@@ -282,9 +282,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         file must be a list of `STREAM` or `GLOBAL` state messages, with cursors far in the future,
         in the shape the connector emits.
 
-        The read covers the incremental streams of the entry's `configured_catalog_path` (those it
-        configures `incremental`), or every discovered stream that supports incremental sync when it
-        declares none, minus the entry's own `empty_streams` and `future_state.missing_streams`
+        The read covers the streams of the entry's `configured_catalog_path`, or every discovered
+        stream when it declares none, that `discover` reports as supporting incremental sync, whatever
+        `sync_mode` the catalog gives them, minus the entry's own `empty_streams` and `future_state.missing_streams`
         (see `build_future_state_catalog`). Streams that the config's `basic_read` entry lists as
         empty are read: they must still parse their state and emit state. The test fails when:
 

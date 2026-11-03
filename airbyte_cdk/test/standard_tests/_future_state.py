@@ -138,9 +138,9 @@ def build_future_state_catalog(
     `read_streams` are the streams `get_read_streams` returns for the scenario: those of the
     entry's `configured_catalog_path` (or every discovered stream without one), minus the entry's
     own `empty_streams`. Those of the config's `basic_read` entry are read: a stream without data
-    still has to parse its state and emit state. The read keeps the streams that are incremental:
-    configured `incremental` in the declared catalog, or supporting it in `discover` without one.
-    The entry's `future_state.missing_streams` are left out. Each stream keeps the cursor field of
+    still has to parse its state and emit state. The read keeps the streams that `discover` reports
+    as supporting incremental sync, whatever `sync_mode` the declared catalog gives them: a test
+    catalog that reads a stream as `full_refresh` does not exempt it from honouring state. The entry's `future_state.missing_streams` are left out. Each stream keeps the cursor field of
     the declared catalog, or its default cursor field.
 
     Fails when the selected streams hold no incremental stream: the entry has nothing to read.
@@ -155,24 +155,21 @@ def build_future_state_catalog(
             for configured in orjson.loads(catalog_path.read_bytes())["streams"]:
                 declared.setdefault(configured["stream"]["name"], configured)
 
-    def is_incremental(stream: AirbyteStream) -> bool:
-        if SyncMode.incremental not in (stream.supported_sync_modes or []):
-            return False
-        if not declared:
-            return True
-        return bool(declared[stream.name].get("sync_mode") == SyncMode.incremental.value)
-
-    incremental = [stream for stream in read_streams if is_incremental(stream)]
+    incremental = [
+        stream
+        for stream in read_streams
+        if SyncMode.incremental in (stream.supported_sync_modes or [])
+    ]
     if not incremental:
         source = (
-            f"its catalog `{scenario.configured_catalog_path}` configures"
+            f"its catalog `{scenario.configured_catalog_path}` lists"
             if scenario.configured_catalog_path
             else "`discover` reports"
         )
         raise AssertionError(
             f"The `incremental` entry for config '{scenario.id}' has no incremental stream to read "
-            f"from its future state: {source} none outside its `empty_streams`. Remove the entry, "
-            "or point it at a catalog with incremental streams."
+            f"from its future state: {source} none that supports incremental sync outside its "
+            "`empty_streams`. Remove the entry, or point it at a catalog with incremental streams."
         )
 
     assert scenario.future_state is not None

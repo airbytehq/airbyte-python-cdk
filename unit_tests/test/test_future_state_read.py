@@ -486,10 +486,10 @@ def test_catalog_reads_every_incremental_stream_but_the_missing_ones(tmp_path: P
     ]
 
 
-def test_catalog_reads_only_the_streams_the_declared_catalog_configures_incremental(
+def test_catalog_reads_the_incremental_streams_whatever_the_declared_sync_mode(
     tmp_path: Path,
 ) -> None:
-    catalog_path = tmp_path / "integration_tests" / "incremental_catalog.json"
+    catalog_path = tmp_path / "integration_tests" / "configured_catalog.json"
     catalog_path.parent.mkdir()
     catalog_path.write_text(
         json.dumps(
@@ -498,21 +498,28 @@ def test_catalog_reads_only_the_streams_the_declared_catalog_configures_incremen
                     {
                         "stream": stream_json(name, ["full_refresh", "incremental"]),
                         "sync_mode": sync_mode,
-                        "cursor_field": ["modified"],
+                        "cursor_field": cursor_field,
                         "destination_sync_mode": "append",
                     }
-                    for name, sync_mode in [("users", "incremental"), ("events", "full_refresh")]
+                    for name, sync_mode, cursor_field in [
+                        ("users", "incremental", ["modified"]),
+                        ("events", "full_refresh", []),
+                        ("static", "full_refresh", []),
+                    ]
                 ]
             }
         )
     )
     scenario = _future_scenario().model_copy(
-        update={"configured_catalog_path": Path("integration_tests/incremental_catalog.json")}
+        update={"configured_catalog_path": Path("integration_tests/configured_catalog.json")}
     )
 
-    catalog = build_future_state_catalog(scenario, [USERS, EVENTS], tmp_path)
+    catalog = build_future_state_catalog(scenario, [USERS, EVENTS, STATIC], tmp_path)
 
-    assert [(s.stream.name, s.cursor_field) for s in catalog.streams] == [("users", ["modified"])]
+    assert [(s.stream.name, s.sync_mode, s.cursor_field) for s in catalog.streams] == [
+        ("users", SyncMode.incremental, ["modified"]),
+        ("events", SyncMode.incremental, ["created_at"]),
+    ]
 
 
 def test_catalog_without_an_incremental_stream_fails(tmp_path: Path) -> None:
