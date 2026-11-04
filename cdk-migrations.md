@@ -39,7 +39,7 @@ A new test, `test_read_from_future_state` (and its Docker twin, `test_docker_ima
 - Runs `read` with the state as `--state`. The read must succeed, every stream must return no records, and every stream must emit a `STREAM` or `GLOBAL` state message.
 - For a declarative source, checks that the cursor values in the emitted state are in the cursor's declared format (`datetime_format`, or the ISO 8601 and epoch formats of the other datetime cursors).
 
-Failure messages name the state file, streams and fields, never record or state values. The Docker test stays off unless `--read-from-streams` turns it on, as for `test_docker_image_build_and_read`, and does not run the cursor format check.
+Failure messages name the state file, streams and fields, never record or state values. The Docker test runs in `airbyte-cdk image test`. It stays off unless `--read-from-streams` turns it on, as for `test_docker_image_build_and_read`, and does not run the cursor format check. A `--read-from-streams` list narrows the streams it reads, and the state file must then cover only those. `--read-scenarios` lists pick its configs as they pick the Docker read's; its `default` reads every `incremental` entry with a future state, since each one is declared for this test.
 
 The in-process test of a declarative connector (`DeclarativeSourceTestSuite`) now builds the source with the read's state and catalog, as `source-declarative-manifest` does on the platform. `ConcurrentDeclarativeSource` reads only the state it was built with.
 
@@ -51,7 +51,7 @@ The in-process test of a declarative connector (`DeclarativeSourceTestSuite`) no
 - A `future_state.bypass_reason`, or a `bypass_reason` on the `incremental` section, is reported as a skipped test. Neither one explains a connector with no other runnable scenario, so such a connector still fails collection.
 - An `incremental` entry without a `future_state.future_state_path` runs nothing.
 
-Manifest-only connectors get the test when this version is released, because the connector monorepo installs the `airbyte-cdk` CLI unpinned. Python sources get it when they bump the CDK.
+Manifest-only connectors get the test when this version is released, because the connector monorepo installs the `airbyte-cdk` CLI unpinned. So do Python sources whose pinned CDK predates the in-process standard tests: connector CI reads them with `airbyte-cdk image test` and `--read-from-streams=default`, which now runs the Docker test too. Other Python sources get it when they bump the CDK.
 
 Migration steps:
 

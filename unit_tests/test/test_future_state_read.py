@@ -842,19 +842,28 @@ DOCKER_ARGS: dict[str, Any] = {
 
 
 def _stub_docker_read(
-    monkeypatch: pytest.MonkeyPatch, read_output: list[str]
+    monkeypatch: pytest.MonkeyPatch,
+    read_output: list[str],
+    *,
+    with_events: bool = False,
 ) -> list[dict[str, Any]]:
-    """Answer `discover` and `read`; record the command, catalog and state of each `read`."""
+    """Answer `discover` and `read`; record the command, catalog and state of each `read`.
+
+    `discover` reports `users` and `static`, and `events` too when `with_events` is set.
+    """
     reads: list[dict[str, Any]] = []
 
     def _fake(cmd: list[str], *, raise_if_errors: bool = False) -> EntrypointOutput:
         if "discover" in cmd:
-            messages = [
-                catalog_message(
-                    stream_json("users", ["full_refresh", "incremental"], ["updated_at"]),
-                    stream_json("static", ["full_refresh"]),
-                )
+            streams = [
+                stream_json("users", ["full_refresh", "incremental"], ["updated_at"]),
+                stream_json("static", ["full_refresh"]),
             ]
+            if with_events:
+                streams.append(
+                    stream_json("events", ["full_refresh", "incremental"], ["created_at"])
+                )
+            messages = [catalog_message(*streams)]
         else:
             mounts = {
                 part.rsplit(":", 1)[1]: Path(part.rsplit(":", 1)[0])
@@ -880,8 +889,10 @@ def _stub_docker_read(
     return reads
 
 
-def _docker_suite(tmp_path: Path, state: list[Any]) -> DockerConnectorTestSuite:
-    suite = suite_class(tmp_path, {}, base=DockerConnectorTestSuite)()
+def _docker_suite(
+    tmp_path: Path, state: list[Any], acceptance_tests: dict[str, Any] | None = None
+) -> DockerConnectorTestSuite:
+    suite = suite_class(tmp_path, acceptance_tests or {}, base=DockerConnectorTestSuite)()
     state_path = suite.get_connector_root_dir() / STATE_PATH
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state))
@@ -939,3 +950,113 @@ def test_docker_read_is_off_by_default(tmp_path: Path, monkeypatch: pytest.Monke
             _future_scenario(), **{**DOCKER_ARGS, "read_from_streams": "none"}
         )
     assert reads == []
+
+
+def test_docker_read_runs_in_image_test_like_the_docker_read() -> None:
+    """`airbyte-cdk image test` selects `-m image_tests`; connector CI reads through it."""
+
+    def _marks(test: Any) -> list[str]:
+        return sorted(mark.name for mark in test.pytestmark)
+
+    assert _marks(DockerConnectorTestSuite.test_docker_image_build_and_read_from_future_state) == (
+        _marks(DockerConnectorTestSuite.test_docker_image_build_and_read)
+    )
+    assert "image_tests" in _marks(
+        DockerConnectorTestSuite.test_docker_image_build_and_read_from_future_state
+    )
+
+
+# The connector's configs: `config` reads from a future state, `other` only under `basic_read`.
+SCENARIO_CONFIGS: dict[str, Any] = {
+    "basic_read": {"tests": [entry("secrets/other.json")]},
+    "incremental": {"tests": [_incremental_entry()]},
+}
+
+
+@pytest.mark.parametrize("read_scenarios", ["default", "all", ["config"]])
+def test_docker_read_reads_every_future_state_entry_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, read_scenarios: Any
+) -> None:
+    """`default` reads every entry, as the in-process test does: each one is declared for it."""
+    reads = _stub_docker_read(
+        monkeypatch, [json.dumps({"type": "STATE", "state": _stream_state("users")})]
+    )
+
+    run_without_skip(
+        _docker_suite(
+            tmp_path, [_stream_state("users")], SCENARIO_CONFIGS
+        ).test_docker_image_build_and_read_from_future_state,
+        _future_scenario(),
+        **{**DOCKER_ARGS, "read_scenarios": read_scenarios},
+    )
+
+    assert len(reads) == 1
+
+
+def test_docker_read_skips_a_config_left_out_of_read_scenarios(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A name that only the Docker read reads picks that config there, and skips this one."""
+    reads = _stub_docker_read(monkeypatch, [])
+
+    with pytest.raises(pytest.skip.Exception, match="not in `--read-scenarios=other`"):
+        _docker_suite(
+            tmp_path, [_stream_state("users")], SCENARIO_CONFIGS
+        ).test_docker_image_build_and_read_from_future_state(
+            _future_scenario(), **{**DOCKER_ARGS, "read_scenarios": ["other"]}
+        )
+    assert reads == []
+
+
+def test_docker_read_fails_on_an_unknown_read_scenario(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A misspelled config name must not skip every future-state read."""
+    reads = _stub_docker_read(monkeypatch, [])
+
+    with pytest.raises(pytest.fail.Exception, match="names configs that are not listed"):
+        run_without_skip(
+            _docker_suite(
+                tmp_path, [_stream_state("users")], SCENARIO_CONFIGS
+            ).test_docker_image_build_and_read_from_future_state,
+            _future_scenario(),
+            **{**DOCKER_ARGS, "read_scenarios": ["confg"]},
+        )
+    assert reads == []
+
+
+def test_read_scenarios_name_a_future_state_config_for_the_docker_read(tmp_path: Path) -> None:
+    """One `--read-scenarios` list picks the configs of both Docker reads."""
+    suite = _docker_suite(tmp_path, [], SCENARIO_CONFIGS)
+
+    with pytest.raises(pytest.skip.Exception, match="not in `--read-scenarios=config`"):
+        suite.test_docker_image_build_and_read(
+            ConnectorTestScenario(
+                config_path=Path("secrets/other.json"),
+                config_dict={},
+                sections=("basic_read",),
+            ),
+            **{**DOCKER_ARGS, "read_scenarios": ["config"]},
+        )
+
+
+def test_docker_read_needs_state_only_for_the_streams_it_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--read-from-streams` narrows the read before the state file's coverage is checked."""
+    reads = _stub_docker_read(
+        monkeypatch,
+        [json.dumps({"type": "STATE", "state": _stream_state("users")})],
+        with_events=True,
+    )
+
+    run_without_skip(
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state,
+        _future_scenario(),
+        **{**DOCKER_ARGS, "read_from_streams": ["users"]},
+    )
+
+    [read] = reads
+    assert [s["stream"]["name"] for s in read["catalog"]["streams"]] == ["users"]
