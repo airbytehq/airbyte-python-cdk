@@ -1199,7 +1199,9 @@ class DockerConnectorTestSuite:
         read_from_streams: Literal["default", "none"] | list[str],
         read_scenarios: Literal["all", "none", "default"] | list[str],
     ) -> None:
-        """Read from the connector's Docker image from a future state, as `test_read_from_future_state` does.
+        """Read from the connector's Docker image from a future state, as the in-process test does.
+
+        This is the Docker twin of `test_read_from_future_state`.
 
         Runs for `incremental` entries with a `future_state.future_state_path`, when the Docker
         read is on: it is off unless `--read-from-streams` turns it on, as for

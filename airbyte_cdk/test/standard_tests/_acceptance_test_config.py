@@ -204,8 +204,9 @@ def collect_scenarios(config: Mapping[str, Any], config_path: Path) -> Collected
     (`section: {tests: [...]}`) and the legacy list layout (`section: [...]`). An entry with a
     `config_path` is a runnable scenario, except an IAM-role config, which the standard tests do
     not support, and an `incremental` entry without a `future_state.future_state_path` (one with
-    a `future_state.bypass_reason` is a bypass). An entry without `config_path` contributes its `bypass_reason`, if it has one.
-    A section `bypass_reason` counts only when the section lists no runnable config.
+    a `future_state.bypass_reason` is a bypass). An entry without `config_path` contributes its
+    `bypass_reason`, if it has one. A section `bypass_reason` counts only when the section lists
+    no runnable config.
 
     Raises:
         AcceptanceTestConfigError: An entry sets a key the standard tests do not read (see

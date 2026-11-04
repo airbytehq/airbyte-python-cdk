@@ -171,8 +171,8 @@ def entry_key_problems(
     `basic_read` entry. A key of `REMOVED_ENTRY_KEYS` is reported as no longer read, a key of
     `POPULATED_FIELDS` as not an entry key, and a key of `BASIC_READ_ONLY_FIELDS` outside
     `basic_read` as read only there, with the reason; a key of `INCREMENTAL_ONLY_FIELDS` outside
-    `incremental` likewise; any other key as unknown. Each message names the key, the section and the entry's
-    `config_path`, never a value.
+    `incremental` likewise; any other key as unknown. Each message names the key, the section
+    and the entry's `config_path`, never a value.
 
     `from_file=False` checks the data a scenario is built from (by `get_scenarios()` or by hand),
     where the `POPULATED_FIELDS` are accepted, and so are the `BASIC_READ_ONLY_FIELDS` and
