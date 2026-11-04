@@ -472,7 +472,21 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                                     "default": "excel",
                                                     "const": "excel",
                                                     "type": "string",
-                                                }
+                                                },
+                                                "sheets_to_sync": {
+                                                    "title": "Sheets to Sync",
+                                                    "description": "Controls which sheets (tabs) of the workbook are synced. First Sheet Only reads only the first sheet. All Sheets reads every sheet and adds _ab_sheet_name to each record.",
+                                                    "default": "first_sheet_only",
+                                                    "enum": ["first_sheet_only", "all_sheets"],
+                                                    "order": 1,
+                                                },
+                                                "sheet_names": {
+                                                    "title": "Sheet Names",
+                                                    "description": "Optional list of sheet names to sync. When set, only these sheets are read and _ab_sheet_name is added to each record.",
+                                                    "order": 2,
+                                                    "type": "array",
+                                                    "items": {"type": "string"},
+                                                },
                                             },
                                             "required": ["filetype"],
                                         },
