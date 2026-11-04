@@ -2,6 +2,29 @@
 
 ## Upgrading to the next minor release (unreleased)
 
+### `test_basic_read` checks the cursor state of a declarative source
+
+For a `ConcurrentDeclarativeSource` (manifest-only connectors and Python sources built on one), `test_basic_read` now checks the cursor state its read emits, without another read. The declarative factory builds the same cursor whatever sync mode the catalog configures, so the full-refresh read emits the state an incremental sync would. A config listed under `basic_read` fails when:
+
+- a record emitted after a state message lies below the point a sync resumed from that state would start at, and no copy of it (same primary key, cursor value at least as high) was emitted before the state message. A sync that fails after that state message would never read the record. This happens when records carry a cursor value past the end of the slice that returned them, for example when the API filters on another field than the cursor field;
+- the final state of a `ConcurrentCursor` stream is behind its newest record, at the precision of the cursor's `datetime_format`;
+- the final per-partition state is malformed: `use_global_cursor` is not true although the manifest sets `global_substream_cursor`, a `states` entry has no partition or no cursor value, entries use different partition keys, the global `state` has no cursor value, or `lookback_window` is not a whole number of seconds between 0 and the read's duration;
+- the final per-partition state has no `parent_state` for a parent read with `incremental_dependency: true`;
+- a partition of a `ListPartitionRouter` has no `states` entry;
+- the source cannot build its streams from its own final state (it raises, sends an HTTP request while building, or loads fewer partitions than the state holds).
+
+Records without a cursor value the cursor can parse are reported as a `CursorStateWarning`, which does not fail the test.
+
+To lift the per-partition state throttle during the read, the suite emits per-partition state at more partition closes than a sync does (all of the first 100, then fewer, at most 300 per stream), only for streams whose cursor has a `step`. `ConcurrentPerPartitionCursor` now reads the throttle interval from the class attribute `STATE_EMIT_INTERVAL_SECONDS` (600 seconds, as before).
+
+Streams without a `ConcurrentCursor` or `ConcurrentPerPartitionCursor` (no cursor, `FinalStateCursor`, custom or file-based cursors), sources that are not a `ConcurrentDeclarativeSource`, and the Docker read (`test_docker_image_build_and_read`) are not checked. Failure messages name streams, fields, partition keys and counts, never record or state values.
+
+Migration steps:
+
+- A config whose read fails these checks shows a cursor that loses or re-reads data in production. Fix the manifest: align the cursor field with the field the API filters on, add a `lookback_window`, or fix the partition router or parent stream.
+- To skip the checks for one config, set `validate_state_messages: false` (with a reason) in its `basic_read` entry of `acceptance-test-config.yml`. This also skips the per-stream state message check of 7.42.0.
+- To make the `CursorStateWarning` problems fail the test, run with `-W error::airbyte_cdk.test.standard_tests.CursorStateWarning`.
+
 ### The Docker read test checks its records, and reads the streams `test_basic_read` reads
 
 `test_docker_image_build_and_read`, the `read` inside the connector image, stays off by default: connector CI reads each connector in process, through `test_basic_read`, and the Docker read is meant for a connector whose in-process tests cannot run. Turn it on with `--read-from-streams=default`. Before this release, a Docker read that was turned on read only the connector's `suggestedStreams` when it declared them, did not check the records, and, in a Python connector image, could not write to its working directory.

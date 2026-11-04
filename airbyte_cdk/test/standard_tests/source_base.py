@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 """Base class for source test suites."""
 
+import time
 import warnings
 from dataclasses import asdict
 from typing import TYPE_CHECKING
@@ -24,6 +25,12 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
     DiscoveredCatalogWarning,
     find_catalog_problems,
     format_catalog_problems,
+)
+from airbyte_cdk.test.standard_tests._cursor_state_checks import (
+    CursorStateRecorder,
+    CursorStateWarning,
+    find_cursor_state_problems,
+    format_cursor_state_problems,
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests._read_assertions import (
@@ -192,6 +199,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         Every stream it reads should also report `STARTED`, then only `RUNNING`, then
         `COMPLETE` stream statuses. That check is not enforced yet: its problems are reported as
         a `StreamStatusWarning`.
+
+        For a `ConcurrentDeclarativeSource`, the cursor state the read emits is checked too,
+        without another read (see `_cursor_state_checks`): no record emitted after a state
+        message lies below the point a sync resumed from it would start at, the final state of a
+        `ConcurrentCursor` is not behind its newest record, per-partition state is well formed
+        and keeps the state of incremental parents and every listed partition, and the source
+        builds from its final state. Records with no cursor value the cursor can parse are
+        reported as a `CursorStateWarning`. Opt out with `validate_state_messages: false`.
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:
@@ -228,13 +243,21 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         read_scenario = scenario.with_default_success()
-        result = run_test_job(
-            self.create_connector(scenario),
-            "read",
-            test_scenario=read_scenario,
-            connector_root=connector_root,
-            catalog=configured_catalog,
-        )
+        connector = self.create_connector(scenario)
+        recorder = CursorStateRecorder.install(connector)
+        read_started = time.monotonic()
+        try:
+            result = run_test_job(
+                connector,
+                "read",
+                test_scenario=read_scenario,
+                connector_root=connector_root,
+                catalog=configured_catalog,
+            )
+        finally:
+            if recorder is not None:
+                recorder.uninstall()
+        read_seconds = time.monotonic() - read_started
 
         if read_scenario.expected_outcome.expect_exception():
             # The read failed as expected (asserted by `run_test_job`); there are no records to check.
@@ -249,6 +272,27 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     category=StreamStatusWarning,
                     stacklevel=1,
                 )
+            cursor_problems = (
+                find_cursor_state_problems(
+                    messages=result.get_message_iterator,
+                    configured_catalog=configured_catalog,
+                    recorder=recorder,
+                    read_seconds=read_seconds,
+                    reference_source=lambda: self.create_connector(scenario),
+                )
+                if scenario.validate_state_messages
+                else {}
+            )
+            advisory = {
+                check: found for check, found in cursor_problems.items() if not check.enforced
+            }
+            if advisory:
+                warnings.warn(
+                    "The read's cursor state has problems that will fail this test in a future "
+                    f"CDK release:\n{format_cursor_state_problems(advisory)}",
+                    category=CursorStateWarning,
+                    stacklevel=1,
+                )
             # Also asserts that the read returned records, in the same pass over them.
             assert_read_records(
                 records=result.records_iterator,
@@ -259,6 +303,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                 state_messages=(
                     result.state_messages if scenario.validate_state_messages else None
                 ),
+            )
+            enforced = {check: found for check, found in cursor_problems.items() if check.enforced}
+            assert not enforced, (
+                "The read's cursor state has problems. To skip these checks for a config, set "
+                "`validate_state_messages: false` (with a reason) in its `basic_read` entry of "
+                f"`acceptance-test-config.yml`.\n{format_cursor_state_problems(enforced)}"
             )
         elif next(result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")
