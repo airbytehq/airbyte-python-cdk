@@ -137,13 +137,14 @@ def build_future_state_catalog(
 
     `read_streams` are the streams `get_read_streams` returns for the scenario: those of the
     entry's `configured_catalog_path` (or every discovered stream without one), minus the entry's
-    own `empty_streams`. Those of the config's `basic_read` entry are read: a stream without data
-    still has to parse its state and emit state. The read keeps the streams that `discover` reports
-    as supporting incremental sync, whatever `sync_mode` the declared catalog gives them: a test
-    catalog that reads a stream as `full_refresh` does not exempt it from honouring state. The entry's `future_state.missing_streams` are left out. Each stream keeps the cursor field of
-    the declared catalog, or its default cursor field.
+    own `empty_streams`. The streams that the config's `basic_read` entry lists as empty are read:
+    a stream without data still has to parse its state and emit state. The read keeps the streams
+    that `discover` reports as supporting incremental sync, whatever `sync_mode` the declared
+    catalog gives them: a test catalog that reads a stream as `full_refresh` does not exempt it
+    from honouring state. The entry's `future_state.missing_streams` are left out. Each stream
+    keeps the cursor field of the declared catalog, or its default cursor field.
 
-    Fails when the selected streams hold no incremental stream: the entry has nothing to read.
+    Fails when no incremental stream is left to read: the entry would pass having read nothing.
     """
     declared: dict[str, Mapping[str, Any]] = {}
     if scenario.configured_catalog_path:
@@ -155,12 +156,14 @@ def build_future_state_catalog(
             for configured in orjson.loads(catalog_path.read_bytes())["streams"]:
                 declared.setdefault(configured["stream"]["name"], configured)
 
+    assert scenario.future_state is not None
+    missing = {stream.name for stream in scenario.future_state.missing_streams}
     incremental = [
         stream
         for stream in read_streams
         if SyncMode.incremental in (stream.supported_sync_modes or [])
     ]
-    if not incremental:
+    if not [stream for stream in incremental if stream.name not in missing]:
         source = (
             f"its catalog `{scenario.configured_catalog_path}` lists"
             if scenario.configured_catalog_path
@@ -169,11 +172,10 @@ def build_future_state_catalog(
         raise AssertionError(
             f"The `incremental` entry for config '{scenario.id}' has no incremental stream to read "
             f"from its future state: {source} none that supports incremental sync outside its "
-            "`empty_streams`. Remove the entry, or point it at a catalog with incremental streams."
+            "`empty_streams` and `future_state.missing_streams`. Remove the entry, or point it at "
+            "a catalog with incremental streams."
         )
 
-    assert scenario.future_state is not None
-    missing = {stream.name for stream in scenario.future_state.missing_streams}
     return ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
@@ -299,13 +301,24 @@ def find_cursor_format_problems(
     and epoch formats of the other datetime cursors. A value is in the format when the cursor
     writes it back unchanged after parsing it. Streams of other sources, and streams without a
     datetime cursor, are not checked.
+
+    The streams are built with the source's own config, which a `streams` override may read. When
+    building them fails, that is reported as one problem naming the exception type, not its
+    message, so it neither hides the read's own problems nor prints config values.
     """
     if not isinstance(source, ConcurrentDeclarativeSource):
         return []
 
     wanted = {configured.stream.name for configured in catalog.streams}
     cursors: dict[str, tuple[str, DateTimeStreamStateConverter]] = {}
-    for stream in source.streams(config={}):
+    try:
+        streams = source.streams(config=getattr(source, "_config", None) or {})
+    except Exception as error:  # noqa: BLE001  # Reported as a problem, next to the read's own.
+        return [
+            "the cursor format check could not build the source's streams to read their cursors "
+            f"(`{type(error).__name__}`)"
+        ]
+    for stream in streams:
         cursor = getattr(stream, "cursor", None)
         converter = getattr(cursor, "_connector_state_converter", None)
         cursor_field = getattr(cursor, "cursor_field", None)

@@ -527,6 +527,19 @@ def test_catalog_without_an_incremental_stream_fails(tmp_path: Path) -> None:
         build_future_state_catalog(_future_scenario(), [STATIC], tmp_path)
 
 
+def test_catalog_whose_incremental_streams_are_all_missing_fails(tmp_path: Path) -> None:
+    """An empty catalog would pass every check having read nothing."""
+    scenario = _future_scenario(
+        missing_streams=[
+            {"name": "users", "bypass_reason": "no data"},
+            {"name": "events", "bypass_reason": "no data"},
+        ]
+    )
+
+    with pytest.raises(AssertionError, match="has no incremental stream to read"):
+        build_future_state_catalog(scenario, [USERS, EVENTS, STATIC], tmp_path)
+
+
 def test_state_must_cover_every_stream_read(tmp_path: Path) -> None:
     catalog = build_future_state_catalog(_future_scenario(), [USERS, EVENTS], tmp_path)
     global_state = {
@@ -820,6 +833,49 @@ def test_declarative_read_fails_on_cursor_format_problems(
     assert [
         m.state.stream.stream_descriptor.name for m in state_messages if m.state and m.state.stream
     ] == ["items"]
+
+
+class _ConfigReadingSource(ConcurrentDeclarativeSource):
+    """A Python declarative source whose `streams` override reads its config, as some do."""
+
+    def streams(self, config: Mapping[str, Any]) -> Any:
+        assert config["api_key"] == "x", "the config must be the source's own"
+        return super().streams(config)
+
+
+def test_cursor_format_check_builds_the_streams_with_the_source_config(tmp_path: Path) -> None:
+    source = _ConfigReadingSource(
+        config={"api_key": "x"}, catalog=None, state=None, source_config=copy.deepcopy(_MANIFEST)
+    )
+
+    problems = find_cursor_format_problems(
+        source, _items_catalog(tmp_path), _state_output("29990101")
+    )
+
+    assert problems == [
+        "stream 'items': a `updated_at` value in its state is not in the cursor's format `%Y-%m-%d`"
+    ]
+
+
+def test_cursor_format_check_reports_a_failure_to_build_the_streams(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The failure is one more problem, so the read's own problems are still reported."""
+    source = _declarative_source()
+
+    def _fail(config: Mapping[str, Any]) -> Any:
+        raise KeyError(SECRET_VALUE)
+
+    monkeypatch.setattr(source, "streams", _fail)
+
+    problems = find_cursor_format_problems(
+        source, _items_catalog(tmp_path), _state_output("2999-01-01")
+    )
+
+    assert problems == [
+        "the cursor format check could not build the source's streams to read their cursors "
+        "(`KeyError`)"
+    ]
 
 
 def test_cursor_format_is_not_checked_for_other_sources(tmp_path: Path) -> None:
