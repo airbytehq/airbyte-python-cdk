@@ -5785,6 +5785,7 @@ class ModelToComponentFactory:
         credentials_error: Optional[str] = None
         credentials_cache_key: Optional[Dict[str, Any]] = None
         if model.credentials is not None:
+            self._validate_credential_set_definition(model)
             tokens: List[str] = []
             credential_entries, credentials_error, credentials_cache_key = (
                 self._resolve_credential_set(model.credentials, config)
@@ -5949,6 +5950,42 @@ class ModelToComponentFactory:
     # Interpolation name under which each credential's item is visible to its authenticator.
     _CREDENTIAL_CONFIG_KEY = "credential"
 
+    @staticmethod
+    def _validate_credential_set_definition(
+        model: RateLimitedMultipleTokenAuthenticatorModel,
+    ) -> None:
+        """Reject manifest-author mistakes in a `credentials` definition, without any network call."""
+        assert model.credentials is not None
+        # Compared with the defaults rather than `__fields_set__`, which also lists defaults when a
+        # model has been round-tripped through `.dict()`.
+        defaults = {"auth_method": "Bearer", "header": "Authorization", "token_delimiter": ","}
+        ignored = sorted(
+            field
+            for field, default in defaults.items()
+            if getattr(model, field) not in (None, default)
+        )
+        if ignored:
+            raise ValueError(
+                f"RateLimitedMultipleTokenAuthenticator does not use {', '.join(ignored)} with "
+                "`credentials`: each credential's authenticator decides how its token is injected"
+            )
+        authenticator = model.credentials.authenticator
+        if not authenticator.expiration_duration:
+            # Without it the session token is fetched for every request, so each request carries
+            # a new header value and responses can no longer be traced back to their credential.
+            raise ValueError(
+                "The `CredentialSet` authenticator needs an `expiration_duration`, so that each "
+                "credential keeps its session token between requests"
+            )
+        request_authentication = authenticator.request_authentication
+        if request_authentication.type == "ApiKey":
+            inject_into = request_authentication.inject_into.inject_into
+            if getattr(inject_into, "value", inject_into) != "header":
+                raise ValueError(
+                    "The `CredentialSet` authenticator must inject its token into a request header; "
+                    f"got `{getattr(inject_into, 'value', inject_into)}`"
+                )
+
     def _resolve_credential_set(
         self, model: CredentialSetModel, config: Config
     ) -> Tuple[List[Tuple[str, Config]], Optional[str], Dict[str, Any]]:
@@ -6004,30 +6041,42 @@ class ModelToComponentFactory:
                 }
                 for key, credential_config in entries
             ],
-            "authenticator": self._definition_without_parameters(
+            "authenticator": self._credential_authenticator_cache_key(
                 json.loads(model.authenticator.json(by_alias=True, exclude_none=True))
             ),
             "error": error,
         }
         return entries, error, cache_key
 
+    # A Jinja expression that reads `parameters`, e.g. `{{ parameters['path'] }}`.
+    _PARAMETERS_REFERENCE = re.compile(r"\{[{%][^}]*\bparameters\b")
+
+    @classmethod
+    def _credential_authenticator_cache_key(cls, definition: Any) -> Any:
+        """The credential authenticator's definition, minus what differs per stream without effect.
+
+        `$parameters` propagation gives every nested component the stream's `$parameters` and,
+        where the component does not set it, the stream's `name`. Neither changes what the
+        authenticator does, so both are left out and streams with the same definition share one
+        instance. A definition that interpolates `parameters` does depend on them, so it is
+        keyed whole, and each set of parameters gets its own instance.
+        """
+        if cls._PARAMETERS_REFERENCE.search(
+            json.dumps(cls._definition_without_parameters(definition))
+        ):
+            return definition
+        return cls._definition_without_parameters(definition)
+
     @classmethod
     def _definition_without_parameters(cls, definition: Any) -> Any:
-        """Drop what `$parameters` propagation added, so streams with identical definitions share an instance.
-
-        Propagation copies each stream's `$parameters` onto every nested component, both as the
-        component's own `$parameters` and as fields the component does not set itself (a
-        requester's `name`, for example). Both differ per stream without changing what the
-        component does, so a field whose value equals the component's own `$parameters` entry
-        is left out along with `$parameters` itself.
-        """
+        """Drop `$parameters` and a `name` that propagation copied from them."""
         if isinstance(definition, Mapping):
             parameters = definition.get("$parameters") or {}
             return {
                 key: cls._definition_without_parameters(value)
                 for key, value in definition.items()
                 if key not in ("$parameters", "parameters")
-                and not (key in parameters and parameters[key] == value)
+                and not (key == "name" and parameters.get("name") == value)
             }
         if isinstance(definition, list):
             return [cls._definition_without_parameters(value) for value in definition]

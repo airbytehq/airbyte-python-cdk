@@ -89,7 +89,7 @@ class _QuotaState:
 class RotatingCredential:
     """A credential the authenticator logs in with itself, rather than a static token.
 
-    `key` identifies the credential for quota tracking and logging. It has to stay the same when
+    `key` identifies the credential for quota tracking and in error messages. It has to stay the same when
     `authenticator` refreshes its token, because quota belongs to the credential rather than to
     whichever token it currently holds, and it must not be secret.
     """
@@ -161,6 +161,12 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         credentials: Optional[List[RotatingCredential]] = None,
         credentials_error: Optional[str] = None,
     ) -> None:
+        """`credentials` replaces `tokens`; see the class docstring.
+
+        `credentials_error` is set by the declarative factory when the user's credential list
+        cannot be used (empty, malformed, a missing key). It is raised as a config error on first
+        use rather than at construction; Python callers have no reason to pass it.
+        """
         self._credentials: Optional[Dict[str, DeclarativeAuthenticator]] = None
         self._credentials_error = credentials_error
         if credentials is not None:
@@ -177,16 +183,9 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     )
                 self._credentials[credential.key] = credential.authenticator
             tokens = list(self._credentials)
-            credential_headers = {
-                authenticator.auth_header for authenticator in self._credentials.values()
-            }
-            if len(credential_headers) > 1 or "" in credential_headers:
-                raise ValueError(
-                    "Every credential of a RateLimitedMultipleTokenAuthenticator must inject its "
-                    f"token into the same request header; got {sorted(credential_headers)}"
-                )
-            if credential_headers:
-                header = credential_headers.pop()
+            # The header name is read from the credentials on first use, not here: an
+            # authenticator whose header depends on its token (an API-key header) would have to
+            # log in to answer, and construction must not touch the network.
         elif not tokens:
             raise AirbyteTracedException(
                 failure_type=FailureType.config_error,
@@ -223,6 +222,8 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         # Header value -> credential key, and each credential's recent header values (oldest first).
         self._issued_header_values: Dict[str, str] = {}
         self._header_values_by_credential: Dict[str, List[str]] = {}
+        self._credentials_header_resolved = self._credentials is None
+        self._credentials_header_lock = threading.Lock()
         self._token_to_http_client: Mapping[str, HttpClient] = {
             token: HttpClient(
                 name="quota_status",
@@ -244,6 +245,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
 
     @property
     def auth_header(self) -> str:
+        self._raise_if_credentials_unusable()
         return self._header
 
     @property
@@ -269,7 +271,20 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         if self._credentials is None:
             return f"{self._auth_method} {token}".strip()
         # Logs in or refreshes when the credential's token is missing or expired.
-        return str(self._credentials[token].get_auth_header()[self._header])
+        try:
+            return str(self._credentials[token].get_auth_header()[self._header])
+        except AirbyteTracedException as error:
+            raise self._credential_error(token, error) from error
+
+    @staticmethod
+    def _credential_error(key: str, error: AirbyteTracedException) -> AirbyteTracedException:
+        """Name the credential in an error from its login or its quota-status request."""
+        return AirbyteTracedException(
+            failure_type=error.failure_type,
+            internal_message=f"Credential '{key}': {error.internal_message or error.message}",
+            message=f"The credential '{key}' failed. {error.message or ''}".strip(),
+            exception=error,
+        )
 
     def _remember_issued_header_value(self, key: str, header_value: str) -> None:
         with self._lock:
@@ -297,6 +312,31 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 internal_message="RateLimitedMultipleTokenAuthenticator requires at least one credential",
                 message="Authentication credentials are missing from the configuration.",
             )
+        self._resolve_credentials_header()
+
+    def _resolve_credentials_header(self) -> None:
+        """Take the request header from the credentials, which must all use the same one.
+
+        Reading `auth_header` can log a credential in (an API-key header names itself from its
+        token's request options), which is why this runs on first use and not in `__init__`.
+        """
+        if self._credentials_header_resolved or self._credentials is None:
+            return
+        with self._credentials_header_lock:
+            if self._credentials_header_resolved:
+                return
+            headers = {authenticator.auth_header for authenticator in self._credentials.values()}
+            if len(headers) != 1 or "" in headers:
+                raise AirbyteTracedException(
+                    failure_type=FailureType.system_error,
+                    internal_message=(
+                        "Every credential of a RateLimitedMultipleTokenAuthenticator must inject its "
+                        f"token into the same request header; got {sorted(headers)}"
+                    ),
+                    message="The connector's authentication is misconfigured.",
+                )
+            self._header = headers.pop()
+            self._credentials_header_resolved = True
 
     def _quota_status_error_handler(self) -> Optional[HttpStatusErrorHandler]:
         """Error handling for the quota status request itself.
@@ -556,12 +596,18 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
 
     def _fetch_quota_states(self, token: str) -> dict[str, _QuotaState]:
         http_client = self._token_to_http_client[token]
-        _, response = http_client.send_request(
-            http_method=self._quota_status_http_method,
-            url=self._quota_status_url,
-            headers=self._quota_status_headers,
-            request_kwargs={},
-        )
+        try:
+            _, response = http_client.send_request(
+                http_method=self._quota_status_http_method,
+                url=self._quota_status_url,
+                headers=self._quota_status_headers,
+                request_kwargs={},
+            )
+        except AirbyteTracedException as error:
+            if self._credentials is None:
+                raise
+            # Signing this request logs the credential in, so a failed login surfaces here.
+            raise self._credential_error(token, error) from error
         if response.status_code in self._unavailable_status_codes:
             # Only reachable when the connector opted in: without `unavailable_status_codes`
             # the default error mapping raises before this point. `_seed_all_tokens` reports it

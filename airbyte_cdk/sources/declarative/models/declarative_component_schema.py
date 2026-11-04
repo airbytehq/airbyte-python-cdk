@@ -2573,7 +2573,7 @@ class RateLimitedMultipleTokenAuthenticator(BaseModel):
     )
     credentials: Optional["CredentialSet"] = Field(
         None,
-        description="Credentials the authenticator logs in with itself, instead of static `tokens`. Each one is identified by a stable key that its quota counters are kept under, so a token refreshed by its login keeps the quota state of the credential it belongs to. `auth_method` and `header` do not apply; each credential's authenticator decides how its token is injected.",
+        description="Credentials the authenticator logs in with itself, instead of static `tokens`. Each one is identified by a stable key that its quota counters are kept under, so a token refreshed by its login keeps the quota state of the credential it belongs to. Do not set `auth_method`, `header` or `token_delimiter` with it; each credential's authenticator decides how its token is injected.",
         title="Credentials",
     )
     token_delimiter: Optional[str] = Field(
@@ -3144,19 +3144,19 @@ class CredentialSet(BaseModel):
     type: Literal["CredentialSet"]
     items: Union[str, List[Dict[str, Any]]] = Field(
         ...,
-        description="The credentials, one object per credential, usually an interpolated config field that holds an array of objects. An empty, missing or malformed value is reported as a config error when the authenticator is first used rather than when it is built, so it does not fail configs that select a different authenticator.",
+        description="The credentials, one object per credential, usually an interpolated config field that holds an array of objects. An array written in the manifest is used as is, so its values are not interpolated, and its objects must not have a `type` field. An empty, missing or malformed value is reported as a config error when the authenticator is first used rather than when it is built, so it does not fail configs that select a different authenticator.",
         examples=["{{ config['credentials']['accounts'] }}"],
         title="Items",
     )
     key: Optional[str] = Field(
         None,
-        description="A stable, unique identifier for each credential, used to keep its quota counters and to name it in logs. Must not be secret. Defaults to the credential's position in `items`.",
+        description="A stable, unique identifier for each credential, used to keep its quota counters and to name it in error messages. Must not be secret. Defaults to the credential's position in `items`.",
         examples=["{{ config['credential']['account_id'] }}"],
         title="Key",
     )
     authenticator: SessionTokenAuthenticator = Field(
         ...,
-        description="The authenticator built for each credential, with the credential available as `config['credential']`. It must inject its token into a request header, and every credential must use the same header.",
+        description="The authenticator built for each credential, with the credential available as `config['credential']`. It must set `expiration_duration`, so each credential keeps its session token between requests, and must inject its token into a request header, the same one for every credential. It must not interpolate `parameters` if streams are to share the authenticator.",
         title="Authenticator",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

@@ -5,9 +5,11 @@
 log in and refresh their own tokens, with quota state kept per credential key."""
 
 import json
+import threading
 import time
 from typing import Any, List, Mapping, Optional
 
+import freezegun
 import pytest
 import requests
 
@@ -228,40 +230,133 @@ def test_tokens_and_credentials_together_are_rejected():
         )
 
 
-def test_credentials_injecting_into_different_headers_are_rejected():
-    with pytest.raises(ValueError, match="same request header"):
-        _authenticator(
+def test_credentials_injecting_into_different_headers_are_rejected_on_first_use():
+    authenticator = _authenticator(
+        [
+            RotatingCredential("a", _RefreshingCredential("a")),
+            RotatingCredential("b", _RefreshingCredential("b", header="X-Api-Key")),
+        ]
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator(_request())
+
+    assert "same request header" in error.value.internal_message
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        pytest.param(lambda authenticator: authenticator(_request()), id="call"),
+        pytest.param(lambda authenticator: authenticator.token, id="token"),
+        pytest.param(lambda authenticator: authenticator.get_auth_header(), id="get_auth_header"),
+    ],
+)
+@pytest.mark.parametrize(
+    "credentials, credentials_error, expected_message",
+    [
+        pytest.param([], None, "missing", id="empty"),
+        pytest.param(
+            [RotatingCredential("a", _RefreshingCredential("a"))],
+            "The credentials must be a list of objects.",
+            "list of objects",
+            id="malformed",
+        ),
+        pytest.param(
             [
                 RotatingCredential("a", _RefreshingCredential("a")),
-                RotatingCredential("b", _RefreshingCredential("b", header="X-Api-Key")),
-            ]
-        )
+                RotatingCredential("a", _RefreshingCredential("b")),
+            ],
+            None,
+            "own key",
+            id="duplicate_key",
+        ),
+    ],
+)
+def test_an_unusable_credential_list_is_a_config_error_however_it_is_first_used(
+    requests_mock, use, credentials, credentials_error, expected_message
+):
+    authenticator = _authenticator(credentials, credentials_error=credentials_error)
+
+    with pytest.raises(AirbyteTracedException, match=expected_message) as error:
+        use(authenticator)
+
+    assert error.value.failure_type == FailureType.config_error
+    assert not requests_mock.called
+
+
+def test_an_unchanged_token_stays_attributed_over_many_requests(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    _, _, credentials = _two_credentials()
+    authenticator = _authenticator(credentials[:1])
+
+    requests = [
+        authenticator(_request())
+        for _ in range(authenticator.ISSUED_HEADER_VALUES_PER_CREDENTIAL + 2)
+    ]
+
+    assert all(authenticator._token_from_request(request) == "a" for request in requests)
+
+
+def test_concurrent_requests_are_all_attributed_to_their_credential(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    _, _, credentials = _two_credentials()
+    authenticator = _authenticator(credentials)
+    signed: List[requests.PreparedRequest] = []
+    signed_lock = threading.Lock()
+
+    def _send() -> None:
+        for _ in range(20):
+            request = authenticator(_request())
+            with signed_lock:
+                signed.append(request)
+
+    threads = [threading.Thread(target=_send) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(signed) == 160
+    assert {authenticator._token_from_request(request) for request in signed} <= {"a", "b"}
+    assert all(authenticator._token_from_request(request) is not None for request in signed)
 
 
 # --- factory ------------------------------------------------------------------------------
+
+
+def _session_authenticator(
+    login_requester_updates: Optional[Mapping[str, Any]] = None, **updates: Any
+) -> Mapping[str, Any]:
+    authenticator: Mapping[str, Any] = {
+        "type": "SessionTokenAuthenticator",
+        "login_requester": {
+            "type": "HttpRequester",
+            "url_base": API_URL,
+            "path": "/login/{{ config['credential']['id'] }}",
+            "http_method": "POST",
+            "request_body_json": {"secret": "{{ config['credential']['secret'] }}"},
+            **(login_requester_updates or {}),
+        },
+        "session_token_path": ["token"],
+        "expiration_duration": "PT55M",
+        "request_authentication": {"type": "Bearer"},
+        **updates,
+    }
+    return {key: value for key, value in authenticator.items() if value is not None}
 
 
 def _model(
     items: Any = "{{ config['accounts'] }}",
     key: Optional[str] = "{{ config['credential']['id'] }}",
     tokens: Any = None,
+    authenticator: Optional[Mapping[str, Any]] = None,
+    **definition_updates: Any,
 ) -> RateLimitedMultipleTokenAuthenticatorModel:
     credentials: Mapping[str, Any] = {
         "type": "CredentialSet",
         "items": items,
-        "authenticator": {
-            "type": "SessionTokenAuthenticator",
-            "login_requester": {
-                "type": "HttpRequester",
-                "url_base": API_URL,
-                "path": "/login/{{ config['credential']['id'] }}",
-                "http_method": "POST",
-                "request_body_json": {"secret": "{{ config['credential']['secret'] }}"},
-            },
-            "session_token_path": ["token"],
-            "expiration_duration": "PT55M",
-            "request_authentication": {"type": "Bearer"},
-        },
+        "authenticator": authenticator or _session_authenticator(),
     }
     if key is not None:
         credentials = {**credentials, "key": key}
@@ -280,7 +375,20 @@ def _model(
     }
     if tokens is not None:
         definition = {**definition, "tokens": tokens}
-    return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(definition)
+    return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(
+        {**definition, **definition_updates}
+    )
+
+
+def _propagated(
+    model: RateLimitedMultipleTokenAuthenticatorModel, parameters: Mapping[str, Any]
+) -> RateLimitedMultipleTokenAuthenticatorModel:
+    """The model as a stream with these `$parameters` would see it after propagation."""
+    return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(
+        ManifestComponentTransformer().propagate_types_and_parameters(
+            "authenticator", model.dict(exclude_none=True, by_alias=True), parameters
+        )
+    )
 
 
 ACCOUNTS = [{"id": "111", "secret": "s1"}, {"id": "222", "secret": "s2"}]
@@ -398,20 +506,221 @@ def test_factory_tokens_definition_keys_exactly_as_before():
 
     factory.create_rate_limited_multiple_token_authenticator(model, {"pat": "token_1"})
 
+    # The key the base commit (before `credentials` existed) produces for this definition.
     (cache_key,) = factory._rate_limited_authenticators
-    assert sorted(json.loads(cache_key)) == [
-        "auth_method",
-        "budget_min_reserve",
-        "budget_reserve_fraction",
-        "header",
-        "max_wait_time",
-        "quota_status_headers",
-        "quota_status_http_method",
-        "quota_status_unavailable_status_codes",
-        "quota_status_url",
-        "quotas",
-        "tokens",
-    ]
+    assert json.loads(cache_key) == {
+        "auth_method": "Bearer",
+        "budget_min_reserve": 50,
+        "budget_reserve_fraction": 0.1,
+        "header": "Authorization",
+        "max_wait_time": 7200.0,
+        "quota_status_headers": {},
+        "quota_status_http_method": "GET",
+        "quota_status_unavailable_status_codes": [],
+        "quota_status_url": QUOTA_STATUS_URL,
+        "quotas": [
+            {
+                "exhaustion_status_codes": [],
+                "limit_header": None,
+                "limit_path": None,
+                "matchers": [],
+                "name": "rest",
+                "remaining_header": None,
+                "remaining_path": ["core", "remaining"],
+                "reset_header": None,
+                "reset_path": ["core", "reset"],
+            }
+        ],
+        "tokens": ["token_1"],
+    }
+
+
+def test_factory_does_not_share_instances_across_credentials_that_differ_only_in_secrets():
+    factory = ModelToComponentFactory()
+    rotated = [{**account, "secret": f"rotated-{account['secret']}"} for account in ACCOUNTS]
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        _model(), {"accounts": ACCOUNTS}
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        _model(), {"accounts": rotated}
+    )
+
+    assert first is not second
+
+
+def test_factory_does_not_share_instances_across_different_login_definitions():
+    factory = ModelToComponentFactory()
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        _model(), {"accounts": ACCOUNTS}
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        _model(
+            authenticator=_session_authenticator(
+                {"path": "/v2/login/{{ config['credential']['id'] }}"}
+            )
+        ),
+        {"accounts": ACCOUNTS},
+    )
+
+    assert first is not second
+
+
+def test_factory_keys_a_login_that_reads_parameters_by_those_parameters(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    for prefix in ("login", "alt"):
+        requests_mock.post(f"{API_URL}/{prefix}/111", json={"token": f"{prefix}-111"})
+    model = _model(
+        authenticator=_session_authenticator(
+            {"path": "/{{ parameters['login_prefix'] }}/{{ config['credential']['id'] }}"}
+        )
+    )
+    factory = ModelToComponentFactory()
+    config = {"accounts": ACCOUNTS[:1]}
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        _propagated(model, {"name": "stream_a", "login_prefix": "login"}), config, name="stream_a"
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        _propagated(model, {"name": "stream_b", "login_prefix": "alt"}), config, name="stream_b"
+    )
+
+    assert first is not second
+    assert first(_request()).headers["Authorization"] == "Bearer login-111"
+    assert second(_request()).headers["Authorization"] == "Bearer alt-111"
+
+
+def test_factory_keeps_a_field_that_happens_to_equal_a_parameter():
+    factory = ModelToComponentFactory()
+    config = {"accounts": ACCOUNTS}
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        _propagated(
+            _model(authenticator=_session_authenticator({"url_base": "https://a.example.com"})),
+            {"name": "stream_a", "url_base": "https://a.example.com"},
+        ),
+        config,
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        _propagated(
+            _model(authenticator=_session_authenticator({"url_base": "https://b.example.com"})),
+            {"name": "stream_b", "url_base": "https://b.example.com"},
+        ),
+        config,
+    )
+
+    assert first is not second
+
+
+def test_factory_api_key_header_credentials_log_in_only_on_first_use(requests_mock):
+    _mock_logins(requests_mock)
+    model = _model(
+        authenticator=_session_authenticator(
+            request_authentication={
+                "type": "ApiKey",
+                "inject_into": {
+                    "type": "RequestOption",
+                    "inject_into": "header",
+                    "field_name": "X-Api-Key",
+                },
+            }
+        )
+    )
+
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        model, {"accounts": ACCOUNTS}, name="stream"
+    )
+
+    assert not requests_mock.called
+    request = authenticator(_request())
+    assert request.headers["X-Api-Key"] == "session-111"
+    assert "Authorization" not in request.headers
+
+
+def test_factory_rejects_credentials_injected_outside_a_header(requests_mock):
+    model = _model(
+        authenticator=_session_authenticator(
+            request_authentication={
+                "type": "ApiKey",
+                "inject_into": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "api_key",
+                },
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="request header"):
+        ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+            model, {"accounts": ACCOUNTS}
+        )
+
+    assert not requests_mock.called
+
+
+def test_factory_rejects_credentials_without_an_expiration_duration():
+    model = _model(authenticator=_session_authenticator(expiration_duration=None))
+
+    with pytest.raises(ValueError, match="expiration_duration"):
+        ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+            model, {"accounts": ACCOUNTS}
+        )
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        pytest.param("header", "X-Api-Key", id="header"),
+        pytest.param("auth_method", "token", id="auth_method"),
+        pytest.param("token_delimiter", ";", id="token_delimiter"),
+    ],
+)
+def test_factory_rejects_static_token_settings_together_with_credentials(field, value):
+    with pytest.raises(ValueError, match=field):
+        ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+            _model(**{field: value}), {"accounts": ACCOUNTS}
+        )
+
+
+def test_a_failed_login_names_the_credential(requests_mock):
+    requests_mock.post(f"{API_URL}/login/111", status_code=401, json={"message": "bad secret"})
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        _model(), {"accounts": ACCOUNTS[:1]}
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator(_request())
+
+    assert "'111'" in error.value.message
+
+
+def test_a_session_refresh_keeps_the_credentials_quota_state(requests_mock):
+    logins = iter(["session-1", "session-2"])
+    requests_mock.post(
+        f"{API_URL}/login/111", json=lambda request, context: {"token": next(logins)}
+    )
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body(remaining=4000))
+
+    with freezegun.freeze_time("2026-01-01T00:00:00Z") as frozen:
+        authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+            _model(), {"accounts": ACCOUNTS[:1]}
+        )
+        before = authenticator(_request())
+        states = authenticator._states["111"]
+        assert states["rest"].remaining == 3999
+
+        frozen.tick(delta=3600)
+        after = authenticator(_request())
+
+    assert before.headers["Authorization"] == "Bearer session-1"
+    assert after.headers["Authorization"] == "Bearer session-2"
+    assert authenticator._states["111"] is states
+    assert states["rest"].remaining == 3998  # the refreshed token spends from the same counter
+    assert authenticator._token_from_request(before) == "111"
+    assert authenticator._token_from_request(after) == "111"
 
 
 @pytest.mark.parametrize(
