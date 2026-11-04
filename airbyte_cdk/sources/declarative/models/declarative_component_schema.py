@@ -2055,7 +2055,7 @@ class JwtAuthenticator(BaseModel):
     )
     iat_backdate_seconds: Optional[int] = Field(
         0,
-        description="Number of seconds to move the `iat` (issued at) and `nbf` (not before) claims into the past, so a small clock difference between this machine and the API server does not make the token look issued in the future. `exp` is not moved. Only set this when the API recommends it, e.g. GitHub Apps recommend 60.",
+        description="Number of seconds to move the `iat` (issued at) and `nbf` (not before) claims into the past, so a small clock difference between this machine and the API server does not make the token look issued in the future. `exp` is not moved. Only set this when the API recommends it.",
         examples=[60],
         ge=0,
         title="Issued-At Backdate",

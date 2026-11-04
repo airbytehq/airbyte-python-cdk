@@ -168,7 +168,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             )
 
         # RFC 7519 defines `iss` and `sub` as strings and PyJWT rejects anything else, so a value
-        # that only looks numeric (a GitHub App ID, an account number) must not be turned into an int.
+        # that only looks numeric (an application or account ID) must not be turned into an int.
         if self._iss:
             payload["iss"] = self._iss.eval(self.config, json_loads=json.loads, valid_types=(str,))
         if self._sub:

@@ -403,11 +403,11 @@ class TestJwtAuthenticator:
         pytest.param("111", id="integer_like"),
         pytest.param("1.5", id="float_like"),
         pytest.param("True", id="boolean_like"),
-        pytest.param("Iv23liABCdef", id="plain_string"),
+        pytest.param("issuer-abc", id="plain_string"),
     ],
 )
 def test_iss_sub_and_kid_from_config_stay_strings(claim_value):
-    """Interpolation literal-evaluates its output, so `{{ config['app_id'] }}` holding "111" used to
+    """Interpolation literal-evaluates its output, so `{{ config['value'] }}` holding "111" used to
     become the int 111, and PyJWT refuses to sign a non-string `iss`/`sub`/`kid`."""
     authenticator = JwtAuthenticator(
         config={"value": claim_value},
