@@ -6045,6 +6045,11 @@ class ModelToComponentFactory:
                 for key, credential_config in entries
             ],
             "authenticator": self._credential_authenticator_cache_key(model.authenticator),
+            # The login also interpolates config outside the credential's item (`api_url`, a
+            # tenant). Every stream of a source gets the same config, so this keeps sharing.
+            "config_sha256": hashlib.sha256(
+                json.dumps(config, sort_keys=True, default=str).encode()
+            ).hexdigest(),
             "error": error,
         }
         return entries, error, cache_key
@@ -6056,13 +6061,16 @@ class ModelToComponentFactory:
     def _credential_authenticator_cache_key(cls, model: BaseModel) -> Any:
         """The credential authenticator's definition, minus what differs per stream without effect.
 
-        `$parameters` propagation copies each stream's `$parameters` onto every nested component:
-        as the component's own `$parameters`, as its `name` when it sets none, and as extra keys
-        such as `primary_key` that the component does not declare and never reads. None of these
-        changes what the authenticator does, so the key keeps only declared fields, without
-        `$parameters` or a propagated `name`, and streams with the same definition share one
-        instance. A definition that interpolates `parameters` does depend on them, so it is
-        keyed with them, and each set of parameters gets its own instance.
+        `$parameters` propagation copies each stream's `$parameters` onto every nested component,
+        both as the component's own `$parameters` and as undeclared extra keys such as `name` or
+        `primary_key`. The factory never reads either from a declared component, so the key keeps
+        only declared fields without `$parameters`, and streams with the same definition share one
+        instance. Two things do depend on them, and are keyed with them:
+        - a definition that interpolates `parameters`: each set of parameters gets its own instance;
+        - a custom component (`class_name`), which receives its `$parameters` and every extra its
+          class accepts. It is keyed with all of them, since which ones it reads is only known
+          from its class, and importing that is left to `create_custom_component`. A login with a
+          custom component therefore gets an instance per stream rather than a shared one.
         """
         declared = cls._declared_fields(model, keep_parameters=False)
         if cls._PARAMETERS_REFERENCE.search(json.dumps(declared, sort_keys=True, default=str)):
@@ -6071,23 +6079,26 @@ class ModelToComponentFactory:
 
     @classmethod
     def _declared_fields(cls, value: Any, keep_parameters: bool) -> Any:
-        """A JSON-able view of a model tree that holds only the fields its models declare."""
+        """A JSON-able view of a model tree that holds only the fields its models declare.
+
+        A custom component is the exception: it is kept whole, extras and `$parameters` included.
+        """
         if isinstance(value, BaseModel):
-            parameters = getattr(value, "parameters", None) or {}
+            is_custom = "class_name" in value.__fields__
+            keep_own_parameters = keep_parameters or is_custom
             fields = {}
             for field_name, field in value.__fields__.items():
                 field_value = getattr(value, field_name)
                 if field_value is None:
                     continue
-                if field_name == "parameters" and not keep_parameters:
+                if field_name == "parameters" and not keep_own_parameters:
                     continue
-                if (
-                    field_name == "name"
-                    and not keep_parameters
-                    and parameters.get("name") == field_value
-                ):
-                    continue
-                fields[field.alias] = cls._declared_fields(field_value, keep_parameters)
+                fields[field.alias] = cls._declared_fields(field_value, keep_own_parameters)
+            if is_custom:
+                for extra_name, extra_value in value.__dict__.items():
+                    if extra_name in value.__fields__ or extra_name.startswith("_"):
+                        continue
+                    fields[extra_name] = cls._declared_fields(extra_value, keep_own_parameters)
             return fields
         if isinstance(value, Mapping):
             return {

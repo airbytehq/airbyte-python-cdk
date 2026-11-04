@@ -1011,3 +1011,52 @@ def test_every_kind_of_failed_login_names_the_credential(
         authenticator(_request())
 
     assert "'222'" in error.value.message
+
+
+def _custom_login_authenticator(scope: str) -> Mapping[str, Any]:
+    return _session_authenticator(
+        {
+            "authenticator": {
+                "type": "CustomAuthenticator",
+                "class_name": "components.LoginSigner",
+                "scope": scope,
+            }
+        }
+    )
+
+
+def test_cache_key_keeps_the_settings_of_a_custom_component_in_the_login():
+    def _key(scope: str) -> Any:
+        return ModelToComponentFactory._credential_authenticator_cache_key(
+            _model(authenticator=_custom_login_authenticator(scope)).credentials.authenticator
+        )
+
+    assert _key("read") != _key("admin")
+    assert _key("read") == _key("read")
+
+
+def test_cache_key_keys_a_custom_component_with_the_parameters_it_receives():
+    def _key(stream_name: str) -> Any:
+        model = _propagated(
+            _model(authenticator=_custom_login_authenticator("read")), {"name": stream_name}
+        )
+        return ModelToComponentFactory._credential_authenticator_cache_key(
+            model.credentials.authenticator
+        )
+
+    # A custom component receives the stream's parameters, so it is not shared across streams.
+    assert _key("stream_a") != _key("stream_b")
+
+
+def test_factory_does_not_share_instances_across_configs_the_login_reads():
+    factory = ModelToComponentFactory()
+    model = _model(authenticator=_session_authenticator({"url_base": "{{ config['api_url'] }}"}))
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        model, {"accounts": ACCOUNTS, "api_url": "https://eu.example.com"}
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        model, {"accounts": ACCOUNTS, "api_url": "https://us.example.com"}
+    )
+
+    assert first is not second
