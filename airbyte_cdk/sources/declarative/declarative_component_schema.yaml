@@ -329,11 +329,11 @@ definitions:
       token's quota for the matched pool is exhausted, the authenticator rotates to the next token. When all
       tokens are exhausted, it waits until the earliest quota reset (bounded by `max_wait_time`) before
       resuming. Quota counters are seeded per token from `quota_status_source` at startup and refreshed after
-      an exhaustion wait.
+      an exhaustion wait. Set exactly one of `tokens` (static tokens) or `credentials` (credentials the
+      authenticator logs in with itself, each keeping its quota counters across token refreshes).
     type: object
     required:
       - type
-      - tokens
       - quota_status_source
       - quotas
     properties:
@@ -354,6 +354,10 @@ definitions:
         examples:
           - "{{ config['credentials']['personal_access_token'] }}"
           - ["{{ config['token_1'] }}", "{{ config['token_2'] }}"]
+      credentials:
+        title: Credentials
+        description: Credentials the authenticator logs in with itself, instead of static `tokens`. Each one is identified by a stable key that its quota counters are kept under, so a token refreshed by its login keeps the quota state of the credential it belongs to. `auth_method` and `header` do not apply; each credential's authenticator decides how its token is injected.
+        "$ref": "#/definitions/CredentialSet"
       token_delimiter:
         title: Token Delimiter
         description: Delimiter used to split a single token string into multiple tokens.
@@ -407,6 +411,50 @@ definitions:
         description: Minimum number of calls to keep in reserve per token before proactive throttling kicks in.
         type: integer
         default: 50
+      $parameters:
+        type: object
+        additionalProperties: true
+  CredentialSet:
+    title: Credential Set
+    description: >
+      Credentials for `RateLimitedMultipleTokenAuthenticator` to rotate between, each logged in by its own
+      authenticator. `items` evaluates to one object per credential, and `authenticator` is built once per item
+      with that object available in interpolation as `config['credential']` (it shadows any top-level config
+      field of the same name). Nothing is evaluated over the network at construction; logins happen on first use.
+    type: object
+    required:
+      - type
+      - items
+      - authenticator
+    properties:
+      type:
+        type: string
+        enum: [CredentialSet]
+      items:
+        title: Items
+        description: The credentials, one object per credential, usually an interpolated config field that holds an array of objects. An empty, missing or malformed value is reported as a config error when the authenticator is first used rather than when it is built, so it does not fail configs that select a different authenticator.
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: object
+              additionalProperties: true
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['credentials']['accounts'] }}"
+      key:
+        title: Key
+        description: A stable, unique identifier for each credential, used to keep its quota counters and to name it in logs. Must not be secret. Defaults to the credential's position in `items`.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['credential']['account_id'] }}"
+      authenticator:
+        title: Authenticator
+        description: The authenticator built for each credential, with the credential available as `config['credential']`. It must inject its token into a request header, and every credential must use the same header.
+        "$ref": "#/definitions/SessionTokenAuthenticator"
       $parameters:
         type: object
         additionalProperties: true

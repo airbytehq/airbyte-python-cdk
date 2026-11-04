@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import importlib
 import inspect
 import json
@@ -69,6 +70,7 @@ from airbyte_cdk.sources.declarative.auth.oauth import (
 )
 from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
     RateLimitedMultipleTokenAuthenticator,
+    RotatingCredential,
     TokenQuota,
 )
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
@@ -208,6 +210,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CredentialSet as CredentialSetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CsvDecoder as CsvDecoderModel,
@@ -5772,7 +5777,19 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RateLimitedMultipleTokenAuthenticator:
-        if isinstance(model.tokens, str):
+        if (model.tokens is None) == (model.credentials is None):
+            raise ValueError(
+                "RateLimitedMultipleTokenAuthenticator requires exactly one of `tokens` or `credentials`"
+            )
+        credential_entries: List[Tuple[str, Config]] = []
+        credentials_error: Optional[str] = None
+        credentials_cache_key: Optional[Dict[str, Any]] = None
+        if model.credentials is not None:
+            tokens: List[str] = []
+            credential_entries, credentials_error, credentials_cache_key = (
+                self._resolve_credential_set(model.credentials, config)
+            )
+        elif isinstance(model.tokens, str):
             tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
             delimiter = model.token_delimiter or ","
             tokens = [
@@ -5781,7 +5798,7 @@ class ModelToComponentFactory:
         else:
             tokens = [
                 token_value
-                for token in model.tokens
+                for token in model.tokens or []
                 if (
                     token_value := str(
                         InterpolatedString.create(token, parameters={}).eval(config)
@@ -5858,24 +5875,40 @@ class ModelToComponentFactory:
         # from the resolved constructor arguments rather than the raw model so that
         # stream-specific `$parameters` propagated onto the model (and its nested components)
         # cannot break instance sharing.
-        cache_key = json.dumps(
-            {
-                "tokens": tokens,
-                "quotas": quota_specs,
-                "quota_status_url": quota_status_url,
-                "quota_status_http_method": quota_status_http_method,
-                "quota_status_headers": quota_status_headers,
-                "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
-                "auth_method": auth_method,
-                "header": header,
-                "max_wait_time": max_wait_time.total_seconds(),
-                "budget_reserve_fraction": budget_reserve_fraction,
-                "budget_min_reserve": budget_min_reserve,
-            },
-            sort_keys=True,
-        )
+        cache_key_fields: Dict[str, Any] = {
+            "tokens": tokens,
+            "quotas": quota_specs,
+            "quota_status_url": quota_status_url,
+            "quota_status_http_method": quota_status_http_method,
+            "quota_status_headers": quota_status_headers,
+            "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
+            "auth_method": auth_method,
+            "header": header,
+            "max_wait_time": max_wait_time.total_seconds(),
+            "budget_reserve_fraction": budget_reserve_fraction,
+            "budget_min_reserve": budget_min_reserve,
+        }
+        if credentials_cache_key is not None:
+            # Only added for `credentials`, so a `tokens` definition keys exactly as before.
+            cache_key_fields["credentials"] = credentials_cache_key
+        cache_key = json.dumps(cache_key_fields, sort_keys=True)
         if cache_key in self._rate_limited_authenticators:
             return self._rate_limited_authenticators[cache_key]
+
+        credentials: Optional[List[RotatingCredential]] = None
+        if model.credentials is not None:
+            credential_authenticator_model = model.credentials.authenticator
+            credentials = [
+                RotatingCredential(
+                    key=key,
+                    authenticator=self._create_component_from_model(
+                        model=credential_authenticator_model,
+                        config=credential_config,
+                        name=f"{kwargs.get('name') or 'rate_limited'}_credential_{index}",
+                    ),
+                )
+                for index, (key, credential_config) in enumerate(credential_entries)
+            ]
 
         quotas = [
             TokenQuota(
@@ -5907,9 +5940,98 @@ class ModelToComponentFactory:
             max_wait_time=max_wait_time,
             budget_reserve_fraction=budget_reserve_fraction,
             budget_min_reserve=budget_min_reserve,
+            credentials=credentials,
+            credentials_error=credentials_error,
         )
         self._rate_limited_authenticators[cache_key] = authenticator
         return authenticator
+
+    # Interpolation name under which each credential's item is visible to its authenticator.
+    _CREDENTIAL_CONFIG_KEY = "credential"
+
+    def _resolve_credential_set(
+        self, model: CredentialSetModel, config: Config
+    ) -> Tuple[List[Tuple[str, Config]], Optional[str], Dict[str, Any]]:
+        """Evaluate a `CredentialSet` into (key, per-credential config) pairs without building anything.
+
+        Problems with the user-provided list are returned as an error message rather than raised,
+        so the authenticator can report them at first use: a `SelectiveAuthenticator` builds every
+        branch up front, including the ones the config does not select.
+
+        The returned cache-key fragment identifies the credentials by key and by a hash of each
+        item, never by the item itself, which usually holds secrets.
+        """
+        items_value: Any = model.items
+        if isinstance(items_value, str):
+            items_value = InterpolatedString.create(items_value, parameters={}).eval(config)
+
+        error: Optional[str] = None
+        items: List[Mapping[str, Any]] = []
+        if items_value in (None, ""):
+            items = []
+        elif isinstance(items_value, list) and all(
+            isinstance(item, Mapping) for item in items_value
+        ):
+            items = items_value
+        else:
+            error = "The credentials must be a list of objects."
+
+        entries: List[Tuple[str, Config]] = []
+        for index, item in enumerate(items):
+            credential_config = {**config, self._CREDENTIAL_CONFIG_KEY: item}
+            if model.key:
+                key_value = InterpolatedString.create(model.key, parameters={}).eval(
+                    credential_config
+                )
+                key = "" if key_value is None else str(key_value).strip()
+            else:
+                key = str(index)
+            if not key and error is None:
+                error = f"The credential at position {index + 1} has no identifier."
+            entries.append((key, credential_config))
+
+        cache_key = {
+            "items": [
+                {
+                    "key": key,
+                    "item_sha256": hashlib.sha256(
+                        json.dumps(
+                            credential_config[self._CREDENTIAL_CONFIG_KEY],
+                            sort_keys=True,
+                            default=str,
+                        ).encode()
+                    ).hexdigest(),
+                }
+                for key, credential_config in entries
+            ],
+            "authenticator": self._definition_without_parameters(
+                json.loads(model.authenticator.json(by_alias=True, exclude_none=True))
+            ),
+            "error": error,
+        }
+        return entries, error, cache_key
+
+    @classmethod
+    def _definition_without_parameters(cls, definition: Any) -> Any:
+        """Drop what `$parameters` propagation added, so streams with identical definitions share an instance.
+
+        Propagation copies each stream's `$parameters` onto every nested component, both as the
+        component's own `$parameters` and as fields the component does not set itself (a
+        requester's `name`, for example). Both differ per stream without changing what the
+        component does, so a field whose value equals the component's own `$parameters` entry
+        is left out along with `$parameters` itself.
+        """
+        if isinstance(definition, Mapping):
+            parameters = definition.get("$parameters") or {}
+            return {
+                key: cls._definition_without_parameters(value)
+                for key, value in definition.items()
+                if key not in ("$parameters", "parameters")
+                and not (key in parameters and parameters[key] == value)
+            }
+        if isinstance(definition, list):
+            return [cls._definition_without_parameters(value) for value in definition]
+        return definition
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(

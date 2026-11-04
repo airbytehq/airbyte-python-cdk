@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from itertools import cycle
-from typing import Any, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import requests
 
@@ -85,6 +85,19 @@ class _QuotaState:
     """
 
 
+@dataclass(frozen=True)
+class RotatingCredential:
+    """A credential the authenticator logs in with itself, rather than a static token.
+
+    `key` identifies the credential for quota tracking and logging. It has to stay the same when
+    `authenticator` refreshes its token, because quota belongs to the credential rather than to
+    whichever token it currently holds, and it must not be secret.
+    """
+
+    key: str
+    authenticator: DeclarativeAuthenticator
+
+
 class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     """Authenticator that rotates between multiple interchangeable tokens with per-token quota tracking.
 
@@ -109,6 +122,16 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     between seedings and makes the authenticator rotate off a token the server has rejected even
     though the local count still looks healthy. All state transitions are guarded by a lock so
     the authenticator can be shared safely across concurrent streams; sleeps never hold the lock.
+
+    Instead of static `tokens`, the authenticator can be given `credentials`: authenticators that
+    obtain and refresh their own tokens, such as a session login. Quota state is then kept per
+    credential key rather than per token string, so a refreshed token keeps the counters of the
+    credential it belongs to, and the internal token list holds those keys. Each request is signed
+    with the credential's current header value, and responses are attributed back to the
+    credential through the header values it has issued. A missing, empty or malformed credential
+    list is reported when the authenticator is first used rather than when it is built, so a
+    `SelectiveAuthenticator`, which builds every branch up front, does not fail the configs that
+    select another branch.
     """
 
     HEARTBEAT_INTERVAL = 60.0  # Log every 60s during exhaustion wait
@@ -118,6 +141,9 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     # current window. Covers ordinary disagreement between the quota endpoint and response
     # headers; anything older is treated as belonging to a window that has already rolled over.
     RESET_SKEW_TOLERANCE = timedelta(seconds=60)
+    # Header values remembered per credential, so a response to a request signed just before a
+    # token refresh is still attributed to the credential that sent it.
+    ISSUED_HEADER_VALUES_PER_CREDENTIAL = 3
 
     def __init__(
         self,
@@ -132,8 +158,36 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         max_wait_time: timedelta = timedelta(hours=2),
         budget_reserve_fraction: float = 0.1,
         budget_min_reserve: int = 50,
+        credentials: Optional[List[RotatingCredential]] = None,
+        credentials_error: Optional[str] = None,
     ) -> None:
-        if not tokens:
+        self._credentials: Optional[Dict[str, DeclarativeAuthenticator]] = None
+        self._credentials_error = credentials_error
+        if credentials is not None:
+            if tokens:
+                raise ValueError(
+                    "RateLimitedMultipleTokenAuthenticator takes either `tokens` or `credentials`, not both"
+                )
+            self._credentials = {}
+            for credential in credentials:
+                if credential.key in self._credentials and self._credentials_error is None:
+                    self._credentials_error = (
+                        f"More than one credential has the key '{credential.key}'. "
+                        "Every credential needs its own key."
+                    )
+                self._credentials[credential.key] = credential.authenticator
+            tokens = list(self._credentials)
+            credential_headers = {
+                authenticator.auth_header for authenticator in self._credentials.values()
+            }
+            if len(credential_headers) > 1 or "" in credential_headers:
+                raise ValueError(
+                    "Every credential of a RateLimitedMultipleTokenAuthenticator must inject its "
+                    f"token into the same request header; got {sorted(credential_headers)}"
+                )
+            if credential_headers:
+                header = credential_headers.pop()
+        elif not tokens:
             raise AirbyteTracedException(
                 failure_type=FailureType.config_error,
                 internal_message="RateLimitedMultipleTokenAuthenticator requires at least one token",
@@ -166,12 +220,19 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         self._unmatched_logged = False
         self._untracked_logged = False
         self._states: dict[str, dict[str, _QuotaState]] = {}
+        # Header value -> credential key, and each credential's recent header values (oldest first).
+        self._issued_header_values: Dict[str, str] = {}
+        self._header_values_by_credential: Dict[str, List[str]] = {}
         self._token_to_http_client: Mapping[str, HttpClient] = {
             token: HttpClient(
                 name="quota_status",
                 logger=self._logger,
-                authenticator=TokenAuthenticator(
-                    token, auth_method=self._auth_method, auth_header=self._header
+                authenticator=(
+                    self._credentials[token]
+                    if self._credentials is not None
+                    else TokenAuthenticator(
+                        token, auth_method=self._auth_method, auth_header=self._header
+                    )
                 ),
                 use_cache=False,  # quota values change frequently; never reuse cached responses
                 error_handler=self._quota_status_error_handler(),
@@ -179,7 +240,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             for token in self._tokens
         }
         self._tokens_iter = cycle(self._tokens)
-        self._active_token = next(self._tokens_iter)
+        self._active_token = next(self._tokens_iter) if self._tokens else ""
 
     @property
     def auth_header(self) -> str:
@@ -187,16 +248,55 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
 
     @property
     def token(self) -> str:
+        self._raise_if_credentials_unusable()
         with self._lock:
-            return f"{self._auth_method} {self._active_token}".strip()
+            token = self._active_token
+        return self._header_value(token)
 
     def __call__(self, request: requests.PreparedRequest) -> Any:
         """Attach the HTTP headers required to authenticate on the HTTP request"""
         self._ensure_initialized()
         quota = self._match_quota(request)
         token = self._acquire_call(quota)
-        request.headers[self._header] = f"{self._auth_method} {token}".strip()
+        header_value = self._header_value(token)
+        if self._credentials is not None:
+            self._remember_issued_header_value(token, header_value)
+        request.headers[self._header] = header_value
         return request
+
+    def _header_value(self, token: str) -> str:
+        """The header value to sign a request with, for a static token or a credential key."""
+        if self._credentials is None:
+            return f"{self._auth_method} {token}".strip()
+        # Logs in or refreshes when the credential's token is missing or expired.
+        return str(self._credentials[token].get_auth_header()[self._header])
+
+    def _remember_issued_header_value(self, key: str, header_value: str) -> None:
+        with self._lock:
+            if self._issued_header_values.get(header_value) == key:
+                return
+            self._issued_header_values[header_value] = key
+            recent = self._header_values_by_credential.setdefault(key, [])
+            recent.append(header_value)
+            while len(recent) > self.ISSUED_HEADER_VALUES_PER_CREDENTIAL:
+                self._issued_header_values.pop(recent.pop(0), None)
+
+    def _raise_if_credentials_unusable(self) -> None:
+        """Report a credential list that cannot be used, at first use rather than at construction."""
+        if self._credentials is None:
+            return
+        if self._credentials_error is not None:
+            raise AirbyteTracedException(
+                failure_type=FailureType.config_error,
+                internal_message=f"RateLimitedMultipleTokenAuthenticator credentials are invalid: {self._credentials_error}",
+                message=f"The authentication credentials are invalid. {self._credentials_error}",
+            )
+        if not self._credentials:
+            raise AirbyteTracedException(
+                failure_type=FailureType.config_error,
+                internal_message="RateLimitedMultipleTokenAuthenticator requires at least one credential",
+                message="Authentication credentials are missing from the configuration.",
+            )
 
     def _quota_status_error_handler(self) -> Optional[HttpStatusErrorHandler]:
         """Error handling for the quota status request itself.
@@ -284,6 +384,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
+        self._raise_if_credentials_unusable()
         with self._refresh_lock:
             if not self._initialized:
                 self._seed_all_tokens()
@@ -638,6 +739,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         value = request.headers.get(self._header)
         if not value:
             return None
+        if self._credentials is not None:
+            # A credential's header value changes on every token refresh, so it is looked up
+            # among the values this authenticator issued rather than parsed.
+            return self._issued_header_values.get(value)
         if self._auth_method:
             prefix = f"{self._auth_method} "
             if not value.startswith(prefix):
