@@ -8,12 +8,15 @@
   first, then the errors are raised.
 - The traceback that `entrypoint_wrapper._run_command` prints for an unexpected error is masked.
 - The spec is run once per test, however many commands the test runs.
+- What pytest prints of a test (its captured log, stdout and stderr, and the failure text) is
+  masked by the standard tests' pytest plugin, with the secrets the leak check searched for.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import textwrap
 from collections.abc import Iterator, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
@@ -35,7 +38,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException
-from airbyte_cdk.test.standard_tests import connector_base
+from airbyte_cdk.test.standard_tests import _spec_lint, connector_base
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 from unit_tests.test.standard_test_stubs import (
@@ -48,6 +51,8 @@ from unit_tests.test.standard_test_stubs import (
     stub_docker,
     suite_class,
 )
+
+pytest_plugins = ["pytester"]
 
 SECRET = "sk_live_51UWRAsFuIbeygfIY3"
 
@@ -372,3 +377,104 @@ def test_docker_read_test_does_not_search_records(
     )
     stub_docker(monkeypatch, {"discover": _DISCOVER, "read": [record]})
     _run_docker_read(tmp_path)
+
+
+# --- What pytest prints of a test ---------------------------------------------------------------
+
+_PRINTED_SECRET = "pk_test_7Hq2ZxL9wRv4"
+"""A secret only these tests use: the forms the leak check searched for are kept for the whole
+process, so a secret that other tests search for would be masked whether or not these tests'
+own leak check registered it."""
+
+_PRINTED_ENCODED_SECRET = "tok/9Lm+Qa=7wK"
+
+
+def _run_printing_test(pytester: pytest.Pytester, secret: str, *args: str) -> str:
+    """Run tests that print `secret` in a captured log record and in a failure."""
+    pytester.makepyfile(
+        test_prints=textwrap.dedent(
+            f"""
+            import json
+            import logging
+            from urllib.parse import quote
+
+            import pytest
+
+            from airbyte_cdk.models import ConnectorSpecification
+            from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
+            from airbyte_cdk.test.standard_tests._spec_lint import assert_no_secrets_in_output
+
+            SECRET = {secret!r}
+            URL = "https://api.example.com/v1/users?key=" + quote(SECRET, safe="")
+            SPEC = ConnectorSpecification(
+                connectionSpecification={{
+                    "type": "object",
+                    "properties": {{"api_key": {{"type": "string", "airbyte_secret": True}}}},
+                }}
+            )
+
+
+            def _check(*messages):
+                output = EntrypointOutput(messages=[json.dumps(m) for m in messages])
+                assert_no_secrets_in_output(
+                    output, spec=SPEC, config={{"api_key": SECRET}}, verb="read",
+                    connector_name="source-test",
+                )
+
+
+            def test_leak():
+                logging.getLogger("airbyte").warning("GET %s failed", URL)
+                _check({{"type": "LOG", "log": {{"level": "WARN", "message": "GET " + URL}}}})
+
+
+            def test_error_after_a_clean_check():
+                _check()
+                raise RuntimeError("GET " + URL + " failed with 403")
+
+
+            def test_passes_after_logging():
+                _check()
+                logging.getLogger("airbyte").warning("PASSING GET %s", URL)
+            """
+        )
+    )
+    result = pytester.runpytest_inprocess(
+        "-p", "airbyte_cdk.test.standard_tests.pytest_hooks", "-p", "no:cacheprovider", *args
+    )
+    result.assert_outcomes(passed=1, failed=2)
+    return result.stdout.str()
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        pytest.param(_PRINTED_SECRET, id="literal"),
+        pytest.param(_PRINTED_ENCODED_SECRET, id="url_encoded"),
+    ],
+)
+def test_pytest_report_masks_searched_secrets(pytester: pytest.Pytester, secret: str) -> None:
+    """The captured log and the failure text are masked, for a passing test too (`-rA`).
+
+    Stdout and stderr sections go through the same masking as the log section; an in-process
+    pytester run does not capture a `print()` reliably, so they are not asserted here.
+    """
+    printed = _run_printing_test(pytester, secret, "-rA", "--log-level=INFO")
+
+    assert secret not in printed
+    assert quote(secret, safe="") not in printed
+    assert "Captured log call" in printed
+    assert "key=**** failed with 403" in printed
+    assert (
+        "WARNING  airbyte:test_prints.py:30 GET https://api.example.com/v1/users?key=**** failed"
+        in printed
+    )
+    assert "PASSING GET https://api.example.com/v1/users?key=****" in printed
+    assert "printed secret values from its config" in printed
+
+
+def test_mask_searched_secrets_masks_a_secret_that_contains_another_whole(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_spec_lint, "_searched_secret_variants", {"ab12cd34", "ab12cd34ef56"})
+
+    assert _spec_lint.mask_searched_secrets("key=ab12cd34ef56") == "key=****"

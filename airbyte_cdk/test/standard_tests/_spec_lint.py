@@ -510,6 +510,23 @@ def _secret_variants(secret: Any) -> set[str]:
     return variants
 
 
+_searched_secret_variants: set[str] = set()
+"""Every secret form the leak check has searched for in this process, for `mask_searched_secrets`."""
+
+
+def mask_searched_secrets(text: str) -> str:
+    """Replace every secret form the leak check has searched for in `text` with `****`.
+
+    The leak check fails a test before its assertions print the connector's messages, but pytest
+    still prints what it captured from the test: the log records, stdout and stderr, and the
+    failure text. The standard tests' pytest plugin masks those with this function. The longest
+    forms go first, so a secret that contains another one is masked whole.
+    """
+    for variant in sorted(_searched_secret_variants, key=len, reverse=True):
+        text = text.replace(variant, "****")
+    return text
+
+
 def _stream_name(message: Mapping[str, Any]) -> str | None:
     """Return the name of the stream a serialized message is about, if any."""
     record = message.get("record")
@@ -645,9 +662,13 @@ def assert_no_secrets_in_output(
     `print()` to stdout is not captured: only the messages the connector yields and the records
     of the root logger are searched.
 
-    Run this before any other assertion on `output`, since those print raw messages.
+    Run this before any other assertion on `output`, since those print raw messages. The forms
+    of the secrets searched for are kept for `mask_searched_secrets`, which masks what pytest
+    prints of the test.
     """
     secrets = find_config_secrets(spec.connectionSpecification, config)
+    for _, secret in secrets:
+        _searched_secret_variants.update(_secret_variants(secret))
     leaks = find_leaked_secrets(output, secrets)
     hint = ""
     if any(_CONFIG_VALIDATION_LABEL in leak for leak in leaks):
