@@ -395,3 +395,61 @@ class TestJwtAuthenticator:
         }
 
         assert authenticator.get_auth_header() == expected_headers
+
+
+@pytest.mark.parametrize(
+    "claim_value",
+    [
+        pytest.param("111", id="integer_like"),
+        pytest.param("1.5", id="float_like"),
+        pytest.param("True", id="boolean_like"),
+        pytest.param("Iv23liABCdef", id="plain_string"),
+    ],
+)
+def test_iss_sub_and_kid_from_config_stay_strings(claim_value):
+    """Interpolation literal-evaluates its output, so `{{ config['app_id'] }}` holding "111" used to
+    become the int 111, and PyJWT refuses to sign a non-string `iss`/`sub`/`kid`."""
+    authenticator = JwtAuthenticator(
+        config={"value": claim_value},
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=600,
+        kid="{{ config['value'] }}",
+        iss="{{ config['value'] }}",
+        sub="{{ config['value'] }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    claims = jwt.decode(token, "test", algorithms=["HS256"], options={"verify_aud": False})
+    assert claims["iss"] == claim_value
+    assert claims["sub"] == claim_value
+    assert jwt.get_unverified_header(token)["kid"] == claim_value
+
+
+@freezegun.freeze_time("2022-01-01 00:00:00")
+@pytest.mark.parametrize(
+    "iat_backdate_seconds, expected_iat",
+    [
+        pytest.param(None, 1640995200, id="default_is_now"),
+        pytest.param(0, 1640995200, id="zero_is_now"),
+        pytest.param(60, 1640995140, id="backdated_by_60s"),
+    ],
+)
+def test_iat_backdate_moves_iat_and_nbf_but_not_exp(iat_backdate_seconds, expected_iat):
+    kwargs = {} if iat_backdate_seconds is None else {"iat_backdate_seconds": iat_backdate_seconds}
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=540,
+        **kwargs,
+    )
+
+    payload = authenticator._get_jwt_payload()
+
+    assert payload["iat"] == expected_iat
+    assert payload["nbf"] == expected_iat
+    assert payload["exp"] == 1640995200 + 540

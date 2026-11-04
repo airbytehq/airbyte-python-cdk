@@ -61,6 +61,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         secret_key (Union[InterpolatedString, str]): The secret key used to sign the JWT
         algorithm (Union[str, JwtAlgorithm]): The algorithm used to sign the JWT
         token_duration (Optional[int]): The duration in seconds for which the token is valid
+        iat_backdate_seconds (int): Seconds to move `iat` and `nbf` into the past to tolerate clock drift; `exp` is unaffected
         base64_encode_secret_key (Optional[Union[InterpolatedBoolean, str, bool]]): Whether to base64 encode the secret key
         header_prefix (Optional[Union[InterpolatedString, str]]): The prefix to add to the Authorization header
         kid (Optional[Union[InterpolatedString, str]]): The key identifier to be included in the JWT header
@@ -90,6 +91,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
     additional_jwt_payload: Optional[Mapping[str, Any]] = None
     passphrase: Optional[Union[InterpolatedString, str]] = None
     request_option: Optional[RequestOption] = None
+    iat_backdate_seconds: int = 0
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._secret_key = InterpolatedString.create(self.secret_key, parameters=parameters)
@@ -143,7 +145,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             )
 
         if self._kid:
-            headers["kid"] = self._kid.eval(self.config, json_loads=json.loads)
+            headers["kid"] = self._kid.eval(self.config, json_loads=json.loads, valid_types=(str,))
         if self._typ:
             headers["typ"] = self._typ.eval(self.config, json_loads=json.loads)
         if self._cty:
@@ -157,7 +159,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         now = int(datetime.now().timestamp())
         exp = now + self._token_duration if isinstance(self._token_duration, int) else now
-        nbf = now
+        issued_at = now - self.iat_backdate_seconds
 
         payload = self._additional_jwt_payload.eval(self.config, json_loads=json.loads)
         if any(prop in payload for prop in ["iss", "sub", "aud", "iat", "exp", "nbf"]):
@@ -165,16 +167,18 @@ class JwtAuthenticator(DeclarativeAuthenticator):
                 "'iss', 'sub', 'aud', 'iat', 'exp', 'nbf' are reserved properties and should not be set as part of 'additional_jwt_payload'"
             )
 
+        # RFC 7519 defines `iss` and `sub` as strings and PyJWT rejects anything else, so a value
+        # that only looks numeric (a GitHub App ID, an account number) must not be turned into an int.
         if self._iss:
-            payload["iss"] = self._iss.eval(self.config, json_loads=json.loads)
+            payload["iss"] = self._iss.eval(self.config, json_loads=json.loads, valid_types=(str,))
         if self._sub:
-            payload["sub"] = self._sub.eval(self.config, json_loads=json.loads)
+            payload["sub"] = self._sub.eval(self.config, json_loads=json.loads, valid_types=(str,))
         if self._aud:
             payload["aud"] = self._aud.eval(self.config, json_loads=json.loads)
 
-        payload["iat"] = now
+        payload["iat"] = issued_at
         payload["exp"] = exp
-        payload["nbf"] = nbf
+        payload["nbf"] = issued_at
         return payload
 
     def _get_secret_key(self) -> JwtKeyTypes:

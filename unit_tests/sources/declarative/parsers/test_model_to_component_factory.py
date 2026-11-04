@@ -4652,6 +4652,35 @@ def test_create_custom_retriever():
     )
 
 
+@pytest.mark.parametrize(
+    "backdate_line, expected",
+    [
+        pytest.param("", 0, id="omitted_defaults_to_zero"),
+        pytest.param("iat_backdate_seconds: 60", 60, id="set"),
+    ],
+)
+def test_create_jwt_authenticator_iat_backdate_seconds(backdate_line, expected):
+    manifest = f"""
+    authenticator:
+        type: JwtAuthenticator
+        secret_key: "secret"
+        algorithm: HS256
+        {backdate_line}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(manifest)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    authenticator_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["authenticator"], {}
+    )
+
+    authenticator = factory.create_component(
+        model_type=JwtAuthenticatorModel, component_definition=authenticator_manifest, config={}
+    )
+
+    assert isinstance(authenticator, JwtAuthenticator)
+    assert authenticator.iat_backdate_seconds == expected
+
+
 @freezegun.freeze_time("2021-01-01 00:00:00")
 @pytest.mark.parametrize(
     "config, manifest, expected",
