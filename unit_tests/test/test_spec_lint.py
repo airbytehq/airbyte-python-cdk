@@ -1303,3 +1303,37 @@ def test_run_docker_airbyte_command_keeps_stderr(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(docker_utils, "run_docker_command", run_docker_command)
     output = docker_utils.run_docker_airbyte_command(["docker", "run", "image", "spec"])
     assert output.stderr == "warning: retrying\n"
+
+
+def test_docker_spec_test_fails_on_a_structural_lint(monkeypatch: pytest.MonkeyPatch) -> None:
+    spec_message = _spec_message({"a": {"type": "string", "display_type": "dropdown"}})
+    _fake_docker(monkeypatch, {"spec": _output(spec_message)})
+    with pytest.raises(AssertionError, match="/properties/a/display_type"):
+        _DockerSuite().test_docker_image_build_and_spec(
+            connector_image_override="source-test:dev",
+            connector_base_image_override=None,
+        )
+
+
+def test_docker_spec_test_warns_on_an_advisory_lint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from airbyte_cdk.test.standard_tests import SpecLintWarning
+
+    _fake_docker(monkeypatch, {"spec": _output(_spec_message({"a": {"type": "object"}}))})
+    with pytest.warns(SpecLintWarning, match="/properties/a"):
+        _DockerSuite().test_docker_image_build_and_spec(
+            connector_image_override="source-test:dev",
+            connector_base_image_override=None,
+        )
+
+
+class _EmptyObjectSpecSource(_LeakySource):
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+        return ConnectorSpecification(connectionSpecification=_spec({"a": {"type": "object"}}))
+
+
+def test_in_process_spec_test_warns_on_an_advisory_lint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from airbyte_cdk.test.standard_tests import SpecLintWarning
+
+    monkeypatch.setattr(_InProcessSuite, "connector", _EmptyObjectSpecSource)
+    with pytest.warns(SpecLintWarning, match="/properties/a"):
+        _InProcessSuite().test_spec()
