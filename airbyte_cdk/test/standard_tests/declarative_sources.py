@@ -115,7 +115,9 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
         ) -> Iterator[AirbyteMessage]:
             if not state:
                 return read_without_state(logger, config, catalog, state)
-            # The source reads its own config, which holds the manifest; `config` does not.
+            # Built from the config the first source was built with, as
+            # `source-declarative-manifest` builds it from the config file. `config` is that
+            # source's config after its migrations.
             return ConcurrentDeclarativeSource(
                 config=injected_config,
                 catalog=catalog,

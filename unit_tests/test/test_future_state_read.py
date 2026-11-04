@@ -853,6 +853,37 @@ def test_declarative_read_starts_from_the_future_state(tmp_path: Path) -> None:
     assert mocker.call_count == 0, "a stream whose state is in the future requests nothing"
 
 
+_COMPONENTS_PY = """
+from dataclasses import dataclass
+
+from airbyte_cdk.sources.declarative.transformations import RecordTransformation
+
+
+@dataclass
+class Tag(RecordTransformation):
+    def transform(self, record, config=None, stream_state=None, stream_slice=None):
+        record["tag"] = "custom"
+"""
+
+
+def test_declarative_read_rebuilds_the_source_with_its_custom_components(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The source rebuilt with the state builds the manifest's `components.py` components."""
+    monkeypatch.setenv("AIRBYTE_ENABLE_UNSAFE_CODE", "true")
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["streams"][0]["transformations"] = [
+        {"type": "CustomTransformation", "class_name": "source_declarative_manifest.components.Tag"}
+    ]
+    suite = _declarative_suite(tmp_path, [_items_state("2999-01-01")])
+    (tmp_path / "manifest.yaml").write_text(yaml.safe_dump(manifest))
+    (tmp_path / "components.py").write_text(_COMPONENTS_PY)
+
+    with requests_mock.Mocker() as mocker:
+        mocker.get("https://api.example.invalid/items", json=[])
+        run_without_skip(suite.test_read_from_future_state, _future_scenario())
+
+
 def _declarative_source() -> ConcurrentDeclarativeSource:
     return ConcurrentDeclarativeSource(
         config={"api_key": "x"}, catalog=None, state=None, source_config=copy.deepcopy(_MANIFEST)
@@ -966,6 +997,82 @@ def test_cursor_format_check_reports_a_failure_to_build_the_streams(
         "the cursor format check could not build the source's streams to read their cursors "
         "(`KeyError`)"
     ]
+
+
+def _format_problems(tmp_path: Path, state: dict[str, Any]) -> list[str]:
+    output = EntrypointOutput(messages=[json.dumps({"type": "STATE", "state": state})])
+    return find_cursor_format_problems(
+        _declarative_source(), _items_catalog(tmp_path), output.state_messages
+    )
+
+
+OFF_FORMAT = "29990101"
+FORMAT_PROBLEM = (
+    "stream 'items': a `updated_at` value in its state is not in the cursor's format `%Y-%m-%d`"
+)
+
+
+def test_cursor_format_is_checked_in_a_global_state(tmp_path: Path) -> None:
+    problems = _format_problems(
+        tmp_path,
+        {
+            "type": "GLOBAL",
+            "global": {
+                "shared_state": {},
+                "stream_states": [
+                    {
+                        "stream_descriptor": {"name": "items"},
+                        "stream_state": {"updated_at": OFF_FORMAT},
+                    }
+                ],
+            },
+        },
+    )
+
+    assert problems == [FORMAT_PROBLEM]
+
+
+def test_cursor_format_is_checked_in_each_partition(tmp_path: Path) -> None:
+    """A partitioned stream's state holds its cursor values under `states[].cursor`."""
+    problems = _format_problems(
+        tmp_path,
+        {
+            "type": "STREAM",
+            "stream": {
+                "stream_descriptor": {"name": "items"},
+                "stream_state": {
+                    "states": [{"partition": {"id": "1"}, "cursor": {"updated_at": OFF_FORMAT}}],
+                    "state": {"updated_at": "2999-01-01"},
+                },
+            },
+        },
+    )
+
+    assert problems == [FORMAT_PROBLEM]
+
+
+def test_cursor_format_is_not_checked_in_parent_states_or_partition_keys(tmp_path: Path) -> None:
+    """A parent stream's state and a partition key are not this stream's cursor values."""
+    problems = _format_problems(
+        tmp_path,
+        {
+            "type": "STREAM",
+            "stream": {
+                "stream_descriptor": {"name": "items"},
+                "stream_state": {
+                    "states": [
+                        {
+                            "partition": {"updated_at": OFF_FORMAT},
+                            "cursor": {"updated_at": "2999-01-01"},
+                        }
+                    ],
+                    "parent_state": {"parents": {"updated_at": OFF_FORMAT}},
+                },
+            },
+        },
+    )
+
+    assert problems == []
 
 
 def test_cursor_format_is_not_checked_for_other_sources(tmp_path: Path) -> None:
@@ -1206,3 +1313,43 @@ def test_docker_read_needs_state_only_for_the_streams_it_reads(
 
     [read] = reads
     assert [s["stream"]["name"] for s in read["catalog"]["streams"]] == ["users"]
+
+
+def test_docker_read_is_off_with_read_scenarios_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reads = _stub_docker_read(monkeypatch, [])
+
+    with pytest.raises(pytest.skip.Exception, match="disabled with `--read-scenarios`"):
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state(
+            _future_scenario(), **{**DOCKER_ARGS, "read_scenarios": "none"}
+        )
+    assert reads == []
+
+
+def test_docker_read_skips_a_stream_list_without_an_incremental_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reads = _stub_docker_read(monkeypatch, [])
+
+    with pytest.raises(pytest.skip.Exception, match="is an incremental stream it reads"):
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state(
+            _future_scenario(), **{**DOCKER_ARGS, "read_from_streams": ["static"]}
+        )
+    assert reads == []
+
+
+def test_docker_read_fails_on_a_stream_without_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reads = _stub_docker_read(monkeypatch, [], with_events=True)
+
+    with pytest.raises(AssertionError, match="has no state for the incremental stream"):
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state(_future_scenario(), **DOCKER_ARGS)
+    assert reads == []
