@@ -747,8 +747,9 @@ def test_docker_discover(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         _scenario("discovery"),
         **_docker_kwargs("test_docker_image_build_and_discover"),
     )
-    assert calls[-1][-4:-1] == [IMAGE, "discover", "--config"]
-    assert calls[-1][3:7] == list(CONNECTOR_WORKDIR_ARGS)
+    discover_call = next(call for call in calls if "discover" in call)
+    assert discover_call[-4:-1] == [IMAGE, "discover", "--config"]
+    assert discover_call[3:7] == list(CONNECTOR_WORKDIR_ARGS)
 
 
 @pytest.mark.parametrize(

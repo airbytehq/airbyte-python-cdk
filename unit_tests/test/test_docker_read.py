@@ -505,7 +505,7 @@ def test_docker_read_runs_in_a_writable_working_directory(
         {"discover": DISCOVER, "read": _read_output("users", "events")},
     )
     _read(_docker_read_suite(tmp_path), scenario("basic_read"))
-    assert [cmd[3:7] for cmd in calls] == [
+    assert [cmd[3:7] for cmd in calls if "spec" not in cmd] == [
         ["--tmpfs", "/source:rw,exec,mode=1777", "--workdir", "/source"]
     ] * 2, "both `discover` and `read`"
 
