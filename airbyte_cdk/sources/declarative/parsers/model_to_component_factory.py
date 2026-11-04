@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import re
+from enum import Enum
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -6017,8 +6018,10 @@ class ModelToComponentFactory:
         for index, item in enumerate(items):
             credential_config = {**config, self._CREDENTIAL_CONFIG_KEY: item}
             if model.key:
+                # `valid_types=(str,)` keeps an id such as "1_000" or "1e3" from being read as a
+                # number, which would make distinct ids collide.
                 key_value = InterpolatedString.create(model.key, parameters={}).eval(
-                    credential_config
+                    credential_config, valid_types=(str,)
                 )
                 key = "" if key_value is None else str(key_value).strip()
             else:
@@ -6041,9 +6044,7 @@ class ModelToComponentFactory:
                 }
                 for key, credential_config in entries
             ],
-            "authenticator": self._credential_authenticator_cache_key(
-                json.loads(model.authenticator.json(by_alias=True, exclude_none=True))
-            ),
+            "authenticator": self._credential_authenticator_cache_key(model.authenticator),
             "error": error,
         }
         return entries, error, cache_key
@@ -6052,35 +6053,51 @@ class ModelToComponentFactory:
     _PARAMETERS_REFERENCE = re.compile(r"\{[{%][^}]*\bparameters\b")
 
     @classmethod
-    def _credential_authenticator_cache_key(cls, definition: Any) -> Any:
+    def _credential_authenticator_cache_key(cls, model: BaseModel) -> Any:
         """The credential authenticator's definition, minus what differs per stream without effect.
 
-        `$parameters` propagation gives every nested component the stream's `$parameters` and,
-        where the component does not set it, the stream's `name`. Neither changes what the
-        authenticator does, so both are left out and streams with the same definition share one
+        `$parameters` propagation copies each stream's `$parameters` onto every nested component:
+        as the component's own `$parameters`, as its `name` when it sets none, and as extra keys
+        such as `primary_key` that the component does not declare and never reads. None of these
+        changes what the authenticator does, so the key keeps only declared fields, without
+        `$parameters` or a propagated `name`, and streams with the same definition share one
         instance. A definition that interpolates `parameters` does depend on them, so it is
-        keyed whole, and each set of parameters gets its own instance.
+        keyed with them, and each set of parameters gets its own instance.
         """
-        if cls._PARAMETERS_REFERENCE.search(
-            json.dumps(cls._definition_without_parameters(definition))
-        ):
-            return definition
-        return cls._definition_without_parameters(definition)
+        declared = cls._declared_fields(model, keep_parameters=False)
+        if cls._PARAMETERS_REFERENCE.search(json.dumps(declared, sort_keys=True, default=str)):
+            return cls._declared_fields(model, keep_parameters=True)
+        return declared
 
     @classmethod
-    def _definition_without_parameters(cls, definition: Any) -> Any:
-        """Drop `$parameters` and a `name` that propagation copied from them."""
-        if isinstance(definition, Mapping):
-            parameters = definition.get("$parameters") or {}
+    def _declared_fields(cls, value: Any, keep_parameters: bool) -> Any:
+        """A JSON-able view of a model tree that holds only the fields its models declare."""
+        if isinstance(value, BaseModel):
+            parameters = getattr(value, "parameters", None) or {}
+            fields = {}
+            for field_name, field in value.__fields__.items():
+                field_value = getattr(value, field_name)
+                if field_value is None:
+                    continue
+                if field_name == "parameters" and not keep_parameters:
+                    continue
+                if (
+                    field_name == "name"
+                    and not keep_parameters
+                    and parameters.get("name") == field_value
+                ):
+                    continue
+                fields[field.alias] = cls._declared_fields(field_value, keep_parameters)
+            return fields
+        if isinstance(value, Mapping):
             return {
-                key: cls._definition_without_parameters(value)
-                for key, value in definition.items()
-                if key not in ("$parameters", "parameters")
-                and not (key == "name" and parameters.get("name") == value)
+                str(key): cls._declared_fields(item, keep_parameters) for key, item in value.items()
             }
-        if isinstance(definition, list):
-            return [cls._definition_without_parameters(value) for value in definition]
-        return definition
+        if isinstance(value, (list, tuple)):
+            return [cls._declared_fields(item, keep_parameters) for item in value]
+        if isinstance(value, Enum):
+            return value.value
+        return value
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(

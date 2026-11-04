@@ -14,6 +14,7 @@ import requests
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
+from airbyte_cdk.sources.declarative.exceptions import ReadException
 from airbyte_cdk.sources.streams.call_rate import RequestMatcher
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import HttpStatusErrorHandler
@@ -83,6 +84,10 @@ class _QuotaState:
     far-future `reset_at` would silently make both branches of `update_from_response`
     unreachable, discarding real headers if the server sends them.
     """
+
+
+# What a credential's login can raise: a rejected request, or a response without a token.
+_LOGIN_ERRORS = (AirbyteTracedException, ReadException, KeyError)
 
 
 @dataclass(frozen=True)
@@ -273,16 +278,26 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         # Logs in or refreshes when the credential's token is missing or expired.
         try:
             return str(self._credentials[token].get_auth_header()[self._header])
-        except AirbyteTracedException as error:
+        except _LOGIN_ERRORS as error:
             raise self._credential_error(token, error) from error
 
     @staticmethod
-    def _credential_error(key: str, error: AirbyteTracedException) -> AirbyteTracedException:
-        """Name the credential in an error from its login or its quota-status request."""
+    def _credential_error(key: str, error: Exception) -> AirbyteTracedException:
+        """Name the credential in an error from its login or its quota-status request.
+
+        A login that is rejected arrives as an `AirbyteTracedException`; one whose response has no
+        token at `session_token_path` arrives as a `ReadException` or a `KeyError`.
+        """
+        if isinstance(error, AirbyteTracedException):
+            failure_type, message = error.failure_type, error.message or ""
+            internal_message = error.internal_message or message
+        else:
+            failure_type, message = FailureType.system_error, ""
+            internal_message = f"{type(error).__name__}: {error}"
         return AirbyteTracedException(
-            failure_type=error.failure_type,
-            internal_message=f"Credential '{key}': {error.internal_message or error.message}",
-            message=f"The credential '{key}' failed. {error.message or ''}".strip(),
+            failure_type=failure_type,
+            internal_message=f"Credential '{key}': {internal_message}",
+            message=f"The credential '{key}' failed. {message}".strip(),
             exception=error,
         )
 
@@ -325,7 +340,13 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         with self._credentials_header_lock:
             if self._credentials_header_resolved:
                 return
-            headers = {authenticator.auth_header for authenticator in self._credentials.values()}
+            headers = set()
+            for key, authenticator in self._credentials.items():
+                # An API-key header names itself from its token, so this can log in.
+                try:
+                    headers.add(authenticator.auth_header)
+                except _LOGIN_ERRORS as error:
+                    raise self._credential_error(key, error) from error
             if len(headers) != 1 or "" in headers:
                 raise AirbyteTracedException(
                     failure_type=FailureType.system_error,
@@ -603,7 +624,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 headers=self._quota_status_headers,
                 request_kwargs={},
             )
-        except AirbyteTracedException as error:
+        except _LOGIN_ERRORS as error:
             if self._credentials is None:
                 raise
             # Signing this request logs the credential in, so a failed login surfaces here.

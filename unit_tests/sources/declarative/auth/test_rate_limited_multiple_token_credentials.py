@@ -435,20 +435,38 @@ def test_factory_defaults_keys_to_positions():
     assert authenticator._tokens == ["0", "1"]
 
 
-def test_factory_shares_one_instance_across_streams_whose_parameters_differ():
+@pytest.mark.parametrize(
+    "authenticator",
+    [
+        pytest.param(None, id="bearer"),
+        pytest.param(
+            _session_authenticator(
+                request_authentication={
+                    "type": "ApiKey",
+                    "inject_into": {
+                        "type": "RequestOption",
+                        "inject_into": "header",
+                        "field_name": "X-Api-Key",
+                    },
+                }
+            ),
+            id="api_key",
+        ),
+    ],
+)
+def test_factory_shares_one_instance_across_streams_whose_parameters_differ(authenticator):
     factory = ModelToComponentFactory()
-    transformer = ManifestComponentTransformer()
 
-    def _propagated(stream_name):
-        return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(
-            transformer.propagate_types_and_parameters(
-                "authenticator",
-                _model().dict(exclude_none=True, by_alias=True),
-                {"name": stream_name},
-            )
+    def _stream_model(stream_name, primary_key, data_field):
+        # The usual stream `$parameters`: propagation copies the keys the login requester does
+        # not declare onto it as extras, which must not split the instance.
+        return _propagated(
+            _model(authenticator=authenticator),
+            {"name": stream_name, "primary_key": primary_key, "data_field": data_field},
         )
 
-    first_model, second_model = _propagated("stream_a"), _propagated("stream_b")
+    first_model = _stream_model("stream_a", "id", "users")
+    second_model = _stream_model("stream_b", "team_id", "teams")
     assert (
         first_model.credentials.authenticator.parameters
         != second_model.credentials.authenticator.parameters
@@ -568,6 +586,8 @@ def test_factory_does_not_share_instances_across_different_login_definitions():
 
 
 def test_factory_keys_a_login_that_reads_parameters_by_those_parameters(requests_mock):
+    # `login_prefix` reaches the login requester only as an undeclared extra, which the cache key
+    # ignores, so only the `parameters` reference in `path` can tell the two streams apart.
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
     for prefix in ("login", "alt"):
         requests_mock.post(f"{API_URL}/{prefix}/111", json={"token": f"{prefix}-111"})
@@ -842,7 +862,7 @@ def _manifest() -> Mapping[str, Any]:
                     "extractor": {"type": "DpathExtractor", "field_path": []},
                 },
             },
-            "$parameters": {"name": name},
+            "$parameters": {"name": name, "primary_key": "id", "data_field": name},
         }
 
     return {
@@ -921,3 +941,73 @@ def test_a_config_selecting_static_tokens_is_unaffected_by_the_credentials_branc
     assert len({id(authenticator) for authenticator in authenticators}) == 1
     assert authenticators[0]._tokens == ["token_1"]
     assert not requests_mock.called
+
+
+def test_factory_keeps_credential_ids_that_look_like_numbers_distinct():
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        _model(), {"accounts": [{"id": "1_000", "secret": "a"}, {"id": "1000", "secret": "b"}]}
+    )
+
+    assert authenticator._tokens == ["1_000", "1000"]
+    assert authenticator._credentials_error is None
+
+
+def test_factory_does_not_share_logins_whose_body_differs_in_a_field_named_parameters():
+    factory = ModelToComponentFactory()
+
+    def _with_scope(scope: str) -> RateLimitedMultipleTokenAuthenticatorModel:
+        return _model(
+            authenticator=_session_authenticator(
+                {"request_body_json": {"parameters": {"scope": scope}}}
+            )
+        )
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        _with_scope("read"), {"accounts": ACCOUNTS}
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        _with_scope("write"), {"accounts": ACCOUNTS}
+    )
+
+    assert first is not second
+
+
+def _api_key_model() -> RateLimitedMultipleTokenAuthenticatorModel:
+    return _model(
+        authenticator=_session_authenticator(
+            request_authentication={
+                "type": "ApiKey",
+                "inject_into": {
+                    "type": "RequestOption",
+                    "inject_into": "header",
+                    "field_name": "X-Api-Key",
+                },
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "model_factory, login_response",
+    [
+        pytest.param(_model, {"status_code": 200, "json": {}}, id="bearer_no_token"),
+        pytest.param(
+            _api_key_model, {"status_code": 401, "json": {"message": "no"}}, id="api_key_401"
+        ),
+        pytest.param(_api_key_model, {"status_code": 200, "json": {}}, id="api_key_no_token"),
+    ],
+)
+def test_every_kind_of_failed_login_names_the_credential(
+    requests_mock, model_factory, login_response
+):
+    requests_mock.post(f"{API_URL}/login/111", json={"token": "session-111"})
+    requests_mock.post(f"{API_URL}/login/222", **login_response)
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        model_factory(), {"accounts": ACCOUNTS}
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator(_request())
+
+    assert "'222'" in error.value.message
