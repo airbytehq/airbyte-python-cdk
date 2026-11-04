@@ -677,6 +677,62 @@ def test_in_process_read_skips_a_scenario_without_future_state(tmp_path: Path) -
         suite.test_read_from_future_state(scenario)
 
 
+LEAKED_KEY = "leaked-api-key-0123456789"
+
+
+class _LeakingSource(_StateSource):
+    """Honours its state, and prints its secret `api_key` in the output of `leaking_command`.
+
+    The entrypoint masks secrets in log messages, so it goes in a stream description or a record.
+    """
+
+    def __init__(self, leaking_command: str) -> None:
+        super().__init__("honours_state", [USERS])
+        self._leaking_command = leaking_command
+
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+        return ConnectorSpecification(
+            connectionSpecification={
+                "type": "object",
+                "properties": {"api_key": {"type": "string", "airbyte_secret": True}},
+            }
+        )
+
+    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
+        if self._leaking_command != "discover":
+            return super().discover(logger, config)
+        leaking = copy.copy(USERS)
+        leaking.json_schema = {"type": "object", "description": config["api_key"]}
+        return AirbyteCatalog(streams=[leaking])
+
+    def read(
+        self,
+        logger: logging.Logger,
+        config: Mapping[str, Any],
+        catalog: ConfiguredAirbyteCatalog,
+        state: list[AirbyteStateMessage] | None = None,
+    ) -> Iterable[AirbyteMessage]:
+        if self._leaking_command == "read":
+            yield AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(
+                    stream="users", data={"key": config["api_key"]}, emitted_at=0
+                ),
+            )
+        yield from super().read(logger, config, catalog, state)
+
+
+@pytest.mark.parametrize("command", ["discover", "read"])
+def test_in_process_read_fails_on_a_secret_in_the_output(tmp_path: Path, command: str) -> None:
+    """As `test_basic_read`, a leaked secret fails before any assertion prints raw messages."""
+    suite = _in_process_suite(tmp_path, _LeakingSource(command), [_stream_state("users")])
+    scenario = _future_scenario().model_copy(update={"config_dict": {"api_key": LEAKED_KEY}})
+
+    with pytest.raises(AssertionError, match=f"`{command}` .* printed secret values") as error:
+        run_without_skip(suite.test_read_from_future_state, scenario)
+    assert LEAKED_KEY not in str(error.value)
+
+
 # --- Declarative sources ------------------------------------------------------------------------
 
 _MANIFEST: dict[str, Any] = {
@@ -740,6 +796,40 @@ def _declarative_suite(tmp_path: Path, state: list[Any]) -> DeclarativeSourceTes
             return tmp_path
 
     return _Suite()
+
+
+class _NoArgumentDeclarativeSource(ConcurrentDeclarativeSource):
+    """A Python declarative source built with no arguments, so without the read's state."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            config={"api_key": "x"},
+            catalog=None,
+            state=None,
+            source_config=copy.deepcopy(_MANIFEST),
+        )
+
+
+def test_generic_suite_fails_a_declarative_source_built_without_state(tmp_path: Path) -> None:
+    """Without the state, the source would read from its start date and be blamed for it."""
+    state_path = tmp_path / STATE_PATH
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps([_items_state("2999-01-01")]))
+
+    class _Suite(SourceTestSuiteBase):
+        connector = _NoArgumentDeclarativeSource
+
+        @classmethod
+        def get_connector_root_dir(cls) -> Path:
+            return tmp_path
+
+    with (
+        requests_mock.Mocker() as mocker,
+        pytest.raises(pytest.fail.Exception, match="without the read's state"),
+    ):
+        _Suite().test_read_from_future_state(_future_scenario())
+
+    assert mocker.call_count == 0
 
 
 def _items_state(value: str) -> dict[str, Any]:

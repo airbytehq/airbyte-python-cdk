@@ -16,6 +16,9 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
@@ -54,6 +57,15 @@ from airbyte_cdk.test.standard_tests.docker_base import (
 
 if TYPE_CHECKING:
     from airbyte_cdk.test import entrypoint_wrapper
+
+
+def _builds_without_state(suite: type[ConnectorTestSuiteBase]) -> bool:
+    """Whether `suite` builds its connector with `ConnectorTestSuiteBase.create_connector`.
+
+    That builds the connector class with no arguments, so a declarative source gets no state.
+    """
+    inherited = getattr(suite.create_connector, "__func__", None)
+    return inherited is getattr(ConnectorTestSuiteBase.create_connector, "__func__", None)
 
 
 class SourceTestSuiteBase(ConnectorTestSuiteBase):
@@ -283,11 +295,16 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         in the shape the connector emits.
 
         The read covers the streams of the entry's `configured_catalog_path`, or every discovered
-        stream when it declares none, that `discover` reports as supporting incremental sync, whatever
-        `sync_mode` the catalog gives them, minus the entry's own `empty_streams` and `future_state.missing_streams`
-        (see `build_future_state_catalog`). Streams that the config's `basic_read` entry lists as
-        empty are read: they must still parse their state and emit state. The test fails when:
+        stream when it declares none, that `discover` reports as supporting incremental sync,
+        whatever `sync_mode` the catalog gives them, minus the entry's own `empty_streams` and
+        `future_state.missing_streams` (see `build_future_state_catalog`). Streams that the
+        config's `basic_read` entry lists as empty are read: they must still parse their state and
+        emit state. The test fails when:
 
+        - the suite builds a `ConcurrentDeclarativeSource` with `create_connector` as inherited
+          from `ConnectorTestSuiteBase`, which builds it without the read's state: it reads only
+          the state it was built with (use `DeclarativeSourceTestSuite`, or override
+          `create_connector`);
         - a stream it reads has no state in the file;
         - the read fails, for example because the connector cannot parse the state;
         - a stream returns any record, or emits no state message;
@@ -303,11 +320,24 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         state = load_future_state(
             resolve_future_state_path(scenario, connector_root), display_path=display_path
         )
+        connector = self.create_connector(scenario)
+        if isinstance(connector, ConcurrentDeclarativeSource) and _builds_without_state(type(self)):
+            pytest.fail(
+                f"`{type(self).__name__}` builds the declarative source "
+                f"`{type(connector).__name__}` without the read's state, and a "
+                "`ConcurrentDeclarativeSource` reads only the state it was built with, so this "
+                "test cannot tell whether it honours state. Derive the suite from "
+                "`DeclarativeSourceTestSuite`, or override `create_connector` to build the source "
+                "with the scenario's state and catalog."
+            )
         discover_result = run_test_job(
-            self.create_connector(scenario),
+            connector,
             "discover",
             connector_root=connector_root,
             test_scenario=scenario.without_expected_outcome(),
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="discover"
+            ),
         )
         if discover_result.errors:
             raise discover_result.as_exception()
@@ -329,6 +359,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             connector_root=connector_root,
             catalog=catalog,
             state=state,
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="read"
+            ),
         )
         assert_future_state_read(
             records=result.records_iterator,
