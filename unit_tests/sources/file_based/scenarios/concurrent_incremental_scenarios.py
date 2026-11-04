@@ -16,6 +16,7 @@ single_csv_input_state_is_earlier_scenario_concurrent = (
     .set_name("single_csv_input_state_is_earlier_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -23,7 +24,7 @@ single_csv_input_state_is_earlier_scenario_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -118,6 +119,7 @@ single_csv_file_is_skipped_if_same_modified_at_as_in_history_concurrent = (
     .set_name("single_csv_file_is_skipped_if_same_modified_at_as_in_history_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -125,7 +127,7 @@ single_csv_file_is_skipped_if_same_modified_at_as_in_history_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -199,6 +201,7 @@ single_csv_file_is_synced_if_modified_at_is_more_recent_than_in_history_concurre
     .set_name("single_csv_file_is_synced_if_modified_at_is_more_recent_than_in_history_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -206,7 +209,7 @@ single_csv_file_is_synced_if_modified_at_is_more_recent_than_in_history_concurre
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -298,6 +301,7 @@ single_csv_no_input_state_scenario_concurrent = (
     .set_name("single_csv_input_state_is_earlier_again_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -305,7 +309,7 @@ single_csv_no_input_state_scenario_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -389,6 +393,7 @@ multi_csv_same_timestamp_scenario_concurrent = (
     .set_name("multi_csv_same_timestamp_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -396,7 +401,7 @@ multi_csv_same_timestamp_scenario_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -514,6 +519,7 @@ single_csv_input_state_is_later_scenario_concurrent = (
     .set_name("single_csv_input_state_is_later_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -521,7 +527,7 @@ single_csv_input_state_is_later_scenario_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -616,6 +622,7 @@ multi_csv_different_timestamps_scenario_concurrent = (
     .set_name("multi_csv_stream_different_timestamps_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -623,7 +630,7 @@ multi_csv_different_timestamps_scenario_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -747,6 +754,7 @@ multi_csv_per_timestamp_scenario_concurrent = (
     .set_name("multi_csv_per_timestamp_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -754,7 +762,7 @@ multi_csv_per_timestamp_scenario_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -908,6 +916,7 @@ multi_csv_skip_file_if_already_in_history_concurrent = (
     .set_name("skip_files_already_in_history_concurrent")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -915,7 +924,7 @@ multi_csv_skip_file_if_already_in_history_concurrent = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -1061,6 +1070,7 @@ multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_newer 
     .set_name("multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_newer")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -1068,7 +1078,7 @@ multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_newer 
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -1192,6 +1202,7 @@ multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_older 
     .set_name("multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_older")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -1199,7 +1210,7 @@ multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_older 
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -1323,6 +1334,7 @@ multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_newe
     .set_name("multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_newer")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -1330,7 +1342,7 @@ multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_newe
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -1505,6 +1517,7 @@ multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_olde
     .set_name("multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_older")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -1512,7 +1525,7 @@ multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_olde
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -1689,6 +1702,7 @@ multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -1697,7 +1711,7 @@ multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -1874,6 +1888,7 @@ multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -1882,7 +1897,7 @@ multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -2059,6 +2074,7 @@ multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -2067,7 +2083,7 @@ multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -2178,6 +2194,7 @@ multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -2186,7 +2203,7 @@ multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -2298,6 +2315,7 @@ multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_time
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -2306,7 +2324,7 @@ multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_time
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -2439,6 +2457,7 @@ multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_time
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -2447,7 +2466,7 @@ multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_time
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -2580,6 +2599,7 @@ multi_csv_sync_files_within_history_time_window_if_history_is_incomplete_differe
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -2588,7 +2608,7 @@ multi_csv_sync_files_within_history_time_window_if_history_is_incomplete_differe
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -2745,6 +2765,7 @@ multi_csv_sync_files_within_history_time_window_if_history_is_incomplete_differe
     )
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -2753,7 +2774,7 @@ multi_csv_sync_files_within_history_time_window_if_history_is_incomplete_differe
                     "validation_policy": "Emit Record",
                     "days_to_sync_if_history_is_full": 3,
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(

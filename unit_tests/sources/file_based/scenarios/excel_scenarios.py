@@ -111,6 +111,7 @@ single_excel_scenario = (
     .set_name("single_excel_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -118,7 +119,7 @@ single_excel_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -180,6 +181,7 @@ multiple_excel_combine_schema_scenario = (
     .set_name("multiple_excel_combine_schema_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -187,7 +189,7 @@ multiple_excel_combine_schema_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -274,6 +276,7 @@ excel_all_types_scenario = (
     .set_name("excel_all_types_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -281,7 +284,7 @@ excel_all_types_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -345,6 +348,7 @@ multiple_streams_excel_scenario = (
     .set_name("multiple_streams_excel_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "songs_stream",
@@ -358,7 +362,7 @@ multiple_streams_excel_scenario = (
                     "globs": ["*_festivals.xlsx"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_source_builder(

@@ -39,12 +39,12 @@ class FileBasedStreamConfig(BaseModel):
         airbyte_hidden=True,
     )
     validation_policy: ValidationPolicy = Field(
-        title="Validation Policy",
+        title="Validation policy",
         description="The name of the validation policy that dictates sync behavior when a record does not adhere to the stream schema.",
         default=ValidationPolicy.emit_record,
     )
     input_schema: Optional[str] = Field(
-        title="Input Schema",
+        title="Input schema",
         description="The schema that will be used to validate records extracted from the file. This will override the stream schema that is auto-detected from incoming files.",
     )
     primary_key: Optional[str] = Field(
@@ -53,7 +53,7 @@ class FileBasedStreamConfig(BaseModel):
         airbyte_hidden=True,  # Users can create/modify primary keys in the connection configuration so we shouldn't duplicate it here.
     )
     days_to_sync_if_history_is_full: int = Field(
-        title="Days To Sync If History Is Full",
+        title="Days to sync if history is full",
         description="When the state history of the file store is full, syncs will only read files that were last modified in the provided day range.",
         default=3,
     )
@@ -69,13 +69,13 @@ class FileBasedStreamConfig(BaseModel):
         default=False,
     )
     recent_n_files_to_read_for_schema_discovery: Optional[int] = Field(
-        title="Files To Read For Schema Discover",
-        description="The number of resent files which will be used to discover the schema for this stream.",
+        title="Files to read for schema discovery",
+        description="The number of recent files that will be used to discover the schema for this stream.",
         default=None,
         gt=0,
     )
     use_first_found_file_for_schema_discovery: bool = Field(
-        title="Use First Found File For Schema Discover",
+        title="Use first found file for schema discovery",
         description="When enabled, the source will use the first found file for schema discovery. Helps to avoid long discovery step.",
         default=False,
     )

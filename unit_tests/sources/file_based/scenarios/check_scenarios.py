@@ -15,6 +15,7 @@ _base_success_scenario = (
     TestScenarioBuilder()
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -22,7 +23,7 @@ _base_success_scenario = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -53,6 +54,7 @@ success_multi_stream_scenario = (
     .set_name("success_multi_stream_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -66,7 +68,7 @@ success_multi_stream_scenario = (
                     "globs": ["*.csv", "*.gz"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
 ).build()
@@ -77,6 +79,7 @@ success_extensionless_scenario = (
     .set_name("success_extensionless_file_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -84,7 +87,7 @@ success_extensionless_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -109,6 +112,7 @@ success_user_provided_schema_scenario = (
     .set_name("success_user_provided_schema_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -167,6 +171,7 @@ error_record_validation_user_provided_schema_scenario = (
     .set_name("error_record_validation_user_provided_schema_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -206,6 +211,7 @@ error_multi_stream_scenario = (
     .set_name("error_multi_stream_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",

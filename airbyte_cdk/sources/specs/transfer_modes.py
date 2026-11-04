@@ -20,7 +20,7 @@ class DeliverPermissions(BaseModel):
     )
 
     include_identities_stream: bool = Field(
-        title="Include Identity Stream",
+        title="Include identity stream",
         description="This data can be used in downstream systems to recreate permission restrictions mirroring the original source",
         default=True,
     )

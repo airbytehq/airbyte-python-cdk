@@ -198,6 +198,7 @@ skip_record_scenario_single_stream = (
     .set_name("skip_record_scenario_single_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -205,7 +206,7 @@ skip_record_scenario_single_stream = (
                     "globs": ["*.csv"],
                     "validation_policy": "Skip Record",
                 }
-            ]
+            ],
         }
     )
     .set_expected_records(
@@ -288,6 +289,7 @@ skip_record_scenario_multi_stream = (
     .set_name("skip_record_scenario_multi_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -301,7 +303,7 @@ skip_record_scenario_multi_stream = (
                     "globs": ["b/*.csv"],
                     "validation_policy": "Skip Record",
                 },
-            ]
+            ],
         }
     )
     .set_expected_records(
@@ -436,6 +438,7 @@ emit_record_scenario_single_stream = (
     .set_name("emit_record_scenario_single_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -443,7 +446,7 @@ emit_record_scenario_single_stream = (
                     "globs": ["*.csv"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_expected_records(
@@ -516,6 +519,7 @@ emit_record_scenario_multi_stream = (
     .set_name("emit_record_scenario_multi_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -529,7 +533,7 @@ emit_record_scenario_multi_stream = (
                     "globs": ["b/*.csv"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_expected_records(
@@ -654,6 +658,7 @@ wait_for_rediscovery_scenario_single_stream = (
     .set_name("wait_for_rediscovery_scenario_single_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -661,7 +666,7 @@ wait_for_rediscovery_scenario_single_stream = (
                     "globs": ["*.csv"],
                     "validation_policy": "Wait for Discover",
                 }
-            ]
+            ],
         }
     )
     .set_expected_records(
@@ -689,6 +694,7 @@ wait_for_rediscovery_scenario_multi_stream = (
     .set_name("wait_for_rediscovery_scenario_multi_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -702,7 +708,7 @@ wait_for_rediscovery_scenario_multi_stream = (
                     "globs": ["b/*.csv"],
                     "validation_policy": "Wait for Discover",
                 },
-            ]
+            ],
         }
     )
     .set_expected_records(
