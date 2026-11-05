@@ -9,6 +9,8 @@ import pytest
 
 from airbyte_cdk.models import (
     AirbyteMessage,
+    AirbyteStateMessage,
+    AirbyteStateMessageSerializer,
     AirbyteStream,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
@@ -29,14 +31,15 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
     format_catalog_problems,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
+    CursorFormatWarning,
     assert_future_state_covers_streams,
     assert_future_state_read,
     build_future_state_catalog,
-    find_cursor_format_problems,
+    check_cursor_formats,
     load_future_state,
     resolve_future_state_path,
 )
-from airbyte_cdk.test.standard_tests._job_runner import run_test_job
+from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests._read_assertions import (
     StreamStatusWarning,
     assert_error_trace_messages,
@@ -74,6 +77,22 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     This class provides a base set of functionality for testing source connectors, and it
     inherits all generic connector tests from the `ConnectorTestSuiteBase` class.
     """
+
+    def _create_connector_with_state(
+        self,
+        scenario: ConnectorTestScenario,
+        *,
+        catalog: ConfiguredAirbyteCatalog,
+        state: list[AirbyteStateMessage],
+    ) -> IConnector:
+        """The connector built as a read with `catalog` and `state` builds it.
+
+        The cursor format check of `test_read_from_future_state` builds its streams from it. The
+        default is `create_connector(scenario)`. `DeclarativeSourceTestSuite` builds the source
+        with the state, since a declarative source builds some streams from the state it was
+        built with.
+        """
+        return self.create_connector(scenario)
 
     def test_check(
         self,
@@ -308,8 +327,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         - a stream it reads has no state in the file;
         - the read fails, for example because the connector cannot parse the state;
         - a stream returns any record, or emits no state message;
-        - a declarative stream's emitted state holds a cursor value that is not in the format its
-          cursor declares (`datetime_format`; see `find_cursor_format_problems`).
+        - for a declarative stream, the state file or the read's emitted state holds a cursor
+          value that is not in the format its cursor declares (`datetime_format`; see
+          `check_cursor_formats`). A stream whose cursor declares no datetime format is not
+          checked, and is named in a `CursorFormatWarning`.
         """
         skip_unless_runs(scenario, "read_from_future_state")
         if scenario.future_state is None or scenario.future_state.future_state_path is None:
@@ -363,14 +384,29 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                 scenario, output, verb="read"
             ),
         )
+        cursor_formats = check_cursor_formats(
+            self._create_connector_with_state(
+                scenario,
+                catalog=catalog,
+                state=[AirbyteStateMessageSerializer.load(message) for message in state],
+            ),
+            catalog,
+            future_state=state,
+            state_messages=result.state_messages,
+        )
+        if cursor_formats.unchecked:
+            warnings.warn(
+                "The cursor format check did not check these streams, whose cursor declares no "
+                "datetime format: " + ", ".join(repr(name) for name in cursor_formats.unchecked),
+                category=CursorFormatWarning,
+                stacklevel=1,
+            )
         assert_future_state_read(
             records=result.records_iterator,
             state_messages=result.state_messages,
             catalog=catalog,
             display_path=display_path,
-            cursor_format_problems=find_cursor_format_problems(
-                self.create_connector(scenario), catalog, result.state_messages
-            ),
+            cursor_format_problems=cursor_formats.problems,
         )
 
     def test_fail_read_with_bad_catalog(

@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import orjson
 
@@ -47,6 +47,19 @@ STATE_MESSAGE_EXAMPLE = (
 
 _NOT_CURSOR_VALUES = frozenset({"parent_state", "partition"})
 """Keys of a declarative stream's state whose content is not the stream's own cursor value."""
+
+
+class CursorFormatWarning(UserWarning):
+    """The cursor format check could not check some of the streams the future-state read reads."""
+
+
+class CursorFormatCheck(NamedTuple):
+    """The outcome of `check_cursor_formats`."""
+
+    problems: list[str]
+    """One problem per stream and cursor field with a value not in the cursor's format."""
+    unchecked: list[str]
+    """The streams read whose cursor declares no datetime format the check can read."""
 
 
 def resolve_future_state_path(scenario: ConnectorTestScenario, connector_root: Path) -> Path:
@@ -274,59 +287,39 @@ def _cursor_values(node: Any, key: str) -> Iterator[Any]:
             yield from _cursor_values(item, key)
 
 
-def _stream_states(state_messages: list[AirbyteMessage]) -> Iterator[tuple[str, Any]]:
-    for message in state_messages:
-        state = message.state
-        if state is None:
-            continue
-        if state.stream is not None and state.stream.stream_state is not None:
-            yield (
-                state.stream.stream_descriptor.name,
-                AirbyteStateMessageSerializer.dump(state)["stream"]["stream_state"],
-            )
-        elif state.global_ is not None:
-            dumped = AirbyteStateMessageSerializer.dump(state)["global"]
-            for stream_state in dumped.get("stream_states") or []:
+def _stream_states(state: Iterable[Mapping[str, Any]]) -> Iterator[tuple[str, Any]]:
+    """`(stream name, stream state)` of each stream in `STREAM` and `GLOBAL` state messages."""
+    for message in state:
+        if message.get("type") == "STREAM":
+            stream = message["stream"]
+            yield stream["stream_descriptor"]["name"], stream.get("stream_state")
+        elif message.get("type") == "GLOBAL":
+            for stream_state in message["global"].get("stream_states") or []:
                 yield stream_state["stream_descriptor"]["name"], stream_state.get("stream_state")
 
 
-def find_cursor_format_problems(
-    source: object,
-    catalog: ConfiguredAirbyteCatalog,
-    state_messages: list[AirbyteMessage],
-) -> list[str]:
-    """One problem per stream whose emitted state holds a cursor value not in its declared format.
+def _emitted_states(state_messages: list[AirbyteMessage]) -> list[dict[str, Any]]:
+    return [
+        AirbyteStateMessageSerializer.dump(message.state)
+        for message in state_messages
+        if message.state is not None
+    ]
 
-    Only declarative streams declare a format: the cursor's `datetime_format`, or the ISO 8601
-    and epoch formats of the other datetime cursors. A value is in the format when the cursor
-    writes it back unchanged after parsing it. Streams of other sources, and streams without a
-    datetime cursor, are not checked.
 
-    The streams are built with the source's own config, which a `streams` override may read. When
-    building them fails, that is reported as one problem naming the exception type, not its
-    message, so it neither hides the read's own problems nor prints config values.
-    """
-    if not isinstance(source, ConcurrentDeclarativeSource):
-        return []
+def _parse_in_declared_format(converter: DateTimeStreamStateConverter, value: Any) -> None:
+    """Parse `value` with the cursor's own format, not one of its `cursor_datetime_formats`."""
+    if isinstance(converter, CustomFormatConcurrentStreamStateConverter):
+        converter._parser.parse(value, converter._datetime_format)  # noqa: SLF001
+    else:
+        converter.parse_timestamp(value)
 
-    wanted = {configured.stream.name for configured in catalog.streams}
-    cursors: dict[str, tuple[str, DateTimeStreamStateConverter]] = {}
-    try:
-        streams = source.streams(config=getattr(source, "_config", None) or {})
-    except Exception as error:  # noqa: BLE001  # Reported as a problem, next to the read's own.
-        return [
-            "the cursor format check could not build the source's streams to read their cursors "
-            f"(`{type(error).__name__}`)"
-        ]
-    for stream in streams:
-        cursor = getattr(stream, "cursor", None)
-        converter = getattr(cursor, "_connector_state_converter", None)
-        cursor_field = getattr(cursor, "cursor_field", None)
-        if stream.name in wanted and isinstance(converter, DateTimeStreamStateConverter):
-            cursors[stream.name] = (cursor_field.cursor_field_key, converter)  # type: ignore[union-attr]
 
+def _keys_not_in_format(
+    states: Iterable[Mapping[str, Any]],
+    cursors: Mapping[str, tuple[str, DateTimeStreamStateConverter]],
+) -> dict[str, set[str]]:
     bad: dict[str, set[str]] = {}
-    for name, stream_state in _stream_states(state_messages):
+    for name, stream_state in _stream_states(states):
         if name not in cursors:
             continue
         key, converter = cursors[name]
@@ -334,18 +327,72 @@ def find_cursor_format_problems(
             if value is None:
                 continue
             try:
-                in_format = converter.output_format(converter.parse_timestamp(value)) == value
-            except Exception:  # noqa: BLE001  # A value the cursor cannot parse is not in format.
-                in_format = False
-            if not in_format:
+                _parse_in_declared_format(converter, value)
+            except Exception:  # noqa: BLE001  # A value the format cannot parse is not in it.
                 bad.setdefault(name, set()).add(key)
+    return bad
 
-    return [
-        f"stream '{name}': a `{key}` value in its state is not in the cursor's format "
+
+def check_cursor_formats(
+    source: object,
+    catalog: ConfiguredAirbyteCatalog,
+    *,
+    future_state: list[dict[str, Any]],
+    state_messages: list[AirbyteMessage],
+) -> CursorFormatCheck:
+    """Check the cursor values of the future state file, and of the state the read emitted.
+
+    Each value must be in the format its stream's cursor declares, as CAT's `cursor_format` check
+    required: the cursor's `datetime_format`, or the ISO 8601 and epoch formats of the other
+    datetime cursors. A value is in the format when that format alone parses it. The cursor also
+    parses its `cursor_datetime_formats`, and writes its state back in its own format, so a file
+    value in one of those passes the read and is only caught in the file. A value the format
+    parses but writes differently (`Z` for `+0000`, an integer for `%s`) passes.
+
+    Only declarative sources declare a format; other sources are not checked. `source` must be
+    built with the read's state, as the read builds it: a `StateDelegatingStream` built without
+    state is its full-refresh stream, which has no cursor. A stream read whose cursor has no
+    datetime format the check can read, such as an incrementing count or a custom cursor, is
+    listed in `unchecked`.
+
+    The streams are built with the source's own config, which a `streams` override may read. When
+    building them fails, that is reported as one problem naming the exception type, not its
+    message, so it neither hides the read's own problems nor prints config values.
+    """
+    if not isinstance(source, ConcurrentDeclarativeSource):
+        return CursorFormatCheck(problems=[], unchecked=[])
+
+    wanted = [configured.stream.name for configured in catalog.streams]
+    cursors: dict[str, tuple[str, DateTimeStreamStateConverter]] = {}
+    try:
+        streams = source.streams(config=getattr(source, "_config", None) or {})
+    except Exception as error:  # noqa: BLE001  # Reported as a problem, next to the read's own.
+        return CursorFormatCheck(
+            problems=[
+                "the cursor format check could not build the source's streams to read their "
+                f"cursors (`{type(error).__name__}`)"
+            ],
+            unchecked=[],
+        )
+    for stream in streams:
+        cursor = getattr(stream, "cursor", None)
+        converter = getattr(cursor, "_connector_state_converter", None)
+        cursor_field = getattr(cursor, "cursor_field", None)
+        if stream.name in wanted and isinstance(converter, DateTimeStreamStateConverter):
+            cursors[stream.name] = (cursor_field.cursor_field_key, converter)  # type: ignore[union-attr]
+
+    in_file = _keys_not_in_format(future_state, cursors)
+    emitted = _keys_not_in_format(_emitted_states(state_messages), cursors)
+    problems = [
+        f"stream '{name}': a `{key}` value {where} is not in the cursor's format "
         f"{_format_name(cursors[name][1])}"
-        for name, keys in bad.items()
-        for key in sorted(keys)
+        for name in wanted
+        for where, bad in (("in the future state file", in_file), ("in its emitted state", emitted))
+        for key in sorted(bad.get(name, ()))
     ]
+    return CursorFormatCheck(
+        problems=problems, unchecked=[name for name in wanted if name not in cursors]
+    )
 
 
 def assert_future_state_read(

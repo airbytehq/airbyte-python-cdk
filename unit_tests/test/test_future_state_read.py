@@ -45,6 +45,7 @@ from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests import (
@@ -57,10 +58,12 @@ from airbyte_cdk.test.standard_tests._acceptance_test_config import (
     collect_scenarios,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
+    CursorFormatCheck,
+    CursorFormatWarning,
     assert_future_state_covers_streams,
     assert_future_state_read,
     build_future_state_catalog,
-    find_cursor_format_problems,
+    check_cursor_formats,
     load_future_state,
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
@@ -886,76 +889,321 @@ def test_declarative_read_rebuilds_the_source_with_its_custom_components(
         run_without_skip(suite.test_read_from_future_state, _future_scenario())
 
 
-def _declarative_source() -> ConcurrentDeclarativeSource:
-    return ConcurrentDeclarativeSource(
-        config={"api_key": "x"}, catalog=None, state=None, source_config=copy.deepcopy(_MANIFEST)
+def _declarative_source(
+    manifest: dict[str, Any] | None = None,
+    state: list[dict[str, Any]] | None = None,
+    source_class: type[ConcurrentDeclarativeSource] = ConcurrentDeclarativeSource,
+) -> ConcurrentDeclarativeSource:
+    return source_class(
+        config={"api_key": "x"},
+        catalog=None,
+        state=[AirbyteStateMessageSerializer.load(message) for message in state or []],
+        source_config=copy.deepcopy(manifest or _MANIFEST),
     )
 
 
-def _state_output(value: str) -> list[AirbyteMessage]:
+def _state_output(*states: dict[str, Any]) -> list[AirbyteMessage]:
     return EntrypointOutput(
-        messages=[json.dumps({"type": "STATE", "state": _items_state(value)})]
+        messages=[json.dumps({"type": "STATE", "state": state}) for state in states]
     ).state_messages
 
 
-def _items_catalog(tmp_path: Path) -> ConfiguredAirbyteCatalog:
-    items = _declarative_source().discover(logging.getLogger(), {}).streams
+def _items_catalog(
+    tmp_path: Path, source: ConcurrentDeclarativeSource | None = None
+) -> ConfiguredAirbyteCatalog:
+    items = (source or _declarative_source()).discover(logging.getLogger(), {}).streams
     return build_future_state_catalog(_future_scenario(), items, tmp_path)
 
 
-def test_cursor_value_in_the_declared_format_passes(tmp_path: Path) -> None:
-    problems = find_cursor_format_problems(
-        _declarative_source(), _items_catalog(tmp_path), _state_output("2999-01-01")
+def _check(
+    tmp_path: Path,
+    *,
+    file_state: dict[str, Any] | None = None,
+    emitted: dict[str, Any] | None = None,
+    source: object | None = None,
+) -> CursorFormatCheck:
+    """Check a future state file holding `file_state`, and a read that emitted `emitted`."""
+    in_format = _items_state("2999-01-01")
+    return check_cursor_formats(
+        source or _declarative_source(),
+        _items_catalog(tmp_path),
+        future_state=[file_state or in_format],
+        state_messages=_state_output(emitted or in_format),
     )
-    assert problems == []
 
 
-@pytest.mark.parametrize("value", ["2999-01-01T00:00:00Z", "29990101"])
-def test_cursor_value_in_another_format_fails_without_printing_it(
+OFF_FORMAT = "29990101"
+FILE_FORMAT_PROBLEM = (
+    "stream 'items': a `updated_at` value in the future state file is not in the cursor's "
+    "format `%Y-%m-%d`"
+)
+EMITTED_FORMAT_PROBLEM = (
+    "stream 'items': a `updated_at` value in its emitted state is not in the cursor's format "
+    "`%Y-%m-%d`"
+)
+
+
+def test_cursor_values_in_the_declared_format_pass(tmp_path: Path) -> None:
+    assert _check(tmp_path) == CursorFormatCheck(problems=[], unchecked=[])
+
+
+@pytest.mark.parametrize("value", ["2999-01-01T00:00:00Z", OFF_FORMAT])
+def test_file_cursor_value_in_another_format_fails_without_printing_it(
     tmp_path: Path, value: str
 ) -> None:
-    problems = find_cursor_format_problems(
-        _declarative_source(), _items_catalog(tmp_path), _state_output(value)
-    )
+    problems = _check(tmp_path, file_state=_items_state(value)).problems
 
-    assert problems == [
-        "stream 'items': a `updated_at` value in its state is not in the cursor's format `%Y-%m-%d`"
-    ]
+    assert problems == [FILE_FORMAT_PROBLEM]
     assert value not in problems[0]
 
 
-def test_declarative_read_fails_on_cursor_format_problems(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("value", ["2999-01-01T00:00:00Z", OFF_FORMAT])
+def test_emitted_cursor_value_in_another_format_fails_without_printing_it(
+    tmp_path: Path, value: str
 ) -> None:
-    """The in-process test reports the format problems of the state the read emitted.
+    problems = _check(tmp_path, emitted=_items_state(value)).problems
 
-    The CDK's own cursors write their state back through the cursor's format, so this stubs the
-    check: a value the cursor cannot parse already fails the read.
+    assert problems == [EMITTED_FORMAT_PROBLEM]
+    assert value not in problems[0]
+
+
+def test_cursor_format_problems_of_the_file_and_the_read_are_both_reported(
+    tmp_path: Path,
+) -> None:
+    check = _check(tmp_path, file_state=_items_state(OFF_FORMAT), emitted=_items_state(OFF_FORMAT))
+    assert check.problems == [FILE_FORMAT_PROBLEM, EMITTED_FORMAT_PROBLEM]
+
+
+@pytest.mark.parametrize(
+    "datetime_format, start, value",
+    [
+        pytest.param("%s", "1704067200", 32503680000, id="integer_for_epoch_seconds"),
+        pytest.param(
+            "%Y-%m-%dT%H:%M:%S%z",
+            "2024-01-01T00:00:00+0000",
+            "2999-01-01T00:00:00Z",
+            id="z_for_utc_offset",
+        ),
+    ],
+)
+def test_value_that_the_declared_format_parses_passes(
+    tmp_path: Path, datetime_format: str, start: str, value: Any
+) -> None:
+    """A value only has to parse with the declared format, in the file and in the emitted state.
+
+    The cursor rewrites its spelling, and a stream that echoes its input state emits it as is.
     """
-    checked: list[list[AirbyteMessage]] = []
-
-    def _problems(
-        source: object, catalog: ConfiguredAirbyteCatalog, state_messages: list[AirbyteMessage]
-    ) -> list[str]:
-        assert isinstance(source, ConcurrentDeclarativeSource)
-        checked.append(state_messages)
-        return ["stream 'items': a `updated_at` value in its state is not in the cursor's format"]
-
-    monkeypatch.setattr(
-        "airbyte_cdk.test.standard_tests.source_base.find_cursor_format_problems", _problems
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["streams"][0]["incremental_sync"].update(
+        datetime_format=datetime_format, start_datetime=start
     )
-    suite = _declarative_suite(tmp_path, [_items_state("2999-01-01")])
+    manifest["streams"][0]["incremental_sync"].pop("cursor_granularity")
+    manifest["streams"][0]["incremental_sync"].pop("step")
+    source = _declarative_source(manifest)
 
-    with requests_mock.Mocker(), pytest.raises(AssertionError) as error:
+    check = check_cursor_formats(
+        source,
+        _items_catalog(tmp_path, source),
+        future_state=[_items_state(value)],
+        state_messages=_state_output(_items_state(value)),
+    )
+
+    assert check == CursorFormatCheck(problems=[], unchecked=[])
+
+
+# The cursor parses an ISO 8601 value, and writes it back in its own `datetime_format`.
+_LENIENT_MANIFEST = copy.deepcopy(_MANIFEST)
+_LENIENT_MANIFEST["streams"][0]["incremental_sync"]["cursor_datetime_formats"] = [
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%d",
+]
+
+
+def test_declarative_read_fails_on_a_file_value_the_cursor_parses_in_another_format(
+    tmp_path: Path,
+) -> None:
+    """The read passes: the cursor parses the value and emits it in its own format.
+
+    Only the check of the file finds that the file is not in the format the stream writes.
+    """
+    suite = _declarative_suite(tmp_path, [_items_state("2999-01-01T00:00:00Z")])
+    (tmp_path / "manifest.yaml").write_text(yaml.safe_dump(_LENIENT_MANIFEST))
+
+    with requests_mock.Mocker() as mocker, pytest.raises(AssertionError) as error:
         suite.test_read_from_future_state(_future_scenario())
 
-    assert "- stream 'items': a `updated_at` value in its state is not in the cursor's format" in (
-        str(error.value)
+    assert mocker.call_count == 0
+    assert str(error.value).splitlines()[1:] == [f"- {FILE_FORMAT_PROBLEM}"]
+
+
+def test_declarative_read_reports_cursor_format_problems_and_unchecked_streams(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The in-process test fails on the format problems, and warns of the unchecked streams."""
+    checked: list[dict[str, Any]] = []
+
+    def _check_formats(
+        source: object,
+        catalog: ConfiguredAirbyteCatalog,
+        *,
+        future_state: list[dict[str, Any]],
+        state_messages: list[AirbyteMessage],
+    ) -> CursorFormatCheck:
+        checked.append(
+            {"source": source, "future_state": future_state, "state_messages": state_messages}
+        )
+        return CursorFormatCheck(problems=["a format problem"], unchecked=["items"])
+
+    monkeypatch.setattr(
+        "airbyte_cdk.test.standard_tests.source_base.check_cursor_formats", _check_formats
     )
-    [state_messages] = checked
+    state = [_items_state("2999-01-01")]
+    suite = _declarative_suite(tmp_path, state)
+
+    with (
+        requests_mock.Mocker(),
+        pytest.warns(CursorFormatWarning, match="did not check these streams.*'items'"),
+        pytest.raises(AssertionError, match="- a format problem"),
+    ):
+        suite.test_read_from_future_state(_future_scenario())
+
+    [call] = checked
+    assert isinstance(call["source"], ConcurrentDeclarativeSource)
+    assert call["future_state"] == state
     assert [
-        m.state.stream.stream_descriptor.name for m in state_messages if m.state and m.state.stream
+        m.state.stream.stream_descriptor.name
+        for m in call["state_messages"]
+        if m.state and m.state.stream
     ] == ["items"]
+
+
+# As in real manifests, the full-refresh stream has a cursor too, in another format: the check
+# must read the cursor of the incremental stream, which a read from state uses.
+_export_items = copy.deepcopy(_MANIFEST["streams"][0])
+_export_items["retriever"]["requester"]["path"] = "/items/export"
+_export_items["incremental_sync"].update(
+    datetime_format="%Y-%m-%dT%H:%M:%SZ",
+    start_datetime="2024-01-01T00:00:00Z",
+    cursor_granularity="PT1S",
+)
+_STATE_DELEGATING_MANIFEST = copy.deepcopy(_MANIFEST)
+_STATE_DELEGATING_MANIFEST["streams"] = [
+    {
+        "type": "StateDelegatingStream",
+        "name": "items",
+        "full_refresh_stream": _export_items,
+        "incremental_stream": copy.deepcopy(_LENIENT_MANIFEST["streams"][0]),
+    }
+]
+ISO_VALUE = "2999-01-01T00:00:00Z"
+
+
+def test_a_state_delegating_stream_built_without_state_checks_the_wrong_cursor(
+    tmp_path: Path,
+) -> None:
+    """Built without state, it is its full-refresh stream, whose cursor has another format."""
+    check = _check(
+        tmp_path,
+        file_state=_items_state(ISO_VALUE),
+        emitted=_items_state(ISO_VALUE),
+        source=_declarative_source(_STATE_DELEGATING_MANIFEST),
+    )
+    assert check == CursorFormatCheck(problems=[], unchecked=[])
+
+
+def test_a_state_delegating_stream_built_with_state_is_checked(tmp_path: Path) -> None:
+    state = [_items_state(ISO_VALUE)]
+    check = _check(
+        tmp_path,
+        file_state=state[0],
+        source=_declarative_source(_STATE_DELEGATING_MANIFEST, state=state),
+    )
+    assert check == CursorFormatCheck(problems=[FILE_FORMAT_PROBLEM], unchecked=[])
+
+
+def test_declarative_read_checks_a_state_delegating_stream_with_the_read_state(
+    tmp_path: Path,
+) -> None:
+    """The suite builds the checked source with the read's state, as the read is built."""
+    suite = _declarative_suite(tmp_path, [_items_state(ISO_VALUE)])
+    (tmp_path / "manifest.yaml").write_text(yaml.safe_dump(_STATE_DELEGATING_MANIFEST))
+
+    with requests_mock.Mocker() as mocker, pytest.raises(AssertionError) as error:
+        suite.test_read_from_future_state(_future_scenario())
+
+    assert mocker.call_count == 0
+    assert str(error.value).splitlines()[1:] == [f"- {FILE_FORMAT_PROBLEM}"]
+
+
+_COUNT_MANIFEST = copy.deepcopy(_MANIFEST)
+_COUNT_MANIFEST["streams"][0]["incremental_sync"] = {
+    "type": "IncrementingCountCursor",
+    "cursor_field": "id",
+    "start_value": 0,
+}
+
+
+def test_a_stream_without_a_datetime_cursor_is_unchecked(tmp_path: Path) -> None:
+    source = _declarative_source(_COUNT_MANIFEST)
+    check = check_cursor_formats(
+        source,
+        _items_catalog(tmp_path, source),
+        future_state=[_items_state(OFF_FORMAT)],
+        state_messages=_state_output(_items_state(OFF_FORMAT)),
+    )
+    assert check == CursorFormatCheck(problems=[], unchecked=["items"])
+
+
+_PARTITIONED_MANIFEST = copy.deepcopy(_MANIFEST)
+_parents = copy.deepcopy(_MANIFEST["streams"][0])
+_parents["name"] = "parents"
+del _parents["incremental_sync"]
+_PARTITIONED_MANIFEST["streams"][0]["retriever"]["requester"]["path"] = (
+    "/parents/{{ stream_partition.parent_id }}/items"
+)
+_PARTITIONED_MANIFEST["streams"][0]["retriever"]["partition_router"] = {
+    "type": "SubstreamPartitionRouter",
+    "parent_stream_configs": [
+        {
+            "type": "ParentStreamConfig",
+            "stream": _parents,
+            "parent_key": "id",
+            "partition_field": "parent_id",
+        }
+    ],
+}
+
+
+def _partitioned_state(value: str) -> dict[str, Any]:
+    return {
+        "type": "STREAM",
+        "stream": {
+            "stream_descriptor": {"name": "items"},
+            "stream_state": {
+                "states": [
+                    {"partition": {"parent_id": "1"}, "cursor": {"updated_at": value}},
+                ],
+                "state": {"updated_at": "2999-01-01"},
+                "use_global_cursor": False,
+            },
+        },
+    }
+
+
+def test_cursor_format_is_checked_with_a_real_per_partition_cursor(tmp_path: Path) -> None:
+    """The check reads the converter of the per-partition cursor the CDK builds."""
+    source = _declarative_source(_PARTITIONED_MANIFEST)
+    [items] = [s for s in source.streams(config={"api_key": "x"}) if s.name == "items"]
+    assert isinstance(items.cursor, ConcurrentPerPartitionCursor)  # type: ignore[attr-defined]
+
+    check = check_cursor_formats(
+        source,
+        _items_catalog(tmp_path, source),
+        future_state=[_partitioned_state(OFF_FORMAT)],
+        state_messages=_state_output(_partitioned_state("2999-01-01")),
+    )
+
+    assert check == CursorFormatCheck(problems=[FILE_FORMAT_PROBLEM], unchecked=[])
 
 
 class _ConfigReadingSource(ConcurrentDeclarativeSource):
@@ -967,17 +1215,12 @@ class _ConfigReadingSource(ConcurrentDeclarativeSource):
 
 
 def test_cursor_format_check_builds_the_streams_with_the_source_config(tmp_path: Path) -> None:
-    source = _ConfigReadingSource(
-        config={"api_key": "x"}, catalog=None, state=None, source_config=copy.deepcopy(_MANIFEST)
+    check = _check(
+        tmp_path,
+        emitted=_items_state(OFF_FORMAT),
+        source=_declarative_source(source_class=_ConfigReadingSource),
     )
-
-    problems = find_cursor_format_problems(
-        source, _items_catalog(tmp_path), _state_output("29990101")
-    )
-
-    assert problems == [
-        "stream 'items': a `updated_at` value in its state is not in the cursor's format `%Y-%m-%d`"
-    ]
+    assert check.problems == [EMITTED_FORMAT_PROBLEM]
 
 
 def test_cursor_format_check_reports_a_failure_to_build_the_streams(
@@ -991,98 +1234,70 @@ def test_cursor_format_check_reports_a_failure_to_build_the_streams(
 
     monkeypatch.setattr(source, "streams", _fail)
 
-    problems = find_cursor_format_problems(
-        source, _items_catalog(tmp_path), _state_output("2999-01-01")
-    )
+    check = _check(tmp_path, source=source)
 
-    assert problems == [
+    assert check.problems == [
         "the cursor format check could not build the source's streams to read their cursors (`KeyError`)"
     ]
 
 
-def _format_problems(tmp_path: Path, state: dict[str, Any]) -> list[str]:
-    output = EntrypointOutput(messages=[json.dumps({"type": "STATE", "state": state})])
-    return find_cursor_format_problems(
-        _declarative_source(), _items_catalog(tmp_path), output.state_messages
-    )
-
-
-OFF_FORMAT = "29990101"
-FORMAT_PROBLEM = (
-    "stream 'items': a `updated_at` value in its state is not in the cursor's format `%Y-%m-%d`"
-)
+def _global_state(value: str) -> dict[str, Any]:
+    return {
+        "type": "GLOBAL",
+        "global": {
+            "shared_state": {},
+            "stream_states": [
+                {"stream_descriptor": {"name": "items"}, "stream_state": {"updated_at": value}}
+            ],
+        },
+    }
 
 
 def test_cursor_format_is_checked_in_a_global_state(tmp_path: Path) -> None:
-    problems = _format_problems(
-        tmp_path,
-        {
-            "type": "GLOBAL",
-            "global": {
-                "shared_state": {},
-                "stream_states": [
-                    {
-                        "stream_descriptor": {"name": "items"},
-                        "stream_state": {"updated_at": OFF_FORMAT},
-                    }
-                ],
-            },
-        },
+    check = _check(
+        tmp_path, file_state=_global_state(OFF_FORMAT), emitted=_global_state(OFF_FORMAT)
     )
-
-    assert problems == [FORMAT_PROBLEM]
+    assert check.problems == [FILE_FORMAT_PROBLEM, EMITTED_FORMAT_PROBLEM]
 
 
 def test_cursor_format_is_checked_in_each_partition(tmp_path: Path) -> None:
     """A partitioned stream's state holds its cursor values under `states[].cursor`."""
-    problems = _format_problems(
+    check = _check(
         tmp_path,
-        {
-            "type": "STREAM",
-            "stream": {
-                "stream_descriptor": {"name": "items"},
-                "stream_state": {
-                    "states": [{"partition": {"id": "1"}, "cursor": {"updated_at": OFF_FORMAT}}],
-                    "state": {"updated_at": "2999-01-01"},
-                },
-            },
-        },
+        file_state=_partitioned_state(OFF_FORMAT),
+        emitted=_partitioned_state(OFF_FORMAT),
     )
-
-    assert problems == [FORMAT_PROBLEM]
+    assert check.problems == [FILE_FORMAT_PROBLEM, EMITTED_FORMAT_PROBLEM]
 
 
 def test_cursor_format_is_not_checked_in_parent_states_or_partition_keys(tmp_path: Path) -> None:
     """A parent stream's state and a partition key are not this stream's cursor values."""
-    problems = _format_problems(
-        tmp_path,
-        {
-            "type": "STREAM",
-            "stream": {
-                "stream_descriptor": {"name": "items"},
-                "stream_state": {
-                    "states": [
-                        {
-                            "partition": {"updated_at": OFF_FORMAT},
-                            "cursor": {"updated_at": "2999-01-01"},
-                        }
-                    ],
-                    "parent_state": {"parents": {"updated_at": OFF_FORMAT}},
-                },
+    state = {
+        "type": "STREAM",
+        "stream": {
+            "stream_descriptor": {"name": "items"},
+            "stream_state": {
+                "states": [
+                    {
+                        "partition": {"updated_at": OFF_FORMAT},
+                        "cursor": {"updated_at": "2999-01-01"},
+                    }
+                ],
+                "parent_state": {"parents": {"updated_at": OFF_FORMAT}},
             },
         },
-    )
-
-    assert problems == []
+    }
+    assert _check(tmp_path, file_state=state, emitted=state).problems == []
 
 
 def test_cursor_format_is_not_checked_for_other_sources(tmp_path: Path) -> None:
-    problems = find_cursor_format_problems(
-        _StateSource("honours_state", [USERS]),
-        _items_catalog(tmp_path),
-        _state_output("not a date"),
+    check = _check(
+        tmp_path,
+        file_state=_items_state("not a date"),
+        emitted=_items_state("not a date"),
+        source=_StateSource("honours_state", [USERS]),
     )
-    assert problems == []
+    assert check == CursorFormatCheck(problems=[], unchecked=[])
 
 
 # --- The Docker test ----------------------------------------------------------------------------
