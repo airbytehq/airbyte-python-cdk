@@ -50,6 +50,7 @@ from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partitio
 from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _STREAM_NAME = "stream"
@@ -824,6 +825,63 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         assert "StreamThreadException" not in trace_error.stack_trace
         # failure_type defaults to system_error for unhandled exceptions
         assert trace_error.failure_type == FailureType.system_error
+
+    def test_on_exception_sanitizes_airbyte_traced_exception(self):
+        secret = "FAKE_SECRET_TOKEN"
+        update_secrets([secret])
+        try:
+            handler = ConcurrentReadProcessor(
+                [self._stream],
+                self._partition_enqueuer,
+                self._thread_pool_manager,
+                self._logger,
+                self._slice_logger,
+                self._message_repository,
+                self._partition_reader,
+            )
+            traced_exception = AirbyteTracedException(
+                internal_message=secret,
+                message=secret,
+                exception=ValueError(secret),
+            )
+
+            messages = list(
+                handler.on_exception(StreamThreadException(traced_exception, _STREAM_NAME))
+            )
+            trace_error = messages[0].trace.error
+
+            assert secret not in trace_error.message
+            assert secret not in trace_error.internal_message
+            assert secret not in trace_error.stack_trace
+            assert "****" in trace_error.internal_message
+        finally:
+            update_secrets([])
+
+    def test_on_exception_sanitizes_plain_exception(self):
+        secret = "FAKE_SECRET_TOKEN"
+        update_secrets([secret])
+        try:
+            handler = ConcurrentReadProcessor(
+                [self._stream],
+                self._partition_enqueuer,
+                self._thread_pool_manager,
+                self._logger,
+                self._slice_logger,
+                self._message_repository,
+                self._partition_reader,
+            )
+
+            messages = list(
+                handler.on_exception(StreamThreadException(ValueError(secret), _STREAM_NAME))
+            )
+            trace_error = messages[0].trace.error
+
+            assert secret not in trace_error.message
+            assert secret not in trace_error.internal_message
+            assert secret not in trace_error.stack_trace
+            assert "****" in trace_error.internal_message
+        finally:
+            update_secrets([])
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_start_next_partition_generator(self):
