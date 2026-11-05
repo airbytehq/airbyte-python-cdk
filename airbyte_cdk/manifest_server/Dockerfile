@@ -9,7 +9,7 @@ FROM python:3.13.9-slim-bookworm@sha256:4c9fe962f6ce46ecf3633a7e9d0a9fb7f5622121
 
 # Install git (needed for dynamic versioning) and poetry
 RUN apt-get update && \
-    apt-get install -y git && \
+    apt-get install -y git ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     pip install poetry==2.0.1
 

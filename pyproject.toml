@@ -38,6 +38,7 @@ airbyte-protocol-models-dataclasses = "^0.17.1"
 backoff = "*"
 boltons = "^25.0.0"
 cachetools = "*"
+certifi = ">=2026.10.23"
 click = "^8.1.8"
 dpath = "^2.1.6"
 dunamai = "^1.22.0"
@@ -249,6 +250,7 @@ DEP001 = [
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
   "setuptools",  # Incorrectly used without declaring in some connectors (e.g. source-shopify)
+  "certifi",  # Constrains the CA bundle used by requests.
   "pillow",  # Not imported directly; declared to force a patched version of a transitive dependency
   "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
   "dateparser",  # Used by `source-amazon-seller-partner` for parsing string-formatted dates w/ timezone abbreviations. May add to `AirbyteDateTime`.
