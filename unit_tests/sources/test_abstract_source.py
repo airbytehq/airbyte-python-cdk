@@ -2054,3 +2054,34 @@ def test_read_nonexistent_stream_emit_incomplete_stream_status(
 
     assert expected_error_message in exc_info.value.message
     assert exc_info.value.failure_type == FailureType.config_error
+
+
+def test_successful_check_section(mocker):
+    """`check_section` wraps `check_section_connection` the way `check` wraps `check_connection`."""
+    source = MockSource(check_lambda=lambda: (True, None))
+    check_section_connection = mocker.patch.object(
+        source, "check_section_connection", return_value=(True, None)
+    )
+
+    assert source.check_section(logger, "connection", {"host": "h"}) == AirbyteConnectionStatus(
+        status=Status.SUCCEEDED
+    )
+    check_section_connection.assert_called_once_with(logger, "connection", {"host": "h"})
+
+
+def test_failed_check_section(mocker):
+    source = MockSource(check_lambda=lambda: (True, None))
+    mocker.patch.object(source, "check_section_connection", return_value=(False, "womp womp"))
+
+    assert source.check_section(logger, "connection", {"host": "h"}) == AirbyteConnectionStatus(
+        status=Status.FAILED, message="'womp womp'"
+    )
+
+
+def test_check_section_fails_when_not_implemented():
+    status = MockSource(check_lambda=lambda: (True, None)).check_section(logger, "connection", {})
+
+    assert status == AirbyteConnectionStatus(
+        status=Status.FAILED,
+        message="\"The connector specification declares sections but the connector does not implement a section check (section 'connection').\"",
+    )

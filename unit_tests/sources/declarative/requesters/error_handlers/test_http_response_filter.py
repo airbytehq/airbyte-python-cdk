@@ -237,3 +237,104 @@ def test_matches(
         assert actual_response_status.error_message == expected_error_resolution.error_message
     else:
         assert actual_response_status is None
+
+
+@pytest.mark.parametrize(
+    "url, expected_request_url",
+    [
+        pytest.param(
+            "https://api.github.com/repos/airbytehq/airbyte/stargazers?per_page=100&page=2",
+            "https://api.github.com/repos/airbytehq/airbyte/stargazers",
+            id="query_string_dropped",
+        ),
+        pytest.param(
+            "https://user:secret@api.example.com/v1/items?api_key=secret",
+            "https://api.example.com/v1/items",
+            id="credentials_dropped",
+        ),
+        pytest.param(
+            "https://user:pw@api.example.com:8443/v1/items?k=v#frag",
+            "https://api.example.com:8443/v1/items",
+            id="port_kept_fragment_dropped",
+        ),
+        pytest.param(
+            "https://[::1]:8443/v1/items?k=v",
+            "https://[::1]:8443/v1/items",
+            id="ipv6_host_and_port_kept",
+        ),
+    ],
+)
+def test_error_message_interpolates_request_url(requests_mock, url, expected_request_url):
+    requests_mock.get(url, status_code=404, json={"message": "Not Found"})
+    response_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        http_codes={404},
+        error_message="Skipping {{ request_url }}.",
+    )
+
+    resolution = response_filter.matches(requests.get(url))
+
+    assert resolution.response_action == ResponseAction.IGNORE
+    assert resolution.error_message == f"Skipping {expected_request_url}."
+
+
+def test_predicate_interpolates_request_url(requests_mock):
+    requests_mock.get(
+        "https://api.github.com/repos/airbytehq/airbyte/stargazers",
+        status_code=404,
+        json={"message": "Not Found"},
+    )
+    requests_mock.get(
+        "https://api.github.com/repos/airbytehq/airbyte/events",
+        status_code=404,
+        json={"message": "Not Found"},
+    )
+    requests_mock.get(
+        "https://api.github.com/repos/airbytehq/airbyte-cdk/stargazers",
+        status_code=200,
+        json=[{"login": "octocat"}],
+    )
+    response_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        predicate="{{ response.get('message') == 'Not Found' and request_url.endswith('/stargazers') }}",
+    )
+
+    stargazers = response_filter.matches(
+        requests.get("https://api.github.com/repos/airbytehq/airbyte/stargazers")
+    )
+    events = response_filter.matches(
+        requests.get("https://api.github.com/repos/airbytehq/airbyte/events")
+    )
+    # The filter also runs on successful pages, so the predicate must not match on the URL alone.
+    successful_page = response_filter.matches(
+        requests.get("https://api.github.com/repos/airbytehq/airbyte-cdk/stargazers")
+    )
+
+    assert stargazers.response_action == ResponseAction.IGNORE
+    assert events is None
+    assert successful_page is None
+
+
+def test_request_url_is_empty_when_response_has_no_url():
+    response = requests.Response()
+    response.status_code = 404
+    message_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        http_codes={404},
+        error_message="Skipping [{{ request_url }}].",
+    )
+    predicate_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        config={},
+        parameters={},
+        predicate="{{ request_url.endswith('/stargazers') }}",
+    )
+
+    assert message_filter.matches(response).error_message == "Skipping []."
+    assert predicate_filter.matches(response) is None

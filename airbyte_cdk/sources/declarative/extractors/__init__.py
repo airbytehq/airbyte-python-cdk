@@ -2,6 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from airbyte_cdk.sources.declarative.extractors.combined_extractor import (
+    CombinedExtractor,
+    CombineMode,
+)
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
@@ -14,6 +18,8 @@ from airbyte_cdk.sources.declarative.extractors.type_transformer import TypeTran
 __all__ = [
     "TypeTransformer",
     "HttpSelector",
+    "CombinedExtractor",
+    "CombineMode",
     "DpathExtractor",
     "RecordFilter",
     "RecordSelector",

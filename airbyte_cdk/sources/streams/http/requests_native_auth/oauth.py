@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from datetime import timedelta
+from contextlib import suppress
+from datetime import datetime, timedelta
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import dpath
@@ -27,6 +28,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     Generates OAuth2.0 access tokens from an OAuth2.0 refresh token and client credentials.
     The generated access token is attached to each request via the Authorization header.
     If a connector_config is provided any mutation of it's value in the scope of this class will emit AirbyteControlConnectorConfigMessage.
+    `refresh_token_error_messages` provides fixed user-facing messages for configured refresh token errors.
     """
 
     def __init__(
@@ -52,6 +54,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_messages: Optional[Mapping[str, str]] = None,
     ) -> None:
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret_name = client_secret_name
@@ -74,7 +77,10 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._token_expiry_is_time_of_expiration = token_expiry_is_time_of_expiration
         self._access_token = None
         super().__init__(
-            refresh_token_error_status_codes, refresh_token_error_key, refresh_token_error_values
+            refresh_token_error_status_codes,
+            refresh_token_error_key,
+            refresh_token_error_values,
+            refresh_token_error_messages=refresh_token_error_messages,
         )
 
     def get_token_refresh_endpoint(self) -> str:
@@ -126,6 +132,10 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_date
 
     def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`.
+        if not isinstance(value, datetime):
+            with suppress(ValueError, OverflowError):
+                value = self._parse_token_expiration_date(value)
         self._token_expiry_date = value
 
     @property
@@ -153,6 +163,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     By default, this authenticator expects a connector config with a "credentials" field with the following nested fields: client_id,
     client_secret, refresh_token. This behavior can be changed by defining custom config path (using dpath paths) in client_id_config_path,
     client_secret_config_path, refresh_token_config_path constructor arguments.
+    `refresh_token_error_messages` provides fixed user-facing messages for configured refresh token errors.
     """
 
     def __init__(
@@ -181,6 +192,8 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
+        emit_control_message_to_message_repository: bool = False,
+        refresh_token_error_messages: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         Args:
@@ -199,9 +212,11 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             access_token_config_path (Sequence[str]): Dpath to the access_token field in the connector configuration. Defaults to ("credentials", "access_token").
             refresh_token_config_path (Sequence[str]): Dpath to the refresh_token field in the connector configuration. Defaults to ("credentials", "refresh_token").
             token_expiry_date_config_path (Sequence[str]): Dpath to the token_expiry_date field in the connector configuration. Defaults to ("credentials", "token_expiry_date").
-            token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If not specified the token expiry date is interpreted as number of seconds until expiration.
+            token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If specified the token expiry date is interpreted as time of expiration, as with token_expiry_is_time_of_expiration, otherwise as number of seconds until expiration.
             token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
-            message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
+            message_repository (MessageRepository): The message repository used to emit logs on HTTP requests and control message on config update.
+            emit_control_message_to_message_repository (bool): Whether the message repository additionally receives the CONNECTOR_CONFIG message. This is only for in-process consumers such as the Connector Builder, because messages in the repository are otherwise printed to stdout by the entrypoint and would duplicate the direct stdout emission. Defaults to False.
+            refresh_token_error_messages (Optional[Mapping[str, str]]): Fixed user-facing messages for refresh token errors
         """
         self._connector_config = connector_config
         self._client_id: str = self._get_config_value_by_path(
@@ -220,6 +235,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self._grant_type_name = grant_type_name
         self._connector_config = connector_config
         self.__message_repository = message_repository
+        self._emit_control_message_to_message_repository = (
+            emit_control_message_to_message_repository
+        )
         super().__init__(
             token_refresh_endpoint=token_refresh_endpoint,
             client_id_name=self._client_id_name,
@@ -238,10 +256,12 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             grant_type_name=self._grant_type_name,
             grant_type=grant_type,
             token_expiry_date_format=token_expiry_date_format,
-            token_expiry_is_time_of_expiration=token_expiry_is_time_of_expiration,
+            token_expiry_is_time_of_expiration=token_expiry_is_time_of_expiration
+            or bool(token_expiry_date_format),
             refresh_token_error_status_codes=refresh_token_error_status_codes,
             refresh_token_error_key=refresh_token_error_key,
             refresh_token_error_values=refresh_token_error_values,
+            refresh_token_error_messages=refresh_token_error_messages,
         )
 
     @property
@@ -316,6 +336,13 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         Args:
             new_token_expiry_date (AirbyteDateTime): The new expiry date for the token.
         """
+        if not (
+            isinstance(new_token_expiry_date, datetime) or self.token_expiry_is_time_of_expiration
+        ):
+            # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`
+            # in seconds. Other values are stored as-is and parsed on read.
+            with suppress(ValueError, OverflowError):
+                new_token_expiry_date = self._parse_token_expiration_date(new_token_expiry_date)
         self._set_config_value_by_path(
             self._token_expiry_date_config_path, str(new_token_expiry_date)
         )
@@ -351,12 +378,18 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         and emits a control message to update the connector config. If the
         response omits a refresh token, the existing one is preserved.
         """
-        new_access_token, access_token_expires_in, new_refresh_token = self.refresh_access_token()
-        self.access_token = new_access_token
-        if new_refresh_token is not None:
-            self.set_refresh_token(new_refresh_token)
-        self.set_token_expiry_date(access_token_expires_in)
-        self._emit_control_message()
+        token_before_waiting = self._current_access_token_or_none()
+        with self._token_refresh_lock:
+            if self._current_access_token_or_none() != token_before_waiting:
+                return
+            new_access_token, access_token_expires_in, new_refresh_token = (
+                self.refresh_access_token()
+            )
+            self.access_token = new_access_token
+            if new_refresh_token is not None:
+                self.set_refresh_token(new_refresh_token)
+            self.set_token_expiry_date(access_token_expires_in)
+            self._emit_control_message()
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, Optional[str]]:  # type: ignore[override]
         """
@@ -407,24 +440,20 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         )
 
     def _emit_control_message(self) -> None:
-        """
-        Emits a control message based on the connector configuration.
+        """Emit the updated connector config as a CONNECTOR_CONFIG control message.
 
-        Control messages for config updates (like refreshed tokens) must be printed directly
-        to stdout so the platform can process them immediately. The message repository is
-        also used to queue the message for any additional processing.
-
-        Note:
-            The function `emit_configuration_as_airbyte_control_message` prints directly to
-            stdout, which is required for the platform to detect and persist config changes.
+        The message is always printed to stdout, which is the delivery the platform relies on: it
+        is immediate and independent of whether the source exposes a message repository and of
+        when that repository is drained (for `ConcurrentDeclarativeSource` the internal repository
+        is only drained during `read`, after partitions are processed). The message repository is
+        only used in addition when explicitly requested, for in-process consumers such as the
+        Connector Builder; repository messages are otherwise printed by the entrypoint too and
+        would duplicate the stdout emission.
         """
-        # Always emit to stdout so the platform can process the config update immediately.
-        # This is critical for single-use refresh tokens where the new token must be persisted
-        # before subsequent operations try to use the old (now invalid) token.
         emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
-
-        # Also emit to the message repository for any additional processing (e.g., logging)
-        if not isinstance(self._message_repository, NoopMessageRepository):
+        if self._emit_control_message_to_message_repository and not isinstance(
+            self._message_repository, NoopMessageRepository
+        ):
             self._message_repository.emit_message(
                 create_connector_config_control_message(self._connector_config)  # type: ignore[arg-type]
             )

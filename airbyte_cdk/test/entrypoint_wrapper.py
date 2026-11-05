@@ -89,6 +89,7 @@ class EntrypointOutput:
         *,
         command: list[str] | None = None,
         message_file: Path | None = None,
+        stderr: str | None = None,
     ) -> None:
         if messages is None and message_file is None:
             raise ValueError("Either messages or message_file must be provided")
@@ -96,6 +97,7 @@ class EntrypointOutput:
             raise ValueError("Only one of messages or message_file can be provided")
 
         self._command = command
+        self._stderr = stderr
         self._messages: list[AirbyteMessage] | None = None
         self._message_file: Path | None = message_file
         if messages:
@@ -123,6 +125,14 @@ class EntrypointOutput:
             return AirbyteMessage(
                 type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=message)
             )
+
+    @property
+    def stderr(self) -> str | None:
+        """The raw stderr of the connector process, or `None` if it was not captured.
+
+        Only a run in a separate process, such as `run_docker_airbyte_command`, captures it.
+        """
+        return self._stderr
 
     @property
     def records_and_state_messages(

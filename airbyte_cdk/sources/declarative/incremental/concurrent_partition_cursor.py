@@ -175,6 +175,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._partition_key_to_index: dict[str, int] = {}
 
         self._lock = threading.Lock()
+        self._request_window_splitting_cursor: Optional[ConcurrentCursor] = None
         self._lookback_window: int = 0
         self._new_global_cursor: Optional[StreamState] = None
         self._number_of_partitions: int = 0
@@ -190,11 +191,16 @@ class ConcurrentPerPartitionCursor(Cursor):
         # FIXME this is a temporary field the time of the migration from declarative cursors to concurrent ones
         self._attempt_to_create_cursor_if_not_provided = attempt_to_create_cursor_if_not_provided
         self._synced_some_data = False
+        self._finished_generating_slices = False
         self._logged_regarding_datetime_format_error = False
 
     @property
     def cursor_field(self) -> CursorField:
         return self._cursor_field
+
+    @property
+    def partition_router(self) -> PartitionRouter:
+        return self._partition_router
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -272,16 +278,38 @@ class ConcurrentPerPartitionCursor(Cursor):
         """
         The platform expects at least one state message on successful syncs. Hence, whatever happens, we expect this method to be
         called.
+
+        If the stream did not complete (a partition was never closed, or slice generation stopped early), the global cursor is not
+        advanced, because partitions that were never generated have not been read up to it. If the state then holds no
+        checkpoint, nothing is emitted. Such a state records no progress, but it is not empty, so the next attempt would treat
+        the stream as already synced once: a StateDelegatingStream would switch to its incremental stream and never read the
+        slices this attempt missed. This covers global-cursor streams; in per-partition mode the cursor of every generated
+        partition reports its start value, so the state is still emitted.
+
+        If slice generation stopped early, the parent state is not refreshed from the partition router: the router may already have closed a parent slice whose last child slice was never generated, so only the parent state recorded by `_check_and_update_parent_state` for closed child partitions is kept.
         """
-        if not any(
+        all_partitions_closed = not any(
             semaphore_item[1]._value for semaphore_item in self._semaphore_per_partition.items()
-        ):
-            if self._synced_some_data:
+        )
+        stream_completed = all_partitions_closed and self._finished_generating_slices
+        if all_partitions_closed:
+            if self._synced_some_data and stream_completed:
                 # we only update those if we actually synced some data
                 self._global_cursor = self._new_global_cursor
                 self._lookback_window = self._timer.finish()
-            self._parent_state = self._partition_router.get_stream_state()
+            if stream_completed:
+                self._parent_state = self._partition_router.get_stream_state()
+        if not stream_completed and not self._has_checkpoint():
+            return
         self._emit_state_message(throttle=False)
+
+    def _has_checkpoint(self) -> bool:
+        state = self.state
+        return bool(
+            state.get(self._GLOBAL_STATE_KEY)
+            or state.get(self._PERPARTITION_STATE_KEY)
+            or state.get("parent_state")
+        )
 
     def _throttle_state_message(self) -> Optional[float]:
         """
@@ -322,6 +350,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             slices, self._partition_router.get_stream_state
         ):
             yield from self._generate_slices_from_partition(partition, parent_state)
+        self._finished_generating_slices = True
 
     def _generate_slices_from_partition(
         self, partition: StreamSlice, parent_state: Mapping[str, Any]
@@ -677,3 +706,31 @@ class ConcurrentPerPartitionCursor(Cursor):
         # Create a cursor to delegate the parsing
         cursor = self._cursor_factory.create(stream_state={}, runtime_lookback_window=None)
         return cursor.get_cursor_datetime_from_state(global_state)
+
+    def split_request_window(
+        self, stream_slice: StreamSlice, min_split_window: Optional[timedelta] = None
+    ) -> Optional[List[StreamSlice]]:
+        """
+        Split `stream_slice` in half the way any of this stream's per-partition cursors would.
+
+        `ConcurrentCursor.split_request_window` only reads the slice's boundaries and the cursor's granularity
+        and format, never the cursor's state, and every per-partition cursor is built by the same
+        `_cursor_factory`. So one state-free cursor can split the slices of every partition, including after
+        the switch to a global cursor, when the partition's own cursor may already have been evicted. The
+        children keep `stream_slice`'s `partition` and `extra_fields`, and `SimpleRetriever` re-associates the
+        records read from them with the original slice, so `observe` and `close_partition` are unaffected.
+
+        As with an unpartitioned stream, the children are not clamped again to the cursor's start or end.
+        """
+        return self._get_request_window_splitting_cursor().split_request_window(
+            stream_slice, min_split_window
+        )
+
+    def _get_request_window_splitting_cursor(self) -> ConcurrentCursor:
+        # Built on first use so that streams that never split a window do not pay for an extra cursor.
+        with self._lock:
+            if self._request_window_splitting_cursor is None:
+                self._request_window_splitting_cursor = self._cursor_factory.create(
+                    stream_state={}, runtime_lookback_window=None
+                )
+            return self._request_window_splitting_cursor

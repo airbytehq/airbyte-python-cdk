@@ -3,6 +3,7 @@
 #
 
 import logging
+from contextlib import suppress
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, List, Mapping, Optional, Tuple, Union
@@ -50,6 +51,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         refresh_token_error_status_codes (Tuple[int, ...]): Status codes to identify refresh token errors in response
         refresh_token_error_key (str): Key to identify refresh token error in response
         refresh_token_error_values (Tuple[str, ...]): List of values to check for exception during token refresh process
+        refresh_token_error_messages (Optional[Mapping[str, str]]): Fixed user-facing messages for refresh token errors
     """
 
     config: Mapping[str, Any]
@@ -80,12 +82,14 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token_error_status_codes: Tuple[int, ...] = ()
     refresh_token_error_key: str = ""
     refresh_token_error_values: Tuple[str, ...] = ()
+    refresh_token_error_messages: Optional[Mapping[str, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__(
             refresh_token_error_status_codes=self.refresh_token_error_status_codes,
             refresh_token_error_key=self.refresh_token_error_key,
             refresh_token_error_values=self.refresh_token_error_values,
+            refresh_token_error_messages=self.refresh_token_error_messages,
         )
         if self.token_refresh_endpoint is not None:
             self._token_refresh_endpoint: Optional[InterpolatedString] = InterpolatedString.create(
@@ -262,6 +266,10 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._access_token is not None
 
     def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`.
+        if not isinstance(value, datetime):
+            with suppress(ValueError, OverflowError):
+                value = self._parse_token_expiration_date(value)
         self._token_expiry_date = value
 
     def get_assertion_name(self) -> str:

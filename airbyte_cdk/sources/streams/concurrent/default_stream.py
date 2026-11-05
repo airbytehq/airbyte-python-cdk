@@ -9,6 +9,7 @@ from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
     ConcurrentPerPartitionCursor,
 )
+from airbyte_cdk.sources.declarative.incremental.sync_token_cursor import SyncTokenCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -34,6 +35,7 @@ class DefaultStream(AbstractStream):
         namespace: Optional[str] = None,
         supports_file_transfer: bool = False,
         block_simultaneous_read: str = "",
+        source_defined_incremental: bool = False,
     ) -> None:
         self._stream_partition_generator = partition_generator
         self._name = name
@@ -45,6 +47,7 @@ class DefaultStream(AbstractStream):
         self._namespace = namespace
         self._supports_file_transfer = supports_file_transfer
         self._block_simultaneous_read = block_simultaneous_read
+        self._source_defined_incremental = source_defined_incremental
 
     def generate_partitions(self) -> Iterable[Partition]:
         yield from self._stream_partition_generator.generate()
@@ -83,7 +86,11 @@ class DefaultStream(AbstractStream):
             stream.is_resumable = True
             stream.supported_sync_modes.append(SyncMode.incremental)
             stream.default_cursor_field = [self._cursor_field.cursor_field_key]
-
+        elif self._source_defined_incremental:
+            stream.source_defined_cursor = True
+            stream.is_resumable = True
+            stream.supported_sync_modes.append(SyncMode.incremental)
+            stream.default_cursor_field = []
         keys = self._primary_key
         if keys and len(keys) > 0:
             stream.source_defined_primary_key = [[key] for key in keys]
@@ -117,9 +124,9 @@ class DefaultStream(AbstractStream):
         if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
             return None
         stream_slicer = self._stream_partition_generator._stream_slicer
-        if not isinstance(stream_slicer, ConcurrentPerPartitionCursor):
-            return None
-        return stream_slicer._partition_router
+        if isinstance(stream_slicer, (SyncTokenCursor, ConcurrentPerPartitionCursor)):
+            return stream_slicer.partition_router
+        return None
 
     def check_availability(self) -> StreamAvailability:
         """

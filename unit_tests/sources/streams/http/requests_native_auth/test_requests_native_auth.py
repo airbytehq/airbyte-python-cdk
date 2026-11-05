@@ -4,6 +4,7 @@
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import timedelta
@@ -17,6 +18,7 @@ from requests import Response
 from requests.exceptions import RequestException
 
 from airbyte_cdk.models import FailureType, OrchestratorType, Type
+from airbyte_cdk.sources.message import InMemoryMessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     BasicHttpAuthenticator,
     MultipleTokenAuthenticator,
@@ -25,9 +27,12 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    _PROVIDER_ERROR_DETAIL_MAX_LENGTH,
+    AbstractOauth2Authenticator,
     ResponseKeysMaxRecurtionReached,
 )
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
@@ -83,6 +88,19 @@ def test_multiple_token_authenticator():
     assert {"Authorization": "Bearer token1"} == header1
     assert {"Authorization": "Bearer token2"} == header2
     assert {"Authorization": "Bearer token1"} == header3
+
+
+class _ComparableWithDatetime:
+    """Like `arrow.Arrow`: not a `datetime`, but comparable with one."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def __lt__(self, other):
+        return self.value < other
+
+    def __gt__(self, other):
+        return self.value > other
 
 
 @freezegun.freeze_time("2022-01-01")
@@ -551,6 +569,154 @@ class TestOauth2Authenticator:
         assert expires_datetime == expected_token_expiry_date
         assert token == "access_token"
 
+    @pytest.mark.parametrize(
+        "expires_in, token_expiry_date_format",
+        [
+            (3600, None),
+            ("3600", None),
+            (3600.0, None),
+            (1640998800, "%s"),
+            (AirbyteDateTime(year=2022, month=1, day=1, hour=1), None),
+        ],
+        ids=["seconds", "string_of_seconds", "float_seconds", "epoch", "already_parsed"],
+    )
+    def test_get_access_token_parses_raw_expires_in_from_overridden_refresh_access_token(
+        self, mocker, expires_in, token_expiry_date_format
+    ):
+        """Overrides written before 6.45.5 return the raw `expires_in` from `refresh_access_token`."""
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint=TestOauth2Authenticator.refresh_endpoint,
+            client_id=TestOauth2Authenticator.client_id,
+            client_secret=TestOauth2Authenticator.client_secret,
+            refresh_token=TestOauth2Authenticator.refresh_token,
+            token_expiry_date_format=token_expiry_date_format,
+            token_expiry_is_time_of_expiration=bool(token_expiry_date_format),
+        )
+        mocked_refresh = mocker.patch.object(
+            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", expires_in)
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        mocked_refresh.assert_called_once()
+        assert oauth.get_token_expiry_date() == AirbyteDateTime(year=2022, month=1, day=1, hour=1)
+
+    @pytest.mark.parametrize("override_refresh", [True, False], ids=["raw_override", "cdk_refresh"])
+    def test_set_token_expiry_date_override_that_parses_keeps_working(
+        self, mocker, requests_mock, override_refresh
+    ):
+        """Setters that parse, as `set_token_expiry_date` did before 6.45.5, get raw values from
+        older `refresh_access_token` overrides and datetimes from the CDK one."""
+
+        class ParsingSetterAuthenticator(Oauth2Authenticator):
+            def set_token_expiry_date(self, value):
+                self._token_expiry_date = self._parse_token_expiration_date(value)
+
+        oauth = ParsingSetterAuthenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            json={"access_token": "access_token", "expires_in": 3600},
+        )
+        if override_refresh:
+            mocker.patch.object(
+                ParsingSetterAuthenticator,
+                "refresh_access_token",
+                return_value=("access_token", 3600),
+            )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    def test_set_token_expiry_date_override_that_takes_raw_expires_in_keeps_working(self):
+        class RawSetterAuthenticator(Oauth2Authenticator):
+            def refresh_access_token(self):
+                return "access_token", 3600
+
+            def set_token_expiry_date(self, value):
+                self._token_expiry_date = ab_datetime_now() + timedelta(seconds=value)
+
+        oauth = RawSetterAuthenticator(
+            TestOauth2Authenticator.refresh_endpoint,
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    def test_get_access_token_override_passing_raw_expires_in_to_set_token_expiry_date(self):
+        class LegacyAuthenticator(Oauth2Authenticator):
+            def get_access_token(self):
+                if self.token_has_expired():
+                    token, expires_in = self.refresh_access_token()
+                    self.access_token = token
+                    self.set_token_expiry_date(expires_in)
+                return self.access_token
+
+            def refresh_access_token(self):
+                return "access_token", 3600
+
+        oauth = LegacyAuthenticator(
+            TestOauth2Authenticator.refresh_endpoint,
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    def test_parse_token_expiration_date_override_only_gets_raw_values(self, requests_mock):
+        parsed = []
+
+        class SecondsParserAuthenticator(Oauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return ab_datetime_now() + timedelta(seconds=int(value))
+
+        oauth = SecondsParserAuthenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            json={"access_token": "access_token", "expires_in": 3600},
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert parsed == [3600]
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    @pytest.mark.parametrize(
+        "expires_in",
+        [_ComparableWithDatetime(AirbyteDateTime(year=2022, month=1, day=2)), None, 1641081600000],
+        ids=["comparable_object", "none", "epoch_millis"],
+    )
+    def test_get_access_token_stores_an_unparseable_expiry_as_is(self, mocker, expires_in):
+        oauth = Oauth2Authenticator(
+            TestOauth2Authenticator.refresh_endpoint,
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        mocker.patch.object(
+            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", expires_in)
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() is expires_in
+
     @pytest.mark.usefixtures("mock_sleep")
     @pytest.mark.parametrize("error_code", (429, 500, 502, 504))
     def test_refresh_access_token_retry(self, error_code, requests_mock):
@@ -648,8 +814,571 @@ class TestOauth2Authenticator:
             )
             assert f"HTTP {response_code}" in exc_info.value.internal_message
             assert response_value in exc_info.value.internal_message
-            assert exc_info.value.message == error_message
+            assert exc_info.value.message.startswith(error_message)
             assert exc_info.value.failure_type == FailureType.config_error
+
+    def _entra_style_authenticator(self, refresh_token_error_messages=None):
+        return Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant", "invalid_client"),
+            refresh_token_error_messages=refresh_token_error_messages,
+        )
+
+    # Sits on a later line of each provider payload below, like the trace ids and timestamps
+    # Microsoft Entra appends, so it must reach the internal message and never the user-facing one.
+    trailing_marker = "Correlation ID: 11111111-2222-3333-4444-555555555555"
+
+    @pytest.mark.parametrize(
+        "error, error_description, expected_code, expected_guidance",
+        (
+            (
+                # Grant revoked, e.g. the user changed their password: re-authentication is the fix.
+                "invalid_grant",
+                "AADSTS50173: The provided grant has expired due to it being revoked, a fresh auth "
+                "token is needed. The user might have changed or reset their password.\r\n"
+                "Trace ID: 00000000-0000-0000-0000-000000000000\r\n" + trailing_marker,
+                "AADSTS50173",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
+            ),
+            (
+                # Client type / credential misconfiguration: re-authentication will not help.
+                "invalid_client",
+                "AADSTS7000218: The request body must contain the following parameter: "
+                "'client_assertion' or 'client_secret'.\r\n" + trailing_marker,
+                "AADSTS7000218",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
+            ),
+            (
+                # Conditional Access requires an interactive sign-in.
+                "invalid_grant",
+                "AADSTS50076: Due to a configuration change made by your administrator, or because "
+                "you moved to a new location, you must use multi-factor authentication to access "
+                "the resource.\r\n" + trailing_marker,
+                "AADSTS50076",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
+            ),
+        ),
+    )
+    def test_refresh_access_token_surfaces_provider_error_code(
+        self, requests_mock, error, error_description, expected_code, expected_guidance
+    ):
+        """The provider's own diagnostic must reach the logs and the user-facing message."""
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": error, "error_description": error_description},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        # The full provider response reaches the internal message, which is logged.
+        assert expected_code in exc_info.value.internal_message
+        assert TestOauth2Authenticator.trailing_marker in exc_info.value.internal_message
+        # The actionable guidance still leads the user-facing message ...
+        assert exc_info.value.message.startswith(expected_guidance)
+        # ... followed by a short, single-line provider detail carrying the error code.
+        assert f"Provider error: {error}: {expected_code}" in exc_info.value.message
+        assert "\n" not in exc_info.value.message and "\r" not in exc_info.value.message
+        # Later lines of the description (trace ids, timestamps) stay out of the user-facing message,
+        # so the same failure produces the same message on every attempt.
+        assert TestOauth2Authenticator.trailing_marker not in exc_info.value.message
+        assert exc_info.value.failure_type == FailureType.config_error
+
+    def test_refresh_access_token_omits_description_prose(self, requests_mock):
+        """Only the provider code is surfaced; the surrounding prose never reaches the user."""
+        oauth = self._entra_style_authenticator()
+        error_description = "AADSTS50173: " + ("x" * 5000)
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": error_description},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
+        assert "xxx" not in exc_info.value.message
+        assert len(exc_info.value.internal_message) < 1200
+
+    def test_provider_error_detail_is_capped(self, requests_mock):
+        """The `error` field is not always the gated one, so it stays provider-controlled.
+
+        `_wrap_refresh_token_exception` gates on `refresh_token_error_key`, but the user-facing
+        detail always reads the RFC 6749 `error` field. A connector configured against a different
+        key (Okta's `errorCode`, here) therefore admits an arbitrary `error` value, which is what
+        the cap bounds.
+
+        The expected length is written as a literal rather than derived from the imported
+        constant, so raising the cap fails this test instead of silently redefining it.
+        """
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="errorCode",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "errorCode": "invalid_grant",
+                "error": "e" * 500,
+                "error_description": "AADSTS50173: y",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        provider_detail = exc_info.value.message.split("Provider error: ", 1)[1]
+        assert provider_detail.endswith("...")
+        assert len(provider_detail) == 67  # 64-char cap + the "..." marker
+        assert len(provider_detail) == _PROVIDER_ERROR_DETAIL_MAX_LENGTH + len("...")
+
+    def test_refresh_access_token_redacts_credentials_from_provider_error(self, requests_mock):
+        """A provider that echoes the submitted credentials must not leak them into the error."""
+        # Start from no config-level secrets: earlier tests register values such as "token" through
+        # add_to_secrets, which would otherwise mask the credentials on their own.
+        update_secrets([])
+        refresh_token = "0.AXoA-rt-9f3ZqW7kP2"
+        client_secret = "s3cr3t~Xyz-1Qp"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "error": "invalid_grant",
+                "error_description": f"AADSTS50173: rejected rt={refresh_token} cs={client_secret}",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        for message in (exc_info.value.message, exc_info.value.internal_message):
+            assert refresh_token not in message
+            assert client_secret not in message
+        # The internal message keeps the echoed body, with both credentials redacted.
+        assert exc_info.value.internal_message.count("****") == 2
+        # The user-facing message never carries description prose, so there is nothing to redact:
+        # credential echo-back is structurally impossible there, not merely masked.
+        assert "****" not in exc_info.value.message
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
+
+    @pytest.mark.parametrize(
+        "response_kwargs",
+        (
+            {"text": ""},
+            {"text": "<html><body>Bad Request</body></html>"},
+            {"json": ["invalid_grant"]},
+        ),
+        ids=["empty_body", "html_body", "json_array_body"],
+    )
+    def test_refresh_access_token_non_json_body_does_not_raise_new_exception(
+        self, requests_mock, response_kwargs
+    ):
+        """A body we cannot read as a JSON object falls back to the raw RequestException."""
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            **response_kwargs,
+        )
+
+        with pytest.raises(RequestException):
+            oauth.refresh_access_token()
+
+    def _message_for_description(
+        self, requests_mock, error_description, refresh_token_error_messages=None
+    ):
+        oauth = self._entra_style_authenticator(refresh_token_error_messages)
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": error_description},
+        )
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+        return exc_info.value.message
+
+    @pytest.mark.parametrize(
+        "error_content, expected_detail",
+        (
+            (
+                {
+                    "error": "invalid_grant",
+                    "error_description": (
+                        "AADSTS50076: Due to a configuration change, MFA is required.\r\n"
+                        "Trace ID: 56789abc-def0-1234-5678-9abcdef01234"
+                    ),
+                },
+                "invalid_grant: AADSTS50076",
+            ),
+            (
+                {
+                    "error": "invalid_grant",
+                    "error_description": "Token has been expired or revoked.",
+                },
+                "invalid_grant",
+            ),
+            ({"error": "invalid_grant"}, "invalid_grant"),
+        ),
+        ids=["unknown_entra_code", "non_entra_provider", "no_description"],
+    )
+    @pytest.mark.parametrize(
+        "refresh_token_error_messages",
+        [None, {}, {"AADSTS50078": "Mapped."}],
+        ids=["no_map", "empty_map", "non_matching_map"],
+    )
+    def test_refresh_error_message_unchanged_without_mapped_code(
+        self, requests_mock, error_content, expected_detail, refresh_token_error_messages
+    ):
+        oauth = self._entra_style_authenticator(refresh_token_error_messages)
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json=error_content,
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert exc_info.value.message == f"{generic} Provider error: {expected_detail}"
+
+    @pytest.mark.parametrize(
+        "code, first_description, second_description, expected_message",
+        (
+            (
+                "AADSTS50078",
+                "AADSTS50078: MFA session expired.\r\n"
+                "Trace ID: 6789abcd-ef01-2345-6789-abcdef012345\r\n"
+                "Correlation ID: 55555555-6666-7777-8888-999999999999\r\n"
+                "Timestamp: 2026-03-14T09:26:53Z",
+                "AADSTS50078: MFA session expired.\r\n"
+                "Trace ID: 789abcde-f012-3456-789a-bcdef0123456\r\n"
+                "Correlation ID: 66666666-7777-8888-9999-aaaaaaaaaaaa\r\n"
+                "Timestamp: 2026-08-15T10:27:54Z",
+                "Configured guidance for 50078. Provider error: invalid_grant: AADSTS50078",
+            ),
+            (
+                "AADSTS700082",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-06-11T03:14:07.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 89abcdef-0123-4567-89ab-cdef01234567\r\n"
+                "Correlation ID: 77777777-8888-9999-aaaa-bbbbbbbbbbbb\r\n"
+                "Timestamp: 2026-06-12T11:28:55Z",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-07-29T22:01:52.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 9abcdef0-1234-5678-9abc-def012345678\r\n"
+                "Correlation ID: 88888888-9999-aaaa-bbbb-cccccccccccc\r\n"
+                "Timestamp: 2026-07-30T12:29:56Z",
+                "Configured guidance for 700082. Provider error: invalid_grant: AADSTS700082",
+            ),
+        ),
+        ids=["AADSTS50078", "AADSTS700082"],
+    )
+    def test_mapped_message_is_deterministic(
+        self, requests_mock, code, first_description, second_description, expected_message
+    ):
+        messages = {
+            "AADSTS50078": "Configured guidance for 50078.",
+            "AADSTS700082": "Configured guidance for 700082.",
+        }
+        first = self._message_for_description(requests_mock, first_description, messages)
+        second = self._message_for_description(requests_mock, second_description, messages)
+
+        assert first == second
+        assert first == expected_message
+
+    @pytest.mark.parametrize(
+        "messages, expected",
+        [
+            (
+                {
+                    "AADSTS50078": "Code guidance.",
+                    "AADSTS50078: MFA required. Trace ID: x": "Description guidance.",
+                    "invalid_grant": "Error guidance.",
+                },
+                "Code guidance. Provider error: invalid_grant: AADSTS50078",
+            ),
+            (
+                {
+                    "AADSTS50078: MFA required. Trace ID: x": "Description guidance.",
+                    "invalid_grant": "Error guidance.",
+                },
+                "Description guidance. Provider error: invalid_grant: AADSTS50078",
+            ),
+            (
+                {"invalid_grant": "Error guidance."},
+                "Error guidance. Provider error: invalid_grant: AADSTS50078",
+            ),
+        ],
+        ids=["provider_code_first", "normalized_description_second", "oauth_error_last"],
+    )
+    def test_refresh_error_message_lookup_order(self, requests_mock, messages, expected):
+        message = self._message_for_description(
+            requests_mock,
+            "AADSTS50078: MFA required.\r\nTrace ID: x",
+            messages,
+        )
+
+        assert message == expected
+
+    def test_refresh_error_message_matches_whitespace_normalized_description(self, requests_mock):
+        message = self._message_for_description(
+            requests_mock,
+            "Token has been\r\n expired  or revoked.\t",
+            {"Token has been expired or revoked.": "Configured guidance."},
+        )
+
+        assert message == "Configured guidance. Provider error: invalid_grant"
+
+    def test_refresh_error_message_matches_error_value(self, requests_mock):
+        message = self._message_for_description(
+            requests_mock, "No provider code.", {"invalid_grant": "Configured guidance."}
+        )
+
+        assert message == "Configured guidance. Provider error: invalid_grant"
+
+    @pytest.mark.parametrize("status_code", [400, 401])
+    def test_refresh_error_message_not_applied_outside_gate(self, requests_mock, status_code):
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_messages={"invalid_client": "Configured guidance."},
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=status_code,
+            json={"error": "invalid_client"},
+        )
+
+        with pytest.raises(requests.HTTPError):
+            oauth.refresh_access_token()
+
+    def test_refresh_error_message_ignores_non_string_error_fields(self, requests_mock):
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error_code",
+            refresh_token_error_values=("invalid_grant",),
+            refresh_token_error_messages={"invalid_grant": "Configured guidance."},
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "error_code": "invalid_grant",
+                "error": 123,
+                "error_description": {"detail": "not a string"},
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert exc_info.value.message == generic
+        assert exc_info.value.failure_type == FailureType.config_error
+
+    def test_refresh_error_message_empty_key_or_value_falls_back(self, requests_mock):
+        message = self._message_for_description(
+            requests_mock, "", {"": "Ignored.", "invalid_grant": ""}
+        )
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert message == f"{generic} Provider error: invalid_grant"
+
+    def test_abstract_authenticator_positional_init_still_supported(self):
+        class PositionalInitAuthenticator(Oauth2Authenticator):
+            def __init__(self):
+                AbstractOauth2Authenticator.__init__(self, (400,), "error", ("invalid_grant",))
+
+        authenticator = PositionalInitAuthenticator()
+        assert authenticator._refresh_token_error_status_codes == (400,)
+        assert authenticator._refresh_token_error_key == "error"
+        assert authenticator._refresh_token_error_values == ("invalid_grant",)
+        assert authenticator._refresh_token_error_messages == {}
+
+    # AADSTS700082 embeds the token issue timestamp in the *first sentence* of the description,
+    # so no first-line rule and no character cap can separate it from the stable text.
+    _AADSTS700082 = (
+        "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+        "on {issued} and was inactive for 90.00:00:00."
+    )
+
+    def test_same_failure_produces_identical_message_across_attempts(self, requests_mock):
+        """The grouping property: per-request values must not vary the user-facing message."""
+        first = self._message_for_description(
+            requests_mock, self._AADSTS700082.format(issued="2026-06-11T03:14:07.000Z")
+        )
+        second = self._message_for_description(
+            requests_mock, self._AADSTS700082.format(issued="2026-07-29T22:01:52.000Z")
+        )
+        assert first == second
+        assert "AADSTS700082" in first
+
+    def test_timestamp_in_first_sentence_never_reaches_message(self, requests_mock):
+        """A per-request value inside the first sentence, with no later lines to fall back on."""
+        message = self._message_for_description(
+            requests_mock, self._AADSTS700082.format(issued="2026-06-11T03:14:07.000Z")
+        )
+        assert "AADSTS700082" in message
+        assert re.search(r"\d{4}-\d{2}-\d{2}T", message) is None
+
+    def test_trace_id_under_the_cap_never_reaches_message(self, requests_mock):
+        """A short payload whose trace id sits below the cap, so the cap alone cannot remove it."""
+        message = self._message_for_description(
+            requests_mock,
+            "AADSTS50173: grant revoked.\r\nTrace ID: 00000000-0000-0000-0000-000000000000",
+        )
+        assert "AADSTS50173" in message
+        assert "Trace ID" not in message
+
+    def test_provider_code_is_only_read_from_the_start_of_the_description(self, requests_mock):
+        """The code pattern is anchored: a code mentioned mid-prose is not the failure's own code.
+
+        Kills the `match` -> `search` mutant. Matching anywhere would let a code named inside a
+        sentence (a doc reference, a nested provider error) become the grouping key.
+        """
+        message = self._message_for_description(
+            requests_mock, "Something went wrong; see AADSTS50173 in the documentation."
+        )
+        assert message.endswith("Provider error: invalid_grant")
+        assert "AADSTS50173" not in message
+
+    def test_credential_extracted_as_a_provider_code_is_redacted(self, requests_mock):
+        """A code-shaped refresh token leading the description is extracted, so it must be masked."""
+        update_secrets([])
+        refresh_token = "RTOKEN1234567890"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": f"{refresh_token} was rejected."},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert refresh_token not in exc_info.value.message
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: ****")
+
+    def test_provider_code_requires_a_word_boundary(self, requests_mock):
+        """`AADSTS50173abc` is a longer identifier, not the code `AADSTS50173`."""
+        message = self._message_for_description(requests_mock, "AADSTS50173abc: not a code.")
+        assert message.endswith("Provider error: invalid_grant")
+        assert "AADSTS50173" not in message
+
+    def test_credentials_echoed_in_the_error_field_are_redacted(self, requests_mock):
+        """The `error` field is ungated when the connector keys off a different field.
+
+        Kills the mutant that drops `_redact_credentials` from the user-facing detail: the code and
+        the gated error token are safe by construction, but this field is not.
+        """
+        update_secrets([])
+        refresh_token = "0.AXoA-rt-9f3ZqW7kP2"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="errorCode",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "errorCode": "invalid_grant",
+                "error": f"rejected {refresh_token}",
+                "error_description": "AADSTS50173: revoked.",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert refresh_token not in exc_info.value.message
+        assert "****" in exc_info.value.message
+
+    def test_description_without_provider_code_falls_back_to_error_token(self, requests_mock):
+        """Providers that return prose with no code still get the RFC 6749 error token."""
+        message = self._message_for_description(requests_mock, "Token has been expired or revoked.")
+        assert message.endswith("Provider error: invalid_grant")
+        assert "revoked." not in message
+
+    def test_refresh_access_token_without_error_fields_keeps_bare_guidance(self, requests_mock):
+        """No usable provider detail means the user-facing message is left exactly as before."""
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="errorCode",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"errorCode": "invalid_grant", "errorSummary": "the grant was revoked"},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.message == (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert "the grant was revoked" in exc_info.value.internal_message
 
 
 @freezegun.freeze_time("2022-12-31")
@@ -683,12 +1412,41 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             connector_config["credentials"]["token_expiry_date"]
         )
 
+    def test_refresh_error_messages_applied_on_single_use(self, connector_config, requests_mock):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+            refresh_token_error_messages={"AADSTS50078": "Configured single-use guidance."},
+        )
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            status_code=400,
+            json={
+                "error": "invalid_grant",
+                "error_description": "AADSTS50078: MFA required.\r\nTrace ID: x",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            authenticator.refresh_access_token()
+
+        assert exc_info.value.message == (
+            "Configured single-use guidance. Provider error: invalid_grant: AADSTS50078"
+        )
+        assert exc_info.value.failure_type == FailureType.config_error
+
     @pytest.mark.parametrize(
         "test_name, expires_in_value, expiry_date_format, expected_expiry_date",
         [
             ("number_of_seconds", 42, None, "2022-12-31T00:00:42+00:00"),
             ("string_of_seconds", "42", None, "2022-12-31T00:00:42+00:00"),
             ("date_format", "2023-04-04", "YYYY-MM-DD", "2023-04-04T00:00:00+00:00"),
+            ("epoch_format", 1672531200, "%s", "2023-01-01T00:00:00+00:00"),
         ],
     )
     def test_given_no_message_repository_get_access_token(
@@ -707,7 +1465,6 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
             token_expiry_date_format=expiry_date_format,
-            token_expiry_is_time_of_expiration=bool(expiry_date_format),
         )
 
         # Mock the response from the refresh token endpoint
@@ -726,7 +1483,9 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         authenticator.token_has_expired = mocker.Mock(return_value=True)
         access_token = authenticator.get_access_token()
         captured = capsys.readouterr()
-        airbyte_message = json.loads(captured.out)
+        messages = [json.loads(line) for line in captured.out.splitlines() if line.strip()]
+        assert len(messages) == 1
+        airbyte_message = messages[0]
         expected_new_config = connector_config.copy()
         expected_new_config["credentials"]["access_token"] = "new_access_token"
         expected_new_config["credentials"]["refresh_token"] = "new_refresh_token"
@@ -741,10 +1500,10 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         assert not captured.out
         assert authenticator.access_token == access_token == "new_access_token"
 
-    def test_given_message_repository_when_get_access_token_then_emit_message(
-        self, mocker, connector_config
+    def test_given_message_repository_when_get_access_token_then_emit_exactly_one_control_message_to_stdout(
+        self, mocker, connector_config, capsys
     ):
-        message_repository = Mock()
+        message_repository = InMemoryMessageRepository()
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
             token_refresh_endpoint="https://refresh_endpoint.com",
@@ -771,8 +1530,66 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
 
         authenticator.get_access_token()
 
-        emitted_message = message_repository.emit_message.call_args_list[0].args[0]
-        assert emitted_message.type == Type.CONTROL
+        messages = [
+            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
+        ]
+        assert len(messages) == 1
+        emitted_message = messages[0]
+        assert emitted_message["type"] == "CONTROL"
+        assert emitted_message["control"]["type"] == "CONNECTOR_CONFIG"
+        assert (
+            emitted_message["control"]["connectorConfig"]["config"]["credentials"]["access_token"]
+            == "new_access_token"
+        )
+        assert (
+            emitted_message["control"]["connectorConfig"]["config"]["credentials"]["refresh_token"]
+            == "new_refresh_token"
+        )
+        assert [m for m in message_repository.consume_queue() if m.type == Type.CONTROL] == []
+
+    def test_given_emit_control_message_to_message_repository_when_get_access_token_then_emit_to_stdout_and_repository(
+        self, mocker, connector_config, capsys
+    ):
+        message_repository = InMemoryMessageRepository()
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            token_expiry_is_time_of_expiration=True,
+            token_expiry_date_format="YYYY-MM-DD",
+            message_repository=message_repository,
+            emit_control_message_to_message_repository=True,
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): "2023-04-04",
+                authenticator.get_refresh_token_name(): "new_refresh_token",
+            },
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        authenticator.token_has_expired = mocker.Mock(return_value=True)
+
+        authenticator.get_access_token()
+
+        messages = [
+            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
+        ]
+        assert len(messages) == 1
+        assert messages[0]["type"] == "CONTROL"
+        assert messages[0]["control"]["type"] == "CONNECTOR_CONFIG"
+        emitted_messages = [
+            message
+            for message in message_repository.consume_queue()
+            if message.type == Type.CONTROL
+        ]
+        assert len(emitted_messages) == 1
+        emitted_message = emitted_messages[0]
         assert emitted_message.control.type == OrchestratorType.CONNECTOR_CONFIG
         assert (
             emitted_message.control.connectorConfig.config["credentials"]["access_token"]
@@ -794,6 +1611,40 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             emitted_message.control.connectorConfig.config["credentials"]["client_secret"]
             == "my_client_secret"
         )
+
+    def test_given_noop_message_repository_and_emit_flag_when_get_access_token_then_only_stdout(
+        self, mocker, connector_config, capsys
+    ):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            message_repository=NoopMessageRepository(),
+            emit_control_message_to_message_repository=True,
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                authenticator.get_refresh_token_name(): "new_refresh_token",
+            },
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        authenticator.token_has_expired = mocker.Mock(return_value=True)
+
+        authenticator.get_access_token()
+
+        messages = [
+            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
+        ]
+        assert len(messages) == 1
+        assert messages[0]["type"] == "CONTROL"
+        assert messages[0]["control"]["type"] == "CONNECTOR_CONFIG"
 
     def test_given_message_repository_when_get_access_token_then_log_request(
         self, mocker, connector_config
@@ -850,6 +1701,142 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             ab_datetime_now().add(timedelta(seconds=42)),
             "new_refresh_token",
         )
+
+    def test_get_access_token_parses_raw_expires_in_from_overridden_refresh_access_token(
+        self, mocker, connector_config
+    ):
+        """A raw `expires_in` must not be stored as-is, where it reads back as an epoch in 1970."""
+        connector_config["credentials"]["token_expiry_date"] = ""
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+        mocked_refresh = mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator,
+            "refresh_access_token",
+            return_value=("new_access_token", 3600, "new_refresh_token"),
+        )
+        mocker.patch.object(SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message")
+
+        for _ in range(3):
+            assert authenticator.get_access_token() == "new_access_token"
+
+        mocked_refresh.assert_called_once()
+        assert connector_config["credentials"]["token_expiry_date"] == "2022-12-31T01:00:00+00:00"
+
+    @pytest.mark.parametrize(
+        "expires_in, token_expiry_date_format",
+        [
+            (1672531200, "%s"),
+            ("2023-01-01T00:00:00Z", None),
+            (None, None),
+            (1672531200000, None),
+        ],
+        ids=["epoch_with_format", "date", "none", "epoch_millis"],
+    )
+    def test_refresh_and_set_access_token_stores_other_overridden_expires_in_as_is(
+        self, capsys, mocker, connector_config, expires_in, token_expiry_date_format
+    ):
+        """Values other than a raw `expires_in` in seconds are stored and emitted as they were before."""
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            token_expiry_date_format=token_expiry_date_format,
+        )
+        mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator,
+            "refresh_access_token",
+            return_value=("new_access_token", expires_in, "new_refresh_token"),
+        )
+
+        authenticator.refresh_and_set_access_token()
+
+        airbyte_message = json.loads(capsys.readouterr().out)
+        emitted_credentials = airbyte_message["control"]["connectorConfig"]["config"]["credentials"]
+        assert emitted_credentials["refresh_token"] == "new_refresh_token"
+        assert emitted_credentials["token_expiry_date"] == str(expires_in)
+
+    def test_parse_token_expiration_date_override_only_gets_raw_values(
+        self, mocker, connector_config
+    ):
+        parsed = []
+
+        class SecondsParserAuthenticator(SingleUseRefreshTokenOauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return ab_datetime_now() + timedelta(seconds=int(value))
+
+        authenticator = SecondsParserAuthenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"access_token": "new_access_token", "expires_in": 3600},
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+        mocker.patch.object(SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message")
+
+        authenticator.refresh_and_set_access_token()
+
+        assert parsed == [3600]
+        assert connector_config["credentials"]["token_expiry_date"] == "2022-12-31T01:00:00+00:00"
+
+    def test_set_token_expiry_date_override_that_takes_raw_expires_in_keeps_working(
+        self, capsys, connector_config
+    ):
+        class RawSetterAuthenticator(SingleUseRefreshTokenOauth2Authenticator):
+            refresh_count = 0
+
+            def refresh_access_token(self):
+                RawSetterAuthenticator.refresh_count += 1
+                return "new_access_token", 3600, "new_refresh_token"
+
+            def set_token_expiry_date(self, value):
+                super().set_token_expiry_date(ab_datetime_now() + timedelta(seconds=value))
+
+        connector_config["credentials"]["token_expiry_date"] = ""
+        authenticator = RawSetterAuthenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+
+        for _ in range(3):
+            assert authenticator.get_access_token() == "new_access_token"
+
+        assert RawSetterAuthenticator.refresh_count == 1
+        airbyte_message = json.loads(capsys.readouterr().out)
+        emitted_credentials = airbyte_message["control"]["connectorConfig"]["config"]["credentials"]
+        assert emitted_credentials["refresh_token"] == "new_refresh_token"
+        assert emitted_credentials["token_expiry_date"] == "2022-12-31T01:00:00+00:00"
+
+    def test_set_token_expiry_date_does_not_parse_a_time_of_expiration(self, connector_config):
+        parsed = []
+
+        class RecordingParserAuthenticator(SingleUseRefreshTokenOauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return super()._parse_token_expiration_date(value)
+
+        authenticator = RecordingParserAuthenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            token_expiry_is_time_of_expiration=True,
+        )
+
+        authenticator.set_token_expiry_date(1672531200)
+
+        assert parsed == []
+        assert connector_config["credentials"]["token_expiry_date"] == "1672531200"
+
+    def test_set_token_expiry_date_stores_a_date_string_as_is(self, connector_config):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+
+        authenticator.set_token_expiry_date("2023-01-01T00:00:00Z")
+
+        assert connector_config["credentials"]["token_expiry_date"] == "2023-01-01T00:00:00Z"
+        assert authenticator.get_token_expiry_date() == AirbyteDateTime(year=2023, month=1, day=1)
 
     def test_send_refresh_request_as_query_params_picks_up_rotated_refresh_token(
         self, mocker, connector_config
@@ -1067,3 +2054,197 @@ class TestConcurrentTokenRefresh:
         assert len(results) == 5
         assert all(token == "new_access_token" for token in results)
         assert refresh_call_count == 1, f"Expected 1 refresh call, got {refresh_call_count}"
+
+    def test_refresh_and_set_access_token_skips_refresh_when_another_thread_already_refreshed(
+        self, mocker
+    ):
+        """
+        A forced refresh that was queued behind the class-level lock must not refresh
+        again when the access token changed while it waited: the request is retried
+        with the token the other thread already obtained.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        mocked_refresh = mocker.patch.object(oauth, "refresh_access_token")
+
+        snapshot_taken = threading.Event()
+        real_snapshot = oauth._current_access_token_or_none
+
+        def record_snapshot():
+            value = real_snapshot()
+            snapshot_taken.set()
+            return value
+
+        mocker.patch.object(oauth, "_current_access_token_or_none", side_effect=record_snapshot)
+
+        with Oauth2Authenticator._token_refresh_lock:
+            thread = threading.Thread(target=oauth.refresh_and_set_access_token)
+            thread.start()
+            # The worker took its pre-lock token snapshot and is now blocked on the lock.
+            assert snapshot_taken.wait(5)
+            oauth.access_token = "winner"
+        thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        mocked_refresh.assert_not_called()
+        assert oauth.access_token == "winner"
+
+    def test_refresh_and_set_access_token_refreshes_when_token_unchanged(self, mocker):
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        mocked_refresh = mocker.patch.object(
+            oauth,
+            "refresh_access_token",
+            return_value=("new", ab_datetime_now() + timedelta(hours=1)),
+        )
+
+        oauth.refresh_and_set_access_token()
+
+        mocked_refresh.assert_called_once()
+        assert oauth.access_token == "new"
+
+    def test_get_access_token_refresh_lock_is_reentrant(self, requests_mock):
+        """
+        get_access_token() holds the class-level refresh lock while calling
+        refresh_and_set_access_token, which re-acquires it; a non-reentrant lock
+        would deadlock. The worker thread must finish and report the new token.
+        """
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            json={"access_token": "new_access_token", "expires_in": 3600},
+        )
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() - timedelta(hours=1),
+        )
+
+        results, errors = [], []
+
+        def get_token():
+            try:
+                results.append(oauth.get_access_token())
+            except Exception as e:
+                errors.append(e)
+
+        thread = threading.Thread(target=get_token)
+        thread.start()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive(), "get_access_token deadlocked on a non-reentrant lock"
+        assert errors == []
+        assert results == ["new_access_token"]
+
+    def test_refresh_and_set_access_token_holds_lock_during_refresh(self, mocker):
+        """
+        The class-level lock must be held for the whole refresh: a probe from another
+        thread cannot acquire it while refresh_access_token is in flight.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        probe_results = []
+
+        def spy_refresh_access_token(self):
+            def probe():
+                acquired = Oauth2Authenticator._token_refresh_lock.acquire(blocking=False)
+                if acquired:
+                    Oauth2Authenticator._token_refresh_lock.release()
+                probe_results.append(acquired)
+
+            probe_thread = threading.Thread(target=probe)
+            probe_thread.start()
+            probe_thread.join()
+            return ("new", ab_datetime_now() + timedelta(hours=1))
+
+        mocker.patch.object(Oauth2Authenticator, "refresh_access_token", spy_refresh_access_token)
+
+        oauth.refresh_and_set_access_token()
+
+        assert probe_results == [False]
+        assert oauth.access_token == "new"
+
+
+class TestSingleUseRefreshTokenInstanceSkip:
+    """
+    Two SingleUseRefreshTokenOauth2Authenticator instances over one shared connector
+    config: a forced refresh queued behind the lock sees the token the first instance
+    already wrote back into the shared config and skips its own refresh.
+    """
+
+    def test_second_instance_skips_refresh_after_first_refreshes(self, requests_mock, mocker):
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            json={
+                "access_token": "new_access_token",
+                "refresh_token": "new_refresh_token",
+                "expires_in": 3600,
+            },
+        )
+        connector_config = {
+            "credentials": {
+                "client_id": "client_id",
+                "client_secret": "client_secret",
+                "refresh_token": "refresh_token",
+                "access_token": "old_access_token",
+                "token_expiry_date": str(ab_datetime_now() + timedelta(hours=1)),
+            }
+        }
+        auth1 = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+        auth2 = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+
+        mocked_emit = mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message"
+        )
+
+        snapshot_taken = threading.Event()
+        real_snapshot = auth2._current_access_token_or_none
+
+        def record_snapshot():
+            value = real_snapshot()
+            snapshot_taken.set()
+            return value
+
+        mocker.patch.object(auth2, "_current_access_token_or_none", side_effect=record_snapshot)
+
+        with SingleUseRefreshTokenOauth2Authenticator._token_refresh_lock:
+            thread = threading.Thread(target=auth2.refresh_and_set_access_token)
+            thread.start()
+            # auth2 took its pre-lock snapshot ("old_access_token") and now waits on the lock.
+            assert snapshot_taken.wait(5)
+            auth1.refresh_and_set_access_token()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        assert len(requests_mock.request_history) == 1
+        assert mocked_emit.call_count == 1
+        assert auth2.access_token == "new_access_token"
+        assert connector_config["credentials"]["refresh_token"] == "new_refresh_token"

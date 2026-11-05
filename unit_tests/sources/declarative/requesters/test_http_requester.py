@@ -53,6 +53,8 @@ def http_requester_factory():
         disable_retries: bool = False,
         message_repository: Optional[MessageRepository] = None,
         use_cache: bool = False,
+        connect_timeout_in_seconds: Optional[float] = None,
+        read_timeout_in_seconds: Optional[float] = None,
     ) -> HttpRequester:
         return HttpRequester(
             name=name,
@@ -68,6 +70,8 @@ def http_requester_factory():
             disable_retries=disable_retries,
             message_repository=message_repository or MagicMock(),
             use_cache=use_cache,
+            connect_timeout_in_seconds=connect_timeout_in_seconds,
+            read_timeout_in_seconds=read_timeout_in_seconds,
         )
 
     return factory
@@ -960,3 +964,37 @@ def test_http_requester_with_mock_api_budget(http_requester_factory, monkeypatch
     assert response.status_code == 200
 
     assert mock_budget.acquire_call.call_count == 1
+
+
+def test_default_requester_sends_no_timeout_kwarg(http_requester_factory):
+    requester = http_requester_factory(url_base="https://example.com", path="test")
+
+    assert requester._http_client._request_timeout is None
+
+    dummy_response = requests.Response()
+    dummy_response.status_code = 200
+    send_mock = MagicMock(return_value=dummy_response)
+    requester._http_client._session.send = send_mock
+
+    requester.send_request()
+
+    assert send_mock.call_count == 1
+    assert "timeout" not in send_mock.call_args.kwargs
+
+
+def test_requester_with_timeouts_sends_timeout_tuple(http_requester_factory):
+    requester = http_requester_factory(
+        url_base="https://example.com",
+        path="test",
+        connect_timeout_in_seconds=30,
+        read_timeout_in_seconds=300,
+    )
+
+    dummy_response = requests.Response()
+    dummy_response.status_code = 200
+    send_mock = MagicMock(return_value=dummy_response)
+    requester._http_client._session.send = send_mock
+
+    requester.send_request()
+
+    assert send_mock.call_args.kwargs["timeout"] == (30, 300)

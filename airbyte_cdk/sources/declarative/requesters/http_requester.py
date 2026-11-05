@@ -66,6 +66,9 @@ class HttpRequester(Requester):
     disable_retries: bool = False
     message_repository: MessageRepository = NoopMessageRepository()
     use_cache: bool = False
+    connect_timeout_in_seconds: Optional[float] = None
+    read_timeout_in_seconds: Optional[float] = None
+    use_tcp_keepalive: bool = False
     _exit_on_rate_limit: bool = False
     stream_response: bool = False
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
@@ -114,6 +117,13 @@ class HttpRequester(Requester):
             backoff_strategy=backoff_strategies,
             disable_retries=self.disable_retries,
             message_repository=self.message_repository,
+            request_timeout=(
+                (self.connect_timeout_in_seconds, self.read_timeout_in_seconds)
+                if self.connect_timeout_in_seconds is not None
+                or self.read_timeout_in_seconds is not None
+                else None
+            ),
+            use_tcp_keepalive=self.use_tcp_keepalive,
         )
 
     @property

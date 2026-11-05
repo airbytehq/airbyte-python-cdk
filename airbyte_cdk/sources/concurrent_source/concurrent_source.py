@@ -35,7 +35,7 @@ class ConcurrentSource:
     The read is done when all partitions for all streams w ere generated and read.
     """
 
-    DEFAULT_TIMEOUT_SECONDS = 900
+    DEFAULT_TIMEOUT_SECONDS = 900  # Deprecated: default of the ignored `timeout_seconds`.
 
     @staticmethod
     def create(
@@ -90,14 +90,13 @@ class ConcurrentSource:
         :param slice_logger: The slice logger used to create messages on new slices
         :param message_repository: The repository to emit messages to
         :param initial_number_partitions_to_generate: The initial number of concurrent partition generation tasks. Limiting this number ensures will limit the latency of the first records emitted. While the latency is not critical, emitting the records early allows the platform and the destination to process them as early as possible.
-        :param timeout_seconds: The maximum number of seconds to wait for a record to be read from the queue. If no record is read within this time, the source will stop reading and return.
+        :param timeout_seconds: Deprecated and ignored. Kept so existing callers do not break.
         """
         self._threadpool = threadpool
         self._logger = logger
         self._slice_logger = slice_logger
         self._message_repository = message_repository
         self._initial_number_partitions_to_generate = initial_number_partitions_to_generate
-        self._timeout_seconds = timeout_seconds
 
         # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
         # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
