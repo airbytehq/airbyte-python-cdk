@@ -328,8 +328,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             }
             if advisory:
                 warnings.warn(
-                    "The read's cursor state has problems that will fail this test in a future "
-                    f"CDK release:\n{format_cursor_state_problems(advisory)}",
+                    "The read's cursor state has problems that do not fail this test:\n"
+                    f"{format_cursor_state_problems(advisory)}",
                     category=CursorStateWarning,
                     stacklevel=1,
                 )
