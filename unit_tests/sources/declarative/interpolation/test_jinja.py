@@ -69,6 +69,53 @@ def test_literals(s, value):
 
 
 @pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param('"nike shoes"', id="double-quoted-string"),
+        pytest.param("'abc'", id="single-quoted-string"),
+        pytest.param("plain", id="plain-string"),
+        pytest.param("123", id="integer-looking-string"),
+        pytest.param("1.5", id="float-looking-string"),
+        pytest.param("[1, 2]", id="list-looking-string"),
+        pytest.param("True", id="boolean-looking-string"),
+    ],
+)
+def test_eval_with_str_valid_type_returns_rendered_string_as_is(value):
+    result = JinjaInterpolation().eval(
+        "{{ record['k'] }}", config={}, valid_types=(str,), record={"k": value}
+    )
+
+    assert result == value
+    assert isinstance(result, str)
+
+
+def test_eval_with_str_valid_type_returns_default_as_is():
+    result = JinjaInterpolation().eval(
+        "{{ record['missing'] }}",
+        config={},
+        default='"quoted default"',
+        valid_types=(str,),
+        record={},
+    )
+
+    assert result == '"quoted default"'
+
+
+def test_eval_without_valid_types_still_literal_evaluates():
+    result = JinjaInterpolation().eval("{{ record['k'] }}", {}, record={"k": '"abc"'})
+
+    assert result == "abc"
+
+
+def test_eval_with_int_valid_type_still_literal_evaluates():
+    result = JinjaInterpolation().eval(
+        "{{ record['k'] }}", {}, valid_types=(int,), record={"k": "123"}
+    )
+
+    assert result == 123
+
+
+@pytest.mark.parametrize(
     "context, input_string, expected_value",
     [
         pytest.param(
