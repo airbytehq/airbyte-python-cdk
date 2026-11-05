@@ -402,6 +402,10 @@ _SPEC_FAILED_SKIP_REASON = (
     "`spec` failed, so the secret leak check cannot tell which config values are secret, and "
     "the check outcome is not asserted without it. The spec tests report the `spec` failure."
 )
+_SPEC_FAILED_FUTURE_STATE_SKIP_REASON = (
+    "`spec` failed, so the secret leak check cannot tell which config values are secret, and "
+    "the future-state read is not run without it. The spec tests report the `spec` failure."
+)
 
 _READ_CHECK_OPT_OUTS = (
     "validate_schema",
@@ -1209,7 +1213,9 @@ class DockerConnectorTestSuite:
         file must then cover only those. `--read-scenarios=none` skips it, and a config list
         picks configs by id; `default` and `all` read every entry, since each one is declared
         for this read. The streams, state file and checks are those of the in-process test,
-        except the cursor format check, which needs the declarative source's cursors.
+        except the cursor format check, which needs the declarative source's cursors. As there,
+        `discover` and `read` are checked for secrets from the config before their errors are
+        raised, since the raised errors print the connector's messages.
         """
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
@@ -1240,6 +1246,11 @@ class DockerConnectorTestSuite:
         connector_image = self._connector_image(
             connector_image_override, connector_base_image_override
         )
+        try:
+            spec = _run_docker_spec(connector_image, connector_name=connector_name)
+        except Exception:
+            pytest.skip(_SPEC_FAILED_FUTURE_STATE_SKIP_REASON)
+        config = scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True)
 
         container_config_path = "/secrets/config.json"
         container_catalog_path = "/secrets/catalog.json"
@@ -1264,8 +1275,16 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                raise_if_errors=False,
             )
+            assert_no_secrets_in_output(
+                discover_result,
+                spec=spec,
+                config=config,
+                verb="discover",
+                connector_name=connector_name,
+            )
+            discover_result.raise_if_errors()
             discovered_streams = get_discovered_streams(discover_result, connector_name)
             if isinstance(read_from_streams, list):
                 fail_on_undiscovered_read_streams(
@@ -1314,9 +1333,13 @@ class DockerConnectorTestSuite:
                     "--state",
                     container_state_path,
                 ],
-                raise_if_errors=True,
+                raise_if_errors=False,
             )
 
+        assert_no_secrets_in_output(
+            read_result, spec=spec, config=config, verb="read", connector_name=connector_name
+        )
+        read_result.raise_if_errors()
         assert_future_state_read(
             records=read_result.records_iterator,
             state_messages=read_result.state_messages,

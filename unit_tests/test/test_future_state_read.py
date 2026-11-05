@@ -47,7 +47,11 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 )
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
-from airbyte_cdk.test.standard_tests import DeclarativeSourceTestSuite, SourceTestSuiteBase
+from airbyte_cdk.test.standard_tests import (
+    DeclarativeSourceTestSuite,
+    SourceTestSuiteBase,
+    docker_base,
+)
 from airbyte_cdk.test.standard_tests._acceptance_test_config import (
     ScenarioBypass,
     collect_scenarios,
@@ -1091,20 +1095,54 @@ DOCKER_ARGS: dict[str, Any] = {
 }
 
 
+DOCKER_SECRET = "sk_live_51UWRAsFuIbeygfIY3"
+SECRET_SPEC_MESSAGE = json.dumps(
+    {
+        "type": "SPEC",
+        "spec": {
+            "connectionSpecification": {
+                "type": "object",
+                "properties": {"api_key": {"type": "string", "airbyte_secret": True}},
+            }
+        },
+    }
+)
+
+
+def _trace_error(stack_trace: str) -> str:
+    return json.dumps(
+        {
+            "type": "TRACE",
+            "trace": {
+                "type": "ERROR",
+                "emitted_at": 0,
+                "error": {"message": "boom", "stack_trace": stack_trace},
+            },
+        }
+    )
+
+
 def _stub_docker_read(
     monkeypatch: pytest.MonkeyPatch,
     read_output: list[str],
     *,
     with_events: bool = False,
+    discover_extra: list[str] | None = None,
+    spec_output: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Answer `discover` and `read`; record the command, catalog and state of each `read`.
+    """Answer `spec`, `discover` and `read`; record the command, catalog and state of each `read`.
 
-    `discover` reports `users` and `static`, and `events` too when `with_events` is set.
+    `spec` declares `api_key` secret, unless `spec_output` replaces its messages. `discover`
+    reports `users` and `static`, and `events` too when `with_events` is set, followed by
+    `discover_extra`.
     """
     reads: list[dict[str, Any]] = []
+    monkeypatch.setattr(docker_base, "_docker_spec_cache", {})
 
     def _fake(cmd: list[str], *, raise_if_errors: bool = False) -> EntrypointOutput:
-        if "discover" in cmd:
+        if "spec" in cmd:
+            messages = [SECRET_SPEC_MESSAGE] if spec_output is None else spec_output
+        elif "discover" in cmd:
             streams = [
                 stream_json("users", ["full_refresh", "incremental"], ["updated_at"]),
                 stream_json("static", ["full_refresh"]),
@@ -1113,7 +1151,7 @@ def _stub_docker_read(
                 streams.append(
                     stream_json("events", ["full_refresh", "incremental"], ["created_at"])
                 )
-            messages = [catalog_message(*streams)]
+            messages = [catalog_message(*streams), *(discover_extra or [])]
         else:
             mounts = {
                 part.rsplit(":", 1)[1]: Path(part.rsplit(":", 1)[0])
@@ -1349,4 +1387,87 @@ def test_docker_read_fails_on_a_stream_without_state(
         _docker_suite(
             tmp_path, [_stream_state("users")]
         ).test_docker_image_build_and_read_from_future_state(_future_scenario(), **DOCKER_ARGS)
+    assert reads == []
+
+
+def _secret_future_scenario() -> ConnectorTestScenario:
+    return _future_scenario().model_copy(update={"config_dict": {"api_key": DOCKER_SECRET}})
+
+
+@pytest.mark.parametrize(
+    "verb, discover_extra, read_output",
+    [
+        pytest.param("discover", [_trace_error(f"KeyError: {DOCKER_SECRET}")], [], id="discover"),
+        pytest.param(
+            "read",
+            [],
+            [
+                json.dumps({"type": "STATE", "state": _stream_state("users")}),
+                _trace_error(f"401 for token {DOCKER_SECRET}"),
+            ],
+            id="read",
+        ),
+    ],
+)
+def test_docker_read_fails_when_the_connector_prints_a_secret(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    verb: str,
+    discover_extra: list[str],
+    read_output: list[str],
+) -> None:
+    """The leak check runs before the errors are raised: a raised error prints the messages."""
+    _stub_docker_read(monkeypatch, read_output, discover_extra=discover_extra)
+
+    with pytest.raises(AssertionError, match=f"`{verb}` for connector .* printed secret") as error:
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state(
+            _secret_future_scenario(), **DOCKER_ARGS
+        )
+    assert DOCKER_SECRET not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "discover_extra, read_output",
+    [
+        pytest.param([_trace_error("401 Unauthorized")], [], id="discover"),
+        pytest.param(
+            [],
+            [
+                json.dumps({"type": "STATE", "state": _stream_state("users")}),
+                _trace_error("401 Unauthorized"),
+            ],
+            id="read",
+        ),
+    ],
+)
+def test_docker_read_still_raises_the_connector_error_without_a_leak(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    discover_extra: list[str],
+    read_output: list[str],
+) -> None:
+    _stub_docker_read(monkeypatch, read_output, discover_extra=discover_extra)
+
+    with pytest.raises(Exception, match="401 Unauthorized"):
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state(
+            _secret_future_scenario(), **DOCKER_ARGS
+        )
+
+
+def test_docker_read_is_skipped_when_spec_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without the spec, the leak check cannot tell which config values are secret."""
+    reads = _stub_docker_read(monkeypatch, [], spec_output=[])
+
+    with pytest.raises(pytest.skip.Exception, match="`spec` failed"):
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state(
+            _secret_future_scenario(), **DOCKER_ARGS
+        )
     assert reads == []
