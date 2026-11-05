@@ -1449,3 +1449,60 @@ def test_an_expression_that_cannot_be_evaluated_is_named_in_the_internal_message
     assert expression in error.value.internal_message
     assert "UndefinedError" not in error.value.message
     assert not requests_mock.called
+
+
+# --- static tokens run as credentials -------------------------------------------------------
+
+
+def _static_authenticator(**updates: Any) -> RateLimitedMultipleTokenAuthenticator:
+    return RateLimitedMultipleTokenAuthenticator(
+        **{
+            "tokens": ["token_1", "token_2"],
+            "quotas": _quotas(),
+            "quota_status_url": QUOTA_STATUS_URL,
+            **updates,
+        }
+    )
+
+
+def test_static_tokens_without_an_auth_method_sign_the_quota_status_request_with_the_bare_token(
+    requests_mock,
+):
+    status = requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _static_authenticator(auth_method="")
+
+    request = authenticator(_request())
+
+    assert request.headers["Authorization"] == "token_1"
+    assert {r.headers["Authorization"] for r in status.request_history} == {"token_1", "token_2"}
+
+
+def test_a_response_to_a_request_signed_elsewhere_with_a_static_token_is_attributed(
+    requests_mock,
+):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _static_authenticator(auth_method="token")
+    authenticator._ensure_initialized()
+    # Signed by another component with the same token, not by this authenticator.
+    request = _request()
+    request.headers["Authorization"] = "token token_2"
+    response = _response(headers={"X-RateLimit-Remaining": "17"})
+
+    authenticator.update_from_response(request, response)
+
+    assert authenticator._states["token_2"]["rest"].remaining == 17
+
+
+def test_static_tokens_stay_keyed_by_the_token_and_keep_their_order():
+    authenticator = _static_authenticator(tokens=["token_1", "token_2", "token_1"])
+
+    assert authenticator._tokens == ["token_1", "token_2", "token_1"]
+    assert set(authenticator._credentials) == {"token_1", "token_2"}
+    assert authenticator.auth_header == "Authorization"
+
+
+def test_a_static_token_is_never_named_by_a_header_lookup(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _static_authenticator(header="")
+
+    assert authenticator.token == "Bearer token_1"
