@@ -28,8 +28,9 @@ from airbyte_cdk.test.standard_tests.docker_base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
+    from airbyte_cdk.models import Type
     from airbyte_cdk.test import entrypoint_wrapper
 
 
@@ -116,6 +117,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         output: entrypoint_wrapper.EntrypointOutput,
         *,
         verb: str,
+        skip_message_types: Collection[Type] = (),
     ) -> None:
         """Assert that no `airbyte_secret` value from the scenario's config is in `output`.
 
@@ -142,6 +144,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             ),
             verb=verb,
             connector_name=self.connector_name,
+            skip_message_types=skip_message_types,
         )
 
     # Test Definitions
