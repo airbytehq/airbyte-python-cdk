@@ -724,6 +724,19 @@ class _LeakingSource(_StateSource):
                     stream="users", data={"key": config["api_key"]}, emitted_at=0
                 ),
             )
+        if self._leaking_command == "state":
+            yield AirbyteMessage(
+                type=Type.STATE,
+                state=AirbyteStateMessage(
+                    type=AirbyteStateType.STREAM,
+                    stream=AirbyteStreamState(
+                        stream_descriptor=StreamDescriptor(name="users"),
+                        stream_state=AirbyteStateBlob(
+                            updated_at=SECRET_VALUE, account=config["api_key"]
+                        ),
+                    ),
+                ),
+            )
         yield from super().read(logger, config, catalog, state)
 
 
@@ -736,6 +749,17 @@ def test_in_process_read_fails_on_a_secret_in_the_output(tmp_path: Path, command
     with pytest.raises(AssertionError, match=f"`{command}` .* printed secret values") as error:
         run_without_skip(suite.test_read_from_future_state, scenario)
     assert LEAKED_KEY not in str(error.value)
+
+
+def test_in_process_read_does_not_scan_state_messages_for_secrets(tmp_path: Path) -> None:
+    """A state message is stored, never logged: a partition may hold a secret-marked ID.
+
+    source-twilio partitions by its `account_sid`, which its spec marks `airbyte_secret`.
+    """
+    suite = _in_process_suite(tmp_path, _LeakingSource("state"), [_stream_state("users")])
+    scenario = _future_scenario().model_copy(update={"config_dict": {"api_key": LEAKED_KEY}})
+
+    run_without_skip(suite.test_read_from_future_state, scenario)
 
 
 # --- Declarative sources ------------------------------------------------------------------------
@@ -1671,6 +1695,22 @@ def test_docker_read_still_raises_the_connector_error_without_a_leak(
         ).test_docker_image_build_and_read_from_future_state(
             _secret_future_scenario(), **DOCKER_ARGS
         )
+
+
+def test_docker_read_does_not_scan_state_messages_for_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    leaking_state = _stream_state("users")
+    leaking_state["stream"]["stream_state"]["account"] = DOCKER_SECRET
+    _stub_docker_read(monkeypatch, [json.dumps({"type": "STATE", "state": leaking_state})])
+
+    run_without_skip(
+        _docker_suite(
+            tmp_path, [_stream_state("users")]
+        ).test_docker_image_build_and_read_from_future_state,
+        _secret_future_scenario(),
+        **DOCKER_ARGS,
+    )
 
 
 def test_docker_read_is_skipped_when_spec_fails(

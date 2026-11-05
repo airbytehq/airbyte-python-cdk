@@ -43,6 +43,7 @@ from airbyte_cdk.test.standard_tests._assertions import (
     assert_config_matches_spec,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
+    FUTURE_STATE_READ_UNSCANNED_MESSAGES,
     assert_future_state_covers_streams,
     assert_future_state_read,
     build_future_state_catalog,
@@ -1214,8 +1215,9 @@ class DockerConnectorTestSuite:
         picks configs by id; `default` and `all` read every entry, since each one is declared
         for this read. The streams, state file and checks are those of the in-process test,
         except the cursor format check, which needs the declarative source's cursors. As there,
-        `discover` and `read` are checked for secrets from the config before their errors are
-        raised, since the raised errors print the connector's messages.
+        `discover` and `read` are checked for secrets from the config, outside the read's state
+        messages, before their errors are raised, since the raised errors print the connector's
+        messages.
         """
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
@@ -1337,7 +1339,12 @@ class DockerConnectorTestSuite:
             )
 
         assert_no_secrets_in_output(
-            read_result, spec=spec, config=config, verb="read", connector_name=connector_name
+            read_result,
+            spec=spec,
+            config=config,
+            verb="read",
+            connector_name=connector_name,
+            skip_message_types=FUTURE_STATE_READ_UNSCANNED_MESSAGES,
         )
         read_result.raise_if_errors()
         assert_future_state_read(
