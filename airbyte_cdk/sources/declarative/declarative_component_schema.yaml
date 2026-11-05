@@ -453,7 +453,7 @@ definitions:
           - "{{ config['credential']['account_id'] }}"
       authenticator:
         title: Authenticator
-        description: The authenticator built for each credential, with the credential available as `config['credential']`. It must set `expiration_duration`, so each credential keeps its session token between requests, and must inject its token into a request header, the same one for every credential. Streams share one authenticator unless it interpolates `parameters` or contains a custom component, which receives each stream's parameters.
+        description: The authenticator built for each credential, with the credential available as `config['credential']`. It must set `expiration_duration`, so each credential keeps its session token between requests, and must inject its token into a request header, the same one for every credential. The streams' `$parameters` do not fill its fields, so it is the same for every stream, but it can read them as `parameters`. Streams share one authenticator unless it interpolates `parameters` or contains a custom component, which receives each stream's parameters.
         "$ref": "#/definitions/SessionTokenAuthenticator"
       $parameters:
         type: object

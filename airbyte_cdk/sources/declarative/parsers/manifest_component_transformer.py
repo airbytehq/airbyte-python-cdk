@@ -71,6 +71,13 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     "SchemaTypeIdentifier.types_map": "TypesMap",
 }
 
+# Fields whose subtree is shared by every stream, so the `$parameters` of the streams around it
+# must not fill its fields: each stream would otherwise see a different definition (a stream's
+# `url` filling the login's empty `url`), and the factory could no longer share one instance.
+# The outer parameters are still passed down as `$parameters`, so a component inside the subtree
+# can read them, and `$parameters` declared inside the subtree fill its fields as usual.
+STREAM_INDEPENDENT_FIELDS = frozenset({"CredentialSet.authenticator"})
+
 # We retain a separate registry for custom components to automatically insert the type if it is missing. This is intended to
 # be a short term fix because once we have migrated, then type and class_name should be requirements for all custom components.
 CUSTOM_COMPONENTS_MAPPING: Mapping[str, str] = {
@@ -93,6 +100,7 @@ class ManifestComponentTransformer:
         declarative_component: Mapping[str, Any],
         parent_parameters: Mapping[str, Any],
         use_parent_parameters: Optional[bool] = None,
+        parent_field_parameters: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Recursively transforms the specified declarative component and subcomponents to propagate parameters and insert the
@@ -103,6 +111,8 @@ class ManifestComponentTransformer:
         :param parent_field_identifier: The name of the field of the current component coming from the parent component
         :param parent_parameters: The parameters set on parent components defined before the current component
         :param use_parent_parameters: If set, parent parameters will be used as the source of truth when key names are the same
+        :param parent_field_parameters: The parent parameters that may fill the current component's fields, when only some of
+            `parent_parameters` may (see `STREAM_INDEPENDENT_FIELDS`). `None` means all of them.
         :return: A deep copy of the transformed component with types and parameters persisted to it
         """
         propagated_component = dict(copy.deepcopy(declarative_component))
@@ -122,10 +132,19 @@ class ManifestComponentTransformer:
         # level take precedence
         current_parameters = dict(copy.deepcopy(parent_parameters))
         component_parameters = propagated_component.pop(PARAMETERS_STR, {})
-        current_parameters = (
-            {**component_parameters, **current_parameters}
-            if use_parent_parameters
-            else {**current_parameters, **component_parameters}
+        current_parameters = self._merge_parameters(
+            current_parameters, component_parameters, use_parent_parameters
+        )
+        # The parameters that fill this component's fields. Usually the same dict as
+        # `current_parameters`, so the exclusions below apply to both.
+        field_parameters = (
+            current_parameters
+            if parent_field_parameters is None
+            else self._merge_parameters(
+                dict(copy.deepcopy(parent_field_parameters)),
+                component_parameters,
+                use_parent_parameters,
+            )
         )
 
         # When there is no resolved type, we're not processing a component (likely a regular object) and don't need to propagate parameters
@@ -146,12 +165,15 @@ class ManifestComponentTransformer:
                     parent_field_identifier,
                     current_parameters,
                     use_parent_parameters,
+                    self._child_field_parameters(
+                        parent_field_identifier, current_parameters, field_parameters
+                    ),
                 )
             return propagated_component
 
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
         # both exist
-        for parameter_key, parameter_value in current_parameters.items():
+        for parameter_key, parameter_value in field_parameters.items():
             propagated_component[parameter_key] = (
                 propagated_component.get(parameter_key) or parameter_value
             )
@@ -160,18 +182,25 @@ class ManifestComponentTransformer:
             if isinstance(field_value, dict):
                 # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
                 excluded_parameter = current_parameters.pop(field_name, None)
+                excluded_field_parameter = field_parameters.pop(field_name, None)
                 parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
                 propagated_component[field_name] = self.propagate_types_and_parameters(
                     parent_type_field_identifier,
                     field_value,
                     current_parameters,
                     use_parent_parameters=use_parent_parameters,
+                    parent_field_parameters=self._child_field_parameters(
+                        parent_type_field_identifier, current_parameters, field_parameters
+                    ),
                 )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
+                if excluded_field_parameter:
+                    field_parameters[field_name] = excluded_field_parameter
             elif isinstance(field_value, typing.List):
                 # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
                 excluded_parameter = current_parameters.pop(field_name, None)
+                excluded_field_parameter = field_parameters.pop(field_name, None)
                 for i, element in enumerate(field_value):
                     if isinstance(element, dict):
                         parent_type_field_identifier = (
@@ -182,13 +211,41 @@ class ManifestComponentTransformer:
                             element,
                             current_parameters,
                             use_parent_parameters=use_parent_parameters,
+                            parent_field_parameters=self._child_field_parameters(
+                                parent_type_field_identifier, current_parameters, field_parameters
+                            ),
                         )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
+                if excluded_field_parameter:
+                    field_parameters[field_name] = excluded_field_parameter
 
         if current_parameters:
             propagated_component[PARAMETERS_STR] = current_parameters
         return propagated_component
+
+    @staticmethod
+    def _merge_parameters(
+        parent_parameters: Dict[str, Any],
+        component_parameters: Mapping[str, Any],
+        use_parent_parameters: Optional[bool],
+    ) -> Dict[str, Any]:
+        return (
+            {**component_parameters, **parent_parameters}
+            if use_parent_parameters
+            else {**parent_parameters, **component_parameters}
+        )
+
+    @staticmethod
+    def _child_field_parameters(
+        child_field_identifier: str,
+        current_parameters: Dict[str, Any],
+        field_parameters: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """The `parent_field_parameters` to pass to a child: `None` while they are all parameters."""
+        if child_field_identifier in STREAM_INDEPENDENT_FIELDS:
+            return {}
+        return None if field_parameters is current_parameters else field_parameters
 
     @staticmethod
     def _is_json_schema_object(propagated_component: Mapping[str, Any]) -> bool:
@@ -210,6 +267,7 @@ class ManifestComponentTransformer:
         parent_field_identifier: str,
         current_parameters: Mapping[str, Any],
         use_parent_parameters: Optional[bool] = None,
+        field_parameters: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         for field_name, field_value in propagated_component.items():
             if isinstance(field_value, dict) and field_value.get("type"):
@@ -218,6 +276,7 @@ class ManifestComponentTransformer:
                     field_value,
                     current_parameters,
                     use_parent_parameters=use_parent_parameters,
+                    parent_field_parameters=field_parameters,
                 )
                 propagated_component[field_name] = nested_component_with_parameters
 

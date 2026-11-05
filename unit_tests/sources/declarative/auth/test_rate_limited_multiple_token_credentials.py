@@ -988,17 +988,32 @@ def _api_key_model() -> RateLimitedMultipleTokenAuthenticatorModel:
 
 
 @pytest.mark.parametrize(
-    "model_factory, login_response",
+    "model_factory, login_response, failure_type",
     [
-        pytest.param(_model, {"status_code": 200, "json": {}}, id="bearer_no_token"),
+        # A response without a token is the API misbehaving, not the user's config.
         pytest.param(
-            _api_key_model, {"status_code": 401, "json": {"message": "no"}}, id="api_key_401"
+            _model,
+            {"status_code": 200, "json": {}},
+            FailureType.system_error,
+            id="bearer_no_token",
         ),
-        pytest.param(_api_key_model, {"status_code": 200, "json": {}}, id="api_key_no_token"),
+        # A rejected login keeps the failure type of the error it arrived as.
+        pytest.param(
+            _api_key_model,
+            {"status_code": 401, "json": {"message": "no"}},
+            FailureType.config_error,
+            id="api_key_401",
+        ),
+        pytest.param(
+            _api_key_model,
+            {"status_code": 200, "json": {}},
+            FailureType.system_error,
+            id="api_key_no_token",
+        ),
     ],
 )
 def test_every_kind_of_failed_login_names_the_credential(
-    requests_mock, model_factory, login_response
+    requests_mock, model_factory, login_response, failure_type
 ):
     requests_mock.post(f"{API_URL}/login/111", json={"token": "session-111"})
     requests_mock.post(f"{API_URL}/login/222", **login_response)
@@ -1011,6 +1026,7 @@ def test_every_kind_of_failed_login_names_the_credential(
         authenticator(_request())
 
     assert "'222'" in error.value.message
+    assert error.value.failure_type == failure_type
 
 
 def _custom_login_authenticator(scope: str) -> Mapping[str, Any]:
@@ -1060,3 +1076,182 @@ def test_factory_does_not_share_instances_across_configs_the_login_reads():
     )
 
     assert first is not second
+
+
+# --- stream `$parameters` and the shared login ---------------------------------------------
+
+
+def test_stream_parameters_do_not_fill_the_login_so_streams_still_share_it():
+    factory = ModelToComponentFactory()
+    # The login sets `url_base` and `path` and leaves `url` empty, which a stream's `url` would
+    # otherwise fill: the login request is the same, but the definition would differ per stream.
+    streams = [
+        _propagated(_model(), {"name": name, "url": f"{API_URL}/{name}", "use_cache": True})
+        for name in ("users", "teams")
+    ]
+
+    first, second = (
+        factory.create_rate_limited_multiple_token_authenticator(model, {"accounts": ACCOUNTS})
+        for model in streams
+    )
+
+    assert first is second
+    login_requester = streams[0].credentials.authenticator.login_requester
+    assert login_requester.url is None
+    assert not login_requester.use_cache
+    # The stream's parameters are still there to be read as `parameters`.
+    assert login_requester.parameters["url"] == f"{API_URL}/users"
+
+
+def test_parameters_declared_inside_the_login_still_fill_its_fields(requests_mock):
+    requests_mock.post(f"{API_URL}/sessions", json={"token": "session"})
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    login = _session_authenticator({"path": None, "$parameters": {"path": "/sessions"}})
+    login["login_requester"] = {
+        key: value for key, value in login["login_requester"].items() if value is not None
+    }
+    model = _propagated(_model(authenticator=login), {"name": "users", "path": "/users"})
+
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        model, {"accounts": ACCOUNTS[:1]}
+    )
+    authenticator(_request())
+
+    assert model.credentials.authenticator.login_requester.path == "/sessions"
+    assert requests_mock.request_history[0].path == "/sessions"
+
+
+def test_components_outside_the_login_are_still_filled_with_stream_parameters():
+    propagated = ManifestComponentTransformer().propagate_types_and_parameters(
+        "",
+        {
+            "type": "DeclarativeStream",
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {"type": "HttpRequester", "url_base": API_URL},
+            },
+            "$parameters": {"name": "users", "path": "/users"},
+        },
+        {},
+    )
+
+    assert propagated["retriever"]["requester"]["path"] == "/users"
+
+
+def test_a_second_instance_for_the_same_credentials_is_warned_about_once(caplog):
+    factory = ModelToComponentFactory()
+    model = _model(
+        authenticator=_session_authenticator({"path": "/login/{{ parameters['name'] }}"})
+    )
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        for stream_name in ("users", "teams", "projects"):
+            factory.create_rate_limited_multiple_token_authenticator(
+                _propagated(model, {"name": stream_name}), {"accounts": ACCOUNTS}
+            )
+
+    warnings = [r for r in caplog.records if "more than one instance" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "['111', '222']" in warnings[0].getMessage()
+
+
+def test_streams_sharing_a_login_are_not_warned_about(caplog):
+    factory = ModelToComponentFactory()
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        for stream_name in ("users", "teams"):
+            factory.create_rate_limited_multiple_token_authenticator(
+                _propagated(_model(), {"name": stream_name}), {"accounts": ACCOUNTS}
+            )
+
+    assert not [r for r in caplog.records if "more than one instance" in r.getMessage()]
+
+
+# --- deferred errors from interpolation -----------------------------------------------------
+
+
+def test_a_missing_parent_object_in_the_config_is_deferred_to_first_use(requests_mock):
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        _model(items="{{ config['credentials']['accounts'] }}"), {"auth_mode": "tokens"}
+    )
+
+    with pytest.raises(AirbyteTracedException, match="missing") as error:
+        authenticator(_request())
+
+    assert error.value.failure_type == FailureType.config_error
+    assert not requests_mock.called
+
+
+def test_a_config_selecting_static_tokens_builds_with_a_nested_items_path(requests_mock):
+    from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+        ConcurrentDeclarativeSource,
+    )
+
+    manifest = _manifest()
+    for stream in manifest["streams"]:
+        accounts = stream["retriever"]["requester"]["authenticator"]["authenticators"]["accounts"]
+        accounts["credentials"]["items"] = "{{ config['credentials']['accounts'] }}"
+    config = {"auth_mode": "tokens", "pat": "token_1"}
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=config, catalog=None, state=None
+    )
+
+    assert _authenticators_of(source, config)[0]._tokens == ["token_1"]
+    assert not requests_mock.called
+
+
+def test_a_key_path_missing_from_an_item_is_deferred_to_first_use(requests_mock):
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        _model(key="{{ config['credential']['meta']['id'] }}"), {"accounts": ACCOUNTS}
+    )
+
+    with pytest.raises(AirbyteTracedException, match="position 1 has no identifier") as error:
+        authenticator(_request())
+
+    assert error.value.failure_type == FailureType.config_error
+    assert not requests_mock.called
+
+
+# --- guards ---------------------------------------------------------------------------------
+
+
+def test_a_static_tokens_quota_status_failure_is_raised_unchanged(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, status_code=401, json={"message": "bad token"})
+    authenticator = RateLimitedMultipleTokenAuthenticator(
+        tokens=["secret-token-1"], quotas=_quotas(), quota_status_url=QUOTA_STATUS_URL
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator(_request())
+
+    assert "secret-token-1" not in (error.value.message or "")
+    assert "secret-token-1" not in (error.value.internal_message or "")
+    assert not (error.value.message or "").startswith("The credential")
+
+
+def test_factory_does_not_share_literal_credential_lists_that_differ_only_in_secrets():
+    factory = ModelToComponentFactory()
+
+    first = factory.create_rate_limited_multiple_token_authenticator(
+        _model(items=[{"id": "111", "secret": "s1"}]), {}
+    )
+    second = factory.create_rate_limited_multiple_token_authenticator(
+        _model(items=[{"id": "111", "secret": "rotated"}]), {}
+    )
+
+    assert first is not second
+
+
+def test_credentials_injecting_into_an_empty_header_are_rejected_on_first_use():
+    authenticator = _authenticator(
+        [
+            RotatingCredential("a", _RefreshingCredential("a", header="")),
+            RotatingCredential("b", _RefreshingCredential("b", header="")),
+        ]
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator(_request())
+
+    assert "same request header" in error.value.internal_message

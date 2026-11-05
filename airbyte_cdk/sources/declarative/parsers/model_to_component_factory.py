@@ -23,6 +23,7 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    Set,
     Tuple,
     Type,
     Union,
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
 from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
+from jinja2.exceptions import UndefinedError
 from pydantic.v1 import BaseModel
 from requests import Response
 
@@ -802,6 +804,9 @@ class ModelToComponentFactory:
         self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = (
             rate_limited_authenticators if rate_limited_authenticators is not None else {}
         )
+        # Credentials already built into an instance, so a second instance for them is reported.
+        self._rate_limited_credential_identities: Set[str] = set()
+        self._split_credential_identities_warned: Set[str] = set()
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -5896,6 +5901,8 @@ class ModelToComponentFactory:
         cache_key = json.dumps(cache_key_fields, sort_keys=True)
         if cache_key in self._rate_limited_authenticators:
             return self._rate_limited_authenticators[cache_key]
+        if credentials_cache_key is not None:
+            self._warn_if_credentials_are_split(cache_key_fields, credentials_cache_key)
 
         credentials: Optional[List[RotatingCredential]] = None
         if model.credentials is not None:
@@ -5999,11 +6006,15 @@ class ModelToComponentFactory:
         The returned cache-key fragment identifies the credentials by key and by a hash of each
         item, never by the item itself, which usually holds secrets.
         """
+        error: Optional[str] = None
         items_value: Any = model.items
         if isinstance(items_value, str):
-            items_value = InterpolatedString.create(items_value, parameters={}).eval(config)
+            try:
+                items_value = InterpolatedString.create(items_value, parameters={}).eval(config)
+            except UndefinedError:
+                # `config['credentials']['accounts']` with no `credentials` object in the config.
+                items_value = None
 
-        error: Optional[str] = None
         items: List[Mapping[str, Any]] = []
         if items_value in (None, ""):
             items = []
@@ -6020,9 +6031,14 @@ class ModelToComponentFactory:
             if model.key:
                 # `valid_types=(str,)` keeps an id such as "1_000" or "1e3" from being read as a
                 # number, which would make distinct ids collide.
-                key_value = InterpolatedString.create(model.key, parameters={}).eval(
-                    credential_config, valid_types=(str,)
-                )
+                try:
+                    key_value = InterpolatedString.create(model.key, parameters={}).eval(
+                        credential_config, valid_types=(str,)
+                    )
+                except UndefinedError:
+                    # A nested path such as `config['credential']['meta']['id']` on an item
+                    # without `meta`: reported below as a credential with no identifier.
+                    key_value = None
                 key = "" if key_value is None else str(key_value).strip()
             else:
                 key = str(index)
@@ -6054,6 +6070,41 @@ class ModelToComponentFactory:
         }
         return entries, error, cache_key
 
+    def _warn_if_credentials_are_split(
+        self, cache_key_fields: Mapping[str, Any], credentials_cache_key: Mapping[str, Any]
+    ) -> None:
+        """Warn once when the same credentials get a second instance, with its own quota counters.
+
+        That happens when streams' login definitions differ: one that interpolates `parameters` or
+        contains a custom component is keyed per stream. Each instance then logs in separately
+        and spends the same server-side budget without seeing the others' requests.
+        """
+        identity = json.dumps(
+            {
+                **cache_key_fields,
+                "credentials": {
+                    name: value
+                    for name, value in credentials_cache_key.items()
+                    if name != "authenticator"
+                },
+            },
+            sort_keys=True,
+        )
+        if identity not in self._rate_limited_credential_identities:
+            self._rate_limited_credential_identities.add(identity)
+            return
+        if identity in self._split_credential_identities_warned:
+            return
+        self._split_credential_identities_warned.add(identity)
+        keys = [item["key"] for item in credentials_cache_key["items"]]
+        LOGGER.warning(
+            "The credentials %s of a RateLimitedMultipleTokenAuthenticator are used by more than "
+            "one instance, because their login definitions differ, for example because the login "
+            "interpolates `parameters` or contains a custom component. Each instance keeps its "
+            "own quota counters and logs in separately.",
+            keys,
+        )
+
     # A Jinja expression that reads `parameters`, e.g. `{{ parameters['path'] }}`.
     _PARAMETERS_REFERENCE = re.compile(r"\{[{%][^}]*\bparameters\b")
 
@@ -6061,11 +6112,12 @@ class ModelToComponentFactory:
     def _credential_authenticator_cache_key(cls, model: BaseModel) -> Any:
         """The credential authenticator's definition, minus what differs per stream without effect.
 
-        `$parameters` propagation copies each stream's `$parameters` onto every nested component,
-        both as the component's own `$parameters` and as undeclared extra keys such as `name` or
-        `primary_key`. The factory never reads either from a declared component, so the key keeps
-        only declared fields without `$parameters`, and streams with the same definition share one
-        instance. Two things do depend on them, and are keyed with them:
+        `$parameters` propagation copies each stream's `$parameters` onto every nested component
+        as the component's own `$parameters`. Under `CredentialSet.authenticator` it fills no
+        fields with them (`STREAM_INDEPENDENT_FIELDS`), so a stream's `url` or `primary_key` does
+        not end up in the login. The key keeps only declared fields without `$parameters`, and
+        streams with the same definition share one instance. Two things do depend on the
+        parameters, and are keyed with them:
         - a definition that interpolates `parameters`: each set of parameters gets its own instance;
         - a custom component (`class_name`), which receives its `$parameters` and every extra its
           class accepts. It is keyed with all of them, since which ones it reads is only known
