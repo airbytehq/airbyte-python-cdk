@@ -16,7 +16,7 @@ implementing one does not require inheriting from anything or importing the clie
 Define the methods on the class or set them on the instance. Dispatch is an `isinstance` check,
 and from Python 3.12 those resolve protocol members with `inspect.getattr_static`, which does
 not run `__getattr__` -- so a delegating authenticator that only exposes the method dynamically
-satisfies the protocol on 3.10/3.11 and is silently skipped on 3.12+. Presence is all that is
+satisfies the protocol on Python 3.11 and is silently skipped on 3.12+. Presence is all that is
 checked either way: an implementation with the wrong signature still dispatches, and then fails
 at the call.
 """

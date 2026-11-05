@@ -6,10 +6,9 @@ import tempfile
 import uuid
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Protocol, runtime_checkable
 
 import orjson
-from typing_extensions import Protocol, runtime_checkable
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,

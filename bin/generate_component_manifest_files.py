@@ -8,7 +8,7 @@ from pathlib import Path
 import anyio
 import dagger
 
-PYTHON_IMAGE = "python:3.10"
+PYTHON_IMAGE = "python:3.11"
 LOCAL_YAML_DIR_PATH = "airbyte_cdk/sources/declarative"
 LOCAL_OUTPUT_DIR_PATH = "airbyte_cdk/sources/declarative/models"
 
