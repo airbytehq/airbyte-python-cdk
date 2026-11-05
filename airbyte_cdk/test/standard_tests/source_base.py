@@ -10,12 +10,17 @@ import pytest
 
 from airbyte_cdk.models import (
     AirbyteMessage,
+    AirbyteStateMessage,
+    AirbyteStateMessageSerializer,
     AirbyteStream,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
     SyncMode,
     Type,
+)
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import (
@@ -32,7 +37,17 @@ from airbyte_cdk.test.standard_tests._cursor_state_checks import (
     find_cursor_state_problems,
     format_cursor_state_problems,
 )
-from airbyte_cdk.test.standard_tests._job_runner import run_test_job
+from airbyte_cdk.test.standard_tests._future_state import (
+    FUTURE_STATE_READ_UNSCANNED_MESSAGES,
+    CursorFormatWarning,
+    assert_future_state_covers_streams,
+    assert_future_state_read,
+    build_future_state_catalog,
+    check_cursor_formats,
+    load_future_state,
+    resolve_future_state_path,
+)
+from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests._read_assertions import (
     StreamStatusWarning,
     assert_error_trace_messages,
@@ -55,12 +70,37 @@ if TYPE_CHECKING:
     from airbyte_cdk.test import entrypoint_wrapper
 
 
+def _builds_without_state(suite: type[ConnectorTestSuiteBase]) -> bool:
+    """Whether `suite` builds its connector with `ConnectorTestSuiteBase.create_connector`.
+
+    That builds the connector class with no arguments, so a declarative source gets no state.
+    """
+    inherited = getattr(suite.create_connector, "__func__", None)
+    return inherited is getattr(ConnectorTestSuiteBase.create_connector, "__func__", None)
+
+
 class SourceTestSuiteBase(ConnectorTestSuiteBase):
     """Base class for source test suites.
 
     This class provides a base set of functionality for testing source connectors, and it
     inherits all generic connector tests from the `ConnectorTestSuiteBase` class.
     """
+
+    def _create_connector_with_state(
+        self,
+        scenario: ConnectorTestScenario,
+        *,
+        catalog: ConfiguredAirbyteCatalog,
+        state: list[AirbyteStateMessage],
+    ) -> IConnector:
+        """The connector built as a read with `catalog` and `state` builds it.
+
+        The cursor format check of `test_read_from_future_state` builds its streams from it. The
+        default is `create_connector(scenario)`. `DeclarativeSourceTestSuite` builds the source
+        with the state, since a declarative source builds some streams from the state it was
+        built with.
+        """
+        return self.create_connector(scenario)
 
     def test_check(
         self,
@@ -312,6 +352,118 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             )
         elif next(result.records_iterator, None) is None:
             raise AssertionError("Expected records but got none.")
+
+    def test_read_from_future_state(
+        self,
+        scenario: ConnectorTestScenario,
+    ) -> None:
+        """Read incrementally from a state far in the future: no records may come back.
+
+        Runs for `incremental` entries of `acceptance-test-config.yml` with a
+        `future_state.future_state_path` (CAT's `test_state_with_abnormally_large_values`). The
+        file must be a list of `STREAM` or `GLOBAL` state messages, with cursors far in the future,
+        in the shape the connector emits.
+
+        The read covers the streams of the entry's `configured_catalog_path`, or every discovered
+        stream when it declares none, that `discover` reports as supporting incremental sync,
+        whatever `sync_mode` the catalog gives them, minus the entry's own `empty_streams` and
+        `future_state.missing_streams` (see `build_future_state_catalog`). Streams that the
+        config's `basic_read` entry lists as empty are read: they must still parse their state and
+        emit state. The test fails when:
+
+        - the suite builds a `ConcurrentDeclarativeSource` with `create_connector` as inherited
+          from `ConnectorTestSuiteBase`, which builds it without the read's state: it reads only
+          the state it was built with (use `DeclarativeSourceTestSuite`, or override
+          `create_connector`);
+        - a stream it reads has no state in the file;
+        - `discover` or `read` outputs an `airbyte_secret` value from the config, outside the
+          read's state messages (see `FUTURE_STATE_READ_UNSCANNED_MESSAGES`);
+        - the read fails, for example because the connector cannot parse the state;
+        - a stream returns any record, or emits no state message;
+        - for a declarative stream, the state file or the read's emitted state holds a cursor
+          value that is not in the format its cursor declares (`datetime_format`; see
+          `check_cursor_formats`). A stream whose cursor declares no datetime format is not
+          checked, and is named in a `CursorFormatWarning`.
+        """
+        skip_unless_runs(scenario, "read_from_future_state")
+        if scenario.future_state is None or scenario.future_state.future_state_path is None:
+            pytest.skip(f"Scenario '{scenario.id}' has no future state to read from.")
+
+        connector_root = self.get_connector_root_dir()
+        display_path = scenario.future_state.future_state_path
+        state = load_future_state(
+            resolve_future_state_path(scenario, connector_root), display_path=display_path
+        )
+        connector = self.create_connector(scenario)
+        if isinstance(connector, ConcurrentDeclarativeSource) and _builds_without_state(type(self)):
+            pytest.fail(
+                f"`{type(self).__name__}` builds the declarative source "
+                f"`{type(connector).__name__}` without the read's state, and a "
+                "`ConcurrentDeclarativeSource` reads only the state it was built with, so this "
+                "test cannot tell whether it honours state. Derive the suite from "
+                "`DeclarativeSourceTestSuite`, or override `create_connector` to build the source "
+                "with the scenario's state and catalog."
+            )
+        discover_result = run_test_job(
+            connector,
+            "discover",
+            connector_root=connector_root,
+            test_scenario=scenario.without_expected_outcome(),
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="discover"
+            ),
+        )
+        if discover_result.errors:
+            raise discover_result.as_exception()
+        catalog = build_future_state_catalog(
+            scenario,
+            get_read_streams(
+                scenario,
+                get_discovered_streams(discover_result, connector_root.absolute().name),
+                connector_root,
+            ),
+            connector_root,
+        )
+        assert_future_state_covers_streams(state, catalog, display_path=display_path)
+
+        result = run_test_job(
+            self.create_connector(scenario),
+            "read",
+            test_scenario=scenario.with_expecting_success(),
+            connector_root=connector_root,
+            catalog=catalog,
+            state=state,
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario,
+                output,
+                verb="read",
+                skip_message_types=FUTURE_STATE_READ_UNSCANNED_MESSAGES,
+            ),
+        )
+        cursor_formats = check_cursor_formats(
+            self._create_connector_with_state(
+                scenario,
+                catalog=catalog,
+                state=[AirbyteStateMessageSerializer.load(message) for message in state],
+            ),
+            catalog,
+            future_state=state,
+            state_messages=result.state_messages,
+        )
+        if cursor_formats.unchecked:
+            warnings.warn(
+                "The cursor format check did not check these streams, whose cursor declares no "
+                "datetime format: " + ", ".join(repr(name) for name in cursor_formats.unchecked),
+                category=CursorFormatWarning,
+                stacklevel=1,
+            )
+        assert_future_state_read(
+            records=result.records_iterator,
+            state_messages=result.state_messages,
+            catalog=catalog,
+            display_path=display_path,
+            cursor_format_problems=cursor_formats.problems,
+        )
 
     def test_fail_read_with_bad_catalog(
         self,
