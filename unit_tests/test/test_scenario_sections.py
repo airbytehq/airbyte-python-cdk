@@ -446,6 +446,14 @@ def test_docker_suite_runs_each_test_for_its_sections(
     monkeypatch.setattr(
         "airbyte_cdk.test.standard_tests.docker_base.run_docker_airbyte_command", _reached
     )
+    # The future-state test gets the spec before its first command, and skips when `spec` fails.
+    # A stub keeps it from reading a spec another test left in the session-wide cache.
+    monkeypatch.setattr(
+        "airbyte_cdk.test.standard_tests.docker_base._run_docker_spec",
+        lambda connector_image, *, connector_name: ConnectorSpecification(
+            connectionSpecification={}
+        ),
+    )
     suite = _suite_class(tmp_path, ALL_SECTIONS_CONFIG, base=DockerConnectorTestSuite)()
     scenario = _gated_scenario(suite, test_name, section)
 
