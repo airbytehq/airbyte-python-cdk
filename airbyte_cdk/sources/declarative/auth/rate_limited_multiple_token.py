@@ -165,15 +165,21 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         budget_min_reserve: int = 50,
         credentials: Optional[List[RotatingCredential]] = None,
         credentials_error: Optional[str] = None,
+        credentials_error_detail: Optional[str] = None,
     ) -> None:
         """`credentials` replaces `tokens`; see the class docstring.
 
         `credentials_error` is set by the declarative factory when the user's credential list
         cannot be used (empty, malformed, a missing key). It is raised as a config error on first
-        use rather than at construction; Python callers have no reason to pass it.
+        use rather than at construction; Python callers have no reason to pass it. Nor
+        `credentials_error_detail`, which the factory adds to the internal message when an
+        expression of the credential set could not be evaluated.
         """
         self._credentials: Optional[Dict[str, DeclarativeAuthenticator]] = None
         self._credentials_error = credentials_error
+        self._credentials_error_detail = (
+            f" ({credentials_error_detail})" if credentials_error_detail else ""
+        )
         if credentials is not None:
             if tokens:
                 raise ValueError(
@@ -318,13 +324,13 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         if self._credentials_error is not None:
             raise AirbyteTracedException(
                 failure_type=FailureType.config_error,
-                internal_message=f"RateLimitedMultipleTokenAuthenticator credentials are invalid: {self._credentials_error}",
+                internal_message=f"RateLimitedMultipleTokenAuthenticator credentials are invalid: {self._credentials_error}{self._credentials_error_detail}",
                 message=f"The authentication credentials are invalid. {self._credentials_error}",
             )
         if not self._credentials:
             raise AirbyteTracedException(
                 failure_type=FailureType.config_error,
-                internal_message="RateLimitedMultipleTokenAuthenticator requires at least one credential",
+                internal_message=f"RateLimitedMultipleTokenAuthenticator requires at least one credential{self._credentials_error_detail}",
                 message="Authentication credentials are missing from the configuration.",
             )
         self._resolve_credentials_header()

@@ -7,6 +7,10 @@ import typing
 from typing import Any, Dict, Mapping, Optional
 
 PARAMETERS_STR = "$parameters"
+# Inside a `STREAM_INDEPENDENT_FIELDS` subtree: the `$parameters` the component declares itself,
+# kept apart from the outer ones merged into its `$parameters`. A second propagation (dynamic
+# streams are propagated again once resolved) reads it to tell the two apart.
+OWN_PARAMETERS_STR = "$own_parameters"
 
 
 DEFAULT_MODEL_TYPES: Mapping[str, str] = {
@@ -132,20 +136,26 @@ class ManifestComponentTransformer:
         # level take precedence
         current_parameters = dict(copy.deepcopy(parent_parameters))
         component_parameters = propagated_component.pop(PARAMETERS_STR, {})
+        recorded_own_parameters = propagated_component.pop(OWN_PARAMETERS_STR, None)
         current_parameters = self._merge_parameters(
             current_parameters, component_parameters, use_parent_parameters
         )
         # The parameters that fill this component's fields. Usually the same dict as
         # `current_parameters`, so the exclusions below apply to both.
-        field_parameters = (
-            current_parameters
-            if parent_field_parameters is None
-            else self._merge_parameters(
+        own_parameters: Optional[Dict[str, Any]] = None
+        if parent_field_parameters is None:
+            field_parameters = current_parameters
+        else:
+            # On a second propagation `$parameters` already holds the outer parameters merged
+            # in by the first one, so only the recorded own ones may fill fields.
+            own_parameters = dict(
+                component_parameters if recorded_own_parameters is None else recorded_own_parameters
+            )
+            field_parameters = self._merge_parameters(
                 dict(copy.deepcopy(parent_field_parameters)),
-                component_parameters,
+                own_parameters,
                 use_parent_parameters,
             )
-        )
 
         # When there is no resolved type, we're not processing a component (likely a regular object) and don't need to propagate parameters
         # When the type refers to a json schema, we're not processing a component as well. This check is currently imperfect as there could
@@ -222,6 +232,8 @@ class ManifestComponentTransformer:
 
         if current_parameters:
             propagated_component[PARAMETERS_STR] = current_parameters
+        if own_parameters is not None:
+            propagated_component[OWN_PARAMETERS_STR] = own_parameters
         return propagated_component
 
     @staticmethod

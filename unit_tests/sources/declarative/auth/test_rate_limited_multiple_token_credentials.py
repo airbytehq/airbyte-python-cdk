@@ -1255,3 +1255,197 @@ def test_credentials_injecting_into_an_empty_header_are_rejected_on_first_use():
         authenticator(_request())
 
     assert "same request header" in error.value.internal_message
+
+
+# --- round 5: dynamic streams, the split warning, evaluation details --------------------------
+
+
+def _login_requester_of(authenticator: RateLimitedMultipleTokenAuthenticator):
+    credential = authenticator._credentials["111"]
+    token_provider = getattr(credential, "token_provider", None) or credential._token_provider
+    return token_provider.login_requester
+
+
+def test_dynamic_streams_share_the_login_of_static_streams_and_fill_none_of_its_fields(caplog):
+    import copy
+
+    from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+        ConcurrentDeclarativeSource,
+    )
+
+    stream_parameters = {"url": f"{API_URL}/other", "request_parameters": {"per_page": "100"}}
+    manifest = copy.deepcopy(_manifest())
+    for stream in manifest["streams"]:
+        stream["$parameters"].update(stream_parameters)
+    template = copy.deepcopy(manifest["streams"][0])
+    template["name"] = "template"
+    template["$parameters"]["name"] = "template"
+    manifest["dynamic_streams"] = [
+        {
+            "type": "DynamicDeclarativeStream",
+            "stream_template": template,
+            "components_resolver": {
+                "type": "ConfigComponentsResolver",
+                "stream_config": {"type": "StreamConfig", "configs_pointer": ["projects"]},
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{ components_values['name'] }}",
+                    }
+                ],
+            },
+        }
+    ]
+    config = {
+        "auth_mode": "accounts",
+        "accounts": ACCOUNTS,
+        "projects": [{"name": "alpha"}, {"name": "beta"}],
+    }
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=None
+        )
+        authenticators = _authenticators_of(source, config)
+
+    assert len(authenticators) == 4
+    assert len({id(authenticator) for authenticator in authenticators}) == 1
+    login_requester = _login_requester_of(authenticators[0])
+    assert login_requester.get_request_params() == {}
+    assert not [r for r in caplog.records if "more than one instance" in r.getMessage()]
+
+
+def test_a_split_through_a_parent_stream_is_warned_about(caplog):
+    import copy
+
+    from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+        ConcurrentDeclarativeSource,
+    )
+
+    manifest = copy.deepcopy(_manifest())
+    users, teams = manifest["streams"]
+    login = teams["retriever"]["requester"]["authenticator"]["authenticators"]["accounts"]
+    # Keyed per stream, so the parent built by the substream factory gets its own instance.
+    login["credentials"]["authenticator"]["login_requester"]["path"] = (
+        "/login/{{ config['credential']['id'] }}/{{ parameters['name'] }}"
+    )
+    parent = copy.deepcopy(teams)
+    parent["name"] = "users"
+    parent["$parameters"]["name"] = "users"
+    teams["retriever"]["partition_router"] = {
+        "type": "SubstreamPartitionRouter",
+        "parent_stream_configs": [
+            {
+                "type": "ParentStreamConfig",
+                "stream": parent,
+                "parent_key": "id",
+                "partition_field": "user_id",
+            }
+        ],
+    }
+    manifest["streams"] = [teams]
+    manifest["check"]["stream_names"] = ["teams"]
+    config = {"auth_mode": "accounts", "accounts": ACCOUNTS}
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=None
+        )
+        source.streams(config)
+
+    warnings = [r for r in caplog.records if "more than one instance" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_a_split_by_the_quota_status_request_is_warned_about(caplog):
+    factory = ModelToComponentFactory()
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        first, second = (
+            factory.create_rate_limited_multiple_token_authenticator(
+                _propagated(_model(), {"name": name, "request_headers": {"X-Stream": name}}),
+                {"accounts": ACCOUNTS},
+            )
+            for name in ("users", "teams")
+        )
+
+    assert first is not second
+    warnings = [r for r in caplog.records if "more than one instance" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "quota-status request" in warnings[0].getMessage()
+
+
+def test_an_unused_credentials_branch_is_not_warned_about(caplog):
+    from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+        ConcurrentDeclarativeSource,
+    )
+
+    manifest = _manifest()
+    for stream in manifest["streams"]:
+        accounts = stream["retriever"]["requester"]["authenticator"]["authenticators"]["accounts"]
+        accounts["credentials"]["authenticator"]["login_requester"]["request_headers"] = {
+            "X-Stream": "{{ parameters['name'] }}"
+        }
+    config = {"auth_mode": "tokens", "pat": "token_1"}
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=None
+        )
+        source.streams(config)
+
+    assert not [r for r in caplog.records if "more than one instance" in r.getMessage()]
+
+
+def test_the_same_credentials_under_different_quota_pools_are_not_warned_about(caplog):
+    factory = ModelToComponentFactory()
+    search_quotas = [
+        {"type": "TokenQuota", "name": "search", "remaining_path": ["s"], "reset_path": ["t"]}
+    ]
+
+    with caplog.at_level("WARNING", logger="airbyte.model_to_component_factory"):
+        rest = factory.create_rate_limited_multiple_token_authenticator(
+            _model(), {"accounts": ACCOUNTS}
+        )
+        search = factory.create_rate_limited_multiple_token_authenticator(
+            _model(quotas=search_quotas), {"accounts": ACCOUNTS}
+        )
+
+    assert rest is not search
+    assert not [r for r in caplog.records if "more than one instance" in r.getMessage()]
+
+
+@pytest.mark.parametrize(
+    "model_updates, user_message, expression",
+    [
+        pytest.param(
+            {"items": "{{ config['acounts'][0] }}"},
+            "Authentication credentials are missing from the configuration.",
+            "`items` \"{{ config['acounts'][0] }}\" could not be evaluated",
+            id="items",
+        ),
+        pytest.param(
+            {"key": "{{ config['credential']['meta']['id'] }}"},
+            "The authentication credentials are invalid. "
+            "The credential at position 1 has no identifier.",
+            "`key` \"{{ config['credential']['meta']['id'] }}\" could not be evaluated for the "
+            "credential at position 1",
+            id="key",
+        ),
+    ],
+)
+def test_an_expression_that_cannot_be_evaluated_is_named_in_the_internal_message(
+    requests_mock, model_updates, user_message, expression
+):
+    authenticator = ModelToComponentFactory().create_rate_limited_multiple_token_authenticator(
+        _model(**model_updates), {"accounts": ACCOUNTS}
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator(_request())
+
+    assert error.value.message == user_message
+    assert expression in error.value.internal_message
+    assert "UndefinedError" not in error.value.message
+    assert not requests_mock.called
