@@ -253,8 +253,7 @@ def test_incremental_entry_without_future_state_has_nothing_to_run(tmp_path: Pat
     assert collected.scenarios == []
     assert collected.bypasses == []
     assert collected.notes == [
-        "`acceptance_tests.incremental.tests[0]`: no `future_state.future_state_path`, so there "
-        "is no state to read from."
+        "`acceptance_tests.incremental.tests[0]`: no `future_state.future_state_path`, so there is no state to read from."
     ]
 
 
@@ -585,8 +584,7 @@ def test_read_fails_per_stream_on_records_and_missing_state(tmp_path: Path) -> N
 
     assert str(error.value).splitlines() == [
         f"The read from the future state `{STATE_PATH}` did not honour it:",
-        "- stream 'users' returned 2 record(s): it ignored its state, could not parse it, or the "
-        "state's cursor is not far enough in the future",
+        "- stream 'users' returned 2 record(s): it ignored its state, could not parse it, or the state's cursor is not far enough in the future",
         "- stream 'events' emitted no `STREAM` or `GLOBAL` state message",
     ]
 
@@ -994,8 +992,7 @@ def test_cursor_format_check_reports_a_failure_to_build_the_streams(
     )
 
     assert problems == [
-        "the cursor format check could not build the source's streams to read their cursors "
-        "(`KeyError`)"
+        "the cursor format check could not build the source's streams to read their cursors (`KeyError`)"
     ]
 
 
