@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -23,11 +24,18 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 # Type alias for keys that JWT library accepts
 JwtKeyTypes = Union[
     RSAPrivateKey, EllipticCurvePrivateKey, Ed25519PrivateKey, Ed448PrivateKey, str, bytes
 ]
+
+
+_UNREADABLE_KEY_MESSAGE = (
+    "The private key used to sign the JWT could not be read. Check that it is the complete key, "
+    "including its BEGIN and END lines and its line breaks."
+)
 
 
 class JwtAlgorithm(str):
@@ -190,10 +198,17 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         if self._passphrase:
             passphrase_value = self._passphrase.eval(self.config, json_loads=json.loads)
             if passphrase_value:
-                private_key = serialization.load_pem_private_key(
-                    secret_key.encode(),
-                    password=passphrase_value.encode(),
-                )
+                try:
+                    private_key = serialization.load_pem_private_key(
+                        secret_key.encode(),
+                        password=passphrase_value.encode(),
+                    )
+                except (ValueError, TypeError) as e:
+                    raise AirbyteTracedException(
+                        message=f"{_UNREADABLE_KEY_MESSAGE} If the key is encrypted, also check its passphrase.",
+                        internal_message=f"Failed to load the private key: {e}",
+                        failure_type=FailureType.config_error,
+                    ) from e
                 return cast(JwtKeyTypes, private_key)
 
         return (
@@ -213,6 +228,15 @@ class JwtAuthenticator(DeclarativeAuthenticator):
                 algorithm=self._algorithm,
                 headers=self._get_jwt_headers(),
             )
+        except AirbyteTracedException:
+            raise
+        except jwt.exceptions.InvalidKeyError as e:
+            # PyJWT's message talks about a "public key" even for a private one, so it stays internal.
+            raise AirbyteTracedException(
+                message=_UNREADABLE_KEY_MESSAGE,
+                internal_message=f"Failed to sign token: {e}",
+                failure_type=FailureType.config_error,
+            ) from e
         except Exception as e:
             raise ValueError(f"Failed to sign token: {e}")
 

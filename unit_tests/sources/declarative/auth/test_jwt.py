@@ -12,11 +12,13 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 LOGGER = logging.getLogger(__name__)
 
@@ -453,3 +455,67 @@ def test_iat_backdate_moves_iat_and_nbf_but_not_exp(iat_backdate_seconds, expect
     assert payload["iat"] == expected_iat
     assert payload["nbf"] == expected_iat
     assert payload["exp"] == 1640995200 + 540
+
+
+@pytest.mark.parametrize(
+    "secret_key",
+    [
+        pytest.param(
+            "-----BEGIN RSA PRIVATE KEY-----\\nMIIEowIBAAKCAQEA\\n-----END RSA PRIVATE KEY-----",
+            id="line_breaks_escaped_as_text",
+        ),
+        pytest.param("not a key", id="not_a_pem"),
+    ],
+)
+def test_unreadable_private_key_is_config_error(secret_key):
+    """PyJWT reports an unparseable RSA key as "Could not parse the provided public key"; the user
+    message must name the private key and mark it a config error."""
+    authenticator = JwtAuthenticator(
+        config={}, parameters={}, secret_key=secret_key, algorithm="RS256", token_duration=540
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator.token
+
+    assert error.value.failure_type == FailureType.config_error
+    assert "private key" in error.value.message
+    assert "public key" not in error.value.message
+    assert "Failed to sign token" in error.value.internal_message
+
+
+def test_wrong_passphrase_is_config_error():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    encrypted_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.BestAvailableEncryption(b"correct_passphrase"),
+    ).decode()
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key=encrypted_pem,
+        algorithm="RS256",
+        token_duration=540,
+        passphrase="wrong_passphrase",
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator.token
+
+    assert error.value.failure_type == FailureType.config_error
+    assert "passphrase" in error.value.message
+    assert "correct_passphrase" not in error.value.internal_message
+
+
+def test_unsupported_algorithm_is_still_a_value_error():
+    """Only unreadable keys became config errors; a manifest-side signing failure keeps its type."""
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="test",
+        algorithm="invalid algorithm type",
+        token_duration=540,
+    )
+
+    with pytest.raises(ValueError, match="Failed to sign token"):
+        authenticator._get_signed_token()
