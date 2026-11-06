@@ -4681,6 +4681,26 @@ def test_create_jwt_authenticator_iat_backdate_seconds(backdate_line, expected):
     assert authenticator.iat_backdate_seconds == expected
 
 
+def test_create_jwt_authenticator_rejects_negative_iat_backdate_seconds():
+    manifest = """
+    authenticator:
+        type: JwtAuthenticator
+        secret_key: "secret"
+        algorithm: HS256
+        iat_backdate_seconds: -5
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(manifest)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    authenticator_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["authenticator"], {}
+    )
+
+    with pytest.raises(ValidationError, match="iat_backdate_seconds"):
+        factory.create_component(
+            model_type=JwtAuthenticatorModel, component_definition=authenticator_manifest, config={}
+        )
+
+
 @freezegun.freeze_time("2021-01-01 00:00:00")
 @pytest.mark.parametrize(
     "config, manifest, expected",
