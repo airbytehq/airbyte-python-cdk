@@ -122,6 +122,8 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     DEFAULT_MAX_PARTITIONS_NUMBER = 25_000
     SWITCH_TO_GLOBAL_LIMIT = 10_000
+    # Minimum number of seconds between two state messages emitted when a partition closes.
+    STATE_EMIT_INTERVAL_SECONDS: float = 600
     _NO_STATE: Mapping[str, Any] = {}
     _NO_CURSOR_STATE: Mapping[str, Any] = {}
     _GLOBAL_STATE_KEY = "state"
@@ -313,10 +315,10 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def _throttle_state_message(self) -> Optional[float]:
         """
-        Throttles the state message emission to once every 600 seconds.
+        Throttles the state message emission to once every `STATE_EMIT_INTERVAL_SECONDS` seconds.
         """
         current_time = time.time()
-        if current_time - self._last_emission_time <= 600:
+        if current_time - self._last_emission_time <= self.STATE_EMIT_INTERVAL_SECONDS:
             return None
         return current_time
 
