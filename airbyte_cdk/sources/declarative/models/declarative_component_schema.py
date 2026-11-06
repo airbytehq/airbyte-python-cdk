@@ -2562,14 +2562,19 @@ class ConfigAddFields(BaseModel):
 
 class RateLimitedMultipleTokenAuthenticator(BaseModel):
     type: Literal["RateLimitedMultipleTokenAuthenticator"]
-    tokens: Union[str, List[str]] = Field(
-        ...,
+    tokens: Optional[Union[str, List[str]]] = Field(
+        None,
         description="The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.",
         examples=[
             "{{ config['credentials']['personal_access_token'] }}",
             ["{{ config['token_1'] }}", "{{ config['token_2'] }}"],
         ],
         title="Tokens",
+    )
+    credentials: Optional["CredentialSet"] = Field(
+        None,
+        description="Credentials the authenticator logs in with itself, instead of static `tokens`. Each one is identified by a stable key that its quota counters are kept under, so a token refreshed by its login keeps the quota state of the credential it belongs to. Do not set `auth_method`, `header` or `token_delimiter` with it; each credential's authenticator decides how its token is injected.",
+        title="Credentials",
     )
     token_delimiter: Optional[str] = Field(
         ",",
@@ -3131,6 +3136,28 @@ class SessionTokenAuthenticator(BaseModel):
     )
     decoder: Optional[Union[JsonDecoder, XmlDecoder]] = Field(
         None, description="Component used to decode the response.", title="Decoder"
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class CredentialSet(BaseModel):
+    type: Literal["CredentialSet"]
+    items: Union[str, List[Dict[str, Any]]] = Field(
+        ...,
+        description="The credentials, one object per credential, usually an interpolated config field that holds an array of objects. An array written in the manifest is used as is, so its values are not interpolated, and its objects must not have a `type` field. An empty, missing or malformed value is reported as a config error when the authenticator is first used rather than when it is built, so it does not fail configs that select a different authenticator.",
+        examples=["{{ config['credentials']['accounts'] }}"],
+        title="Items",
+    )
+    key: Optional[str] = Field(
+        None,
+        description="A stable, unique identifier for each credential, used to keep its quota counters and to name it in error messages. Must not be secret. Defaults to the credential's position in `items`.",
+        examples=["{{ config['credential']['account_id'] }}"],
+        title="Key",
+    )
+    authenticator: SessionTokenAuthenticator = Field(
+        ...,
+        description="The authenticator built for each credential, with the credential available as `config['credential']`. It must set `expiration_duration`, so each credential keeps its session token between requests, and must inject its token into a request header, the same one for every credential. `$parameters` set outside it, by the streams or on the `CredentialSet`, do not fill its fields, so it is the same for every stream, but it can read them as `parameters`; `$parameters` declared on it or inside it fill its fields as usual. Streams share one authenticator unless it interpolates `parameters` or contains a custom component, which receives each stream's parameters.",
+        title="Authenticator",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -3738,6 +3765,7 @@ DeclarativeStream.update_forward_refs()
 DpathExtractor.update_forward_refs()
 RecordExpander.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
+RateLimitedMultipleTokenAuthenticator.update_forward_refs()
 HttpRequester.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
 ParentStreamConfig.update_forward_refs()
