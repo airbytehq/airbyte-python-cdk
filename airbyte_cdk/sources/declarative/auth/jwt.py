@@ -33,9 +33,12 @@ JwtKeyTypes = Union[
 
 
 _UNUSABLE_KEY_MESSAGE = (
-    "The key used to sign the JWT could not be used with the {algorithm} algorithm. Check that it "
-    "is the complete key of the expected type, including its BEGIN and END lines and its line "
-    "breaks, and, if the key is encrypted, its passphrase."
+    "The key used to sign the JWT could not be used with the {algorithm} algorithm. {hint}"
+)
+_UNUSABLE_SECRET_HINT = "Check that the secret is set and complete."
+_UNUSABLE_PRIVATE_KEY_HINT = (
+    "Check that it is the complete private key of the expected type, including its BEGIN and END "
+    "lines and its line breaks, and, if the key is encrypted, its passphrase."
 )
 
 
@@ -158,8 +161,9 @@ class JwtAuthenticator(DeclarativeAuthenticator):
                 "'kid', 'alg', 'typ', 'cty' are reserved headers and should not be set as part of 'additional_jwt_headers'"
             )
 
-        if self._kid:
-            headers["kid"] = self._eval_string_claim(self._kid)
+        kid = self._eval_string(self._kid)
+        if kid is not None:
+            headers["kid"] = kid
         if self._typ:
             headers["typ"] = self._typ.eval(self.config, json_loads=json.loads)
         if self._cty:
@@ -181,10 +185,12 @@ class JwtAuthenticator(DeclarativeAuthenticator):
                 "'iss', 'sub', 'aud', 'iat', 'exp', 'nbf' are reserved properties and should not be set as part of 'additional_jwt_payload'"
             )
 
-        if self._iss:
-            payload["iss"] = self._eval_string_claim(self._iss)
-        if self._sub:
-            payload["sub"] = self._eval_string_claim(self._sub)
+        iss = self._eval_string(self._iss)
+        if iss is not None:
+            payload["iss"] = iss
+        sub = self._eval_string(self._sub)
+        if sub is not None:
+            payload["sub"] = sub
         if self._aud:
             payload["aud"] = self._aud.eval(self.config, json_loads=json.loads)
 
@@ -193,26 +199,35 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         payload["nbf"] = issued_at
         return payload
 
-    def _eval_string_claim(self, claim: InterpolatedString) -> Optional[str]:
+    def _eval_string(self, value: Optional[InterpolatedString]) -> Optional[str]:
         """
-        Evaluates `iss`, `sub` or `kid`, which RFC 7519 and RFC 7515 define as strings.
+        Evaluates a value that must stay a string: the `iss`, `sub` and `kid` claims, which RFC 7519
+        and RFC 7515 define as strings, and the secret key and passphrase.
 
-        Interpolation would turn a value that only looks numeric (an application, account or key ID)
-        into an int or float. PyJWT refuses a non-string `kid`, and from 2.11 a non-string `iss`;
-        older versions emit `iss` and `sub` as JSON numbers.
+        Interpolation would turn a value that only looks numeric (an application, account or key ID,
+        or an all-digit secret or passphrase) into an int or float. PyJWT refuses a non-string key
+        and `kid`, and from 2.11 a non-string `iss`; older versions emit `iss` and `sub` as JSON
+        numbers. A missing optional config value renders as "None" and is returned as `None`.
         """
-        value = claim.eval(self.config, json_loads=json.loads, valid_types=(str,))
-        # A missing optional config value renders as "None"; keep emitting null for it, as before.
-        return None if value == "None" else cast(Optional[str], value)
+        if value is None:
+            return None
+        evaluated = value.eval(self.config, json_loads=json.loads, valid_types=(str,))
+        return None if evaluated == "None" else cast(Optional[str], evaluated)
 
     def _get_secret_key(self) -> JwtKeyTypes:
         """
         Returns the secret key used to sign the JWT.
         """
-        secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
+        secret_key = self._eval_string(self._secret_key)
+        if secret_key is None:
+            raise AirbyteTracedException(
+                message=self._unusable_key_message(),
+                internal_message="Failed to sign token: the secret key is not set",
+                failure_type=FailureType.config_error,
+            )
 
         if self._passphrase:
-            passphrase_value = self._passphrase.eval(self.config, json_loads=json.loads)
+            passphrase_value = self._eval_string(self._passphrase)
             if passphrase_value:
                 try:
                     private_key = serialization.load_pem_private_key(
@@ -221,7 +236,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
                     )
                 except (ValueError, TypeError) as e:
                     raise AirbyteTracedException(
-                        message=_UNUSABLE_KEY_MESSAGE.format(algorithm=self._algorithm),
+                        message=self._unusable_key_message(),
                         internal_message=f"Failed to load the private key: {e}",
                         failure_type=FailureType.config_error,
                     ) from e
@@ -265,10 +280,18 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         except (jwt.exceptions.InvalidKeyError, ValueError, TypeError) as e:
             # PyJWT's messages talk about a "public key" even for a private one, so they stay internal.
             raise AirbyteTracedException(
-                message=_UNUSABLE_KEY_MESSAGE.format(algorithm=self._algorithm),
+                message=self._unusable_key_message(),
                 internal_message=f"Failed to sign token: {e}",
                 failure_type=FailureType.config_error,
             ) from e
+
+    def _unusable_key_message(self) -> str:
+        hint = (
+            _UNUSABLE_SECRET_HINT
+            if str(self._algorithm).startswith("HS")
+            else _UNUSABLE_PRIVATE_KEY_HINT
+        )
+        return _UNUSABLE_KEY_MESSAGE.format(algorithm=self._algorithm, hint=hint)
 
     def _get_header_prefix(self) -> Union[str, None]:
         """

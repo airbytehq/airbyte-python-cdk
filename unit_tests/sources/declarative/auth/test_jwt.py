@@ -458,22 +458,102 @@ def test_iat_backdate_moves_iat_and_nbf_but_not_exp(iat_backdate_seconds, expect
     assert payload["exp"] == 1640995200 + 540
 
 
-def test_missing_optional_claim_value_is_emitted_as_null():
-    """Jinja renders a missing optional value as "None"; string evaluation must not send that text."""
+def test_missing_optional_claim_is_omitted():
+    """Jinja renders a missing optional value as "None". The claim must be left out rather than sent
+    as that text, or as a null `kid`, which PyJWT refuses to sign."""
     authenticator = JwtAuthenticator(
         config={},
         parameters={},
         secret_key="test",
         algorithm="HS256",
         token_duration=600,
+        kid="{{ config.get('key_id') }}",
         iss="{{ config.get('issuer') }}",
         sub="{{ config.get('subject') }}",
     )
 
-    payload = authenticator._get_jwt_payload()
+    token = authenticator._get_signed_token()
 
-    assert payload["iss"] is None
-    assert payload["sub"] is None
+    claims = jwt.decode(token, "test", algorithms=["HS256"])
+    assert "iss" not in claims
+    assert "sub" not in claims
+    assert "kid" not in jwt.get_unverified_header(token)
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        pytest.param("1234567890", id="integer_like"),
+        pytest.param("1.5", id="float_like"),
+        pytest.param("True", id="boolean_like"),
+    ],
+)
+@pytest.mark.parametrize("base64_encode_secret_key", [False, True])
+def test_numeric_looking_hmac_secret_from_config_signs(secret, base64_encode_secret_key):
+    authenticator = JwtAuthenticator(
+        config={"secret": secret},
+        parameters={},
+        secret_key="{{ config['secret'] }}",
+        algorithm="HS256",
+        token_duration=600,
+        base64_encode_secret_key=base64_encode_secret_key,
+    )
+
+    token = authenticator._get_signed_token()
+
+    expected_key = (
+        base64.b64encode(secret.encode()).decode() if base64_encode_secret_key else secret
+    )
+    assert jwt.decode(token, expected_key, algorithms=["HS256"])["exp"]
+
+
+def test_numeric_looking_passphrase_from_config_signs():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    authenticator = JwtAuthenticator(
+        config={"passphrase": "123456"},
+        parameters={},
+        secret_key=_pem(private_key, serialization.BestAvailableEncryption(b"123456")),
+        algorithm="RS256",
+        token_duration=600,
+        passphrase="{{ config['passphrase'] }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    assert jwt.decode(token, private_key.public_key(), algorithms=["RS256"])["exp"]
+
+
+def test_missing_optional_passphrase_signs_an_unencrypted_key():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key=_pem(private_key),
+        algorithm="RS256",
+        token_duration=600,
+        passphrase="{{ config.get('passphrase') }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    assert jwt.decode(token, private_key.public_key(), algorithms=["RS256"])["exp"]
+
+
+def test_missing_hmac_secret_is_config_error_about_the_secret():
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="{{ config.get('secret') }}",
+        algorithm="HS256",
+        token_duration=600,
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator.token
+
+    assert error.value.failure_type == FailureType.config_error
+    assert "Check that the secret is set and complete." in error.value.message
+    assert "BEGIN" not in error.value.message
 
 
 @pytest.mark.parametrize(
