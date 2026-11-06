@@ -1317,14 +1317,11 @@ multi_csv_remove_old_files_if_history_is_full_scenario = (
                 },
                 "stream": "stream1",
             },
-            {
-                "history": {
-                    "old_file_same_timestamp_as_a.csv": "2023-06-06T03:54:07.000000Z",
-                    "a.csv": "2023-06-06T03:54:07.000000Z",
-                    "b.csv": "2023-06-07T03:54:07.000000Z",
-                },
-                "_ab_source_file_last_modified": "2023-06-07T03:54:07.000000Z_b.csv",
-            },
+            # No state after b.csv: file-based streams throttle per-slice state
+            # emission (DEFAULT_STATE_EMISSION_THROTTLE_SECONDS), so only the
+            # first slice and the forced final emit within the window. The
+            # cursor still advances through b.csv — it is carried in the final
+            # state below.
             {
                 "data": {
                     "col1": "val11c",
