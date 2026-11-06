@@ -10,13 +10,15 @@ import jwt
 import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 LOGGER = logging.getLogger(__name__)
 
@@ -395,3 +397,326 @@ class TestJwtAuthenticator:
         }
 
         assert authenticator.get_auth_header() == expected_headers
+
+
+@pytest.mark.parametrize(
+    "claim_value",
+    [
+        pytest.param("111", id="integer_like"),
+        pytest.param("1.5", id="float_like"),
+        pytest.param("True", id="boolean_like"),
+        pytest.param("issuer-abc", id="plain_string"),
+    ],
+)
+def test_iss_sub_and_kid_from_config_stay_strings(claim_value):
+    """Interpolation literal-evaluates its output, so `{{ config['value'] }}` holding "111" used to
+    become the int 111: PyJWT refused a non-string `kid` (and, from 2.11, `iss`), and older versions
+    emitted `iss`/`sub` as JSON numbers."""
+    authenticator = JwtAuthenticator(
+        config={"value": claim_value},
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=600,
+        kid="{{ config['value'] }}",
+        iss="{{ config['value'] }}",
+        sub="{{ config['value'] }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    claims = jwt.decode(token, "test", algorithms=["HS256"], options={"verify_aud": False})
+    assert claims["iss"] == claim_value
+    assert claims["sub"] == claim_value
+    assert jwt.get_unverified_header(token)["kid"] == claim_value
+
+
+@freezegun.freeze_time("2022-01-01 00:00:00")
+@pytest.mark.parametrize(
+    "iat_backdate_seconds, expected_iat",
+    [
+        pytest.param(None, 1640995200, id="default_is_now"),
+        pytest.param(0, 1640995200, id="zero_is_now"),
+        pytest.param(60, 1640995140, id="backdated_by_60s"),
+    ],
+)
+def test_iat_backdate_moves_iat_and_nbf_but_not_exp(iat_backdate_seconds, expected_iat):
+    kwargs = {} if iat_backdate_seconds is None else {"iat_backdate_seconds": iat_backdate_seconds}
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=540,
+        **kwargs,
+    )
+
+    payload = authenticator._get_jwt_payload()
+
+    assert payload["iat"] == expected_iat
+    assert payload["nbf"] == expected_iat
+    assert payload["exp"] == 1640995200 + 540
+
+
+def test_missing_optional_claim_is_omitted():
+    """Jinja renders a missing optional value as "None". The claim must be left out rather than sent
+    as that text, or as a null `kid`, which PyJWT refuses to sign."""
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=600,
+        kid="{{ config.get('key_id') }}",
+        iss="{{ config.get('issuer') }}",
+        sub="{{ config.get('subject') }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    claims = jwt.decode(token, "test", algorithms=["HS256"])
+    assert "iss" not in claims
+    assert "sub" not in claims
+    assert "kid" not in jwt.get_unverified_header(token)
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        pytest.param("1234567890", id="integer_like"),
+        pytest.param("1.5", id="float_like"),
+        pytest.param("True", id="boolean_like"),
+    ],
+)
+@pytest.mark.parametrize("base64_encode_secret_key", [False, True])
+def test_numeric_looking_hmac_secret_from_config_signs(secret, base64_encode_secret_key):
+    authenticator = JwtAuthenticator(
+        config={"secret": secret},
+        parameters={},
+        secret_key="{{ config['secret'] }}",
+        algorithm="HS256",
+        token_duration=600,
+        base64_encode_secret_key=base64_encode_secret_key,
+    )
+
+    token = authenticator._get_signed_token()
+
+    expected_key = (
+        base64.b64encode(secret.encode()).decode() if base64_encode_secret_key else secret
+    )
+    assert jwt.decode(token, expected_key, algorithms=["HS256"])["exp"]
+
+
+def test_numeric_looking_passphrase_from_config_signs():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    authenticator = JwtAuthenticator(
+        config={"passphrase": "123456"},
+        parameters={},
+        secret_key=_pem(private_key, serialization.BestAvailableEncryption(b"123456")),
+        algorithm="RS256",
+        token_duration=600,
+        passphrase="{{ config['passphrase'] }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    assert jwt.decode(token, private_key.public_key(), algorithms=["RS256"])["exp"]
+
+
+def test_missing_optional_passphrase_signs_an_unencrypted_key():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key=_pem(private_key),
+        algorithm="RS256",
+        token_duration=600,
+        passphrase="{{ config.get('passphrase') }}",
+    )
+
+    token = authenticator._get_signed_token()
+
+    assert jwt.decode(token, private_key.public_key(), algorithms=["RS256"])["exp"]
+
+
+@pytest.mark.parametrize(
+    "algorithm, config, passphrase, expected_hint",
+    [
+        pytest.param(
+            "HS256", {}, None, "Check that the secret is set and complete.", id="hmac_missing"
+        ),
+        pytest.param(
+            "HS256",
+            {"secret": ""},
+            None,
+            "Check that the secret is set and complete.",
+            id="hmac_empty",
+        ),
+        pytest.param("RS256", {}, "pw", "BEGIN and END", id="private_key_missing_with_passphrase"),
+    ],
+)
+def test_missing_secret_is_config_error(algorithm, config, passphrase, expected_hint):
+    authenticator = JwtAuthenticator(
+        config=config,
+        parameters={},
+        secret_key="{{ config.get('secret') }}",
+        algorithm=algorithm,
+        token_duration=600,
+        passphrase=passphrase,
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator.token
+
+    assert error.value.failure_type == FailureType.config_error
+    assert expected_hint in error.value.message
+    assert error.value.internal_message == "Failed to sign token: the secret key is not set"
+
+
+@pytest.mark.parametrize(
+    "iat_backdate_seconds, expected",
+    [
+        pytest.param(None, 0, id="none_defaults_to_zero"),
+        pytest.param(30, 30, id="positive_is_kept"),
+    ],
+)
+def test_iat_backdate_seconds_is_normalized(iat_backdate_seconds, expected):
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=540,
+        iat_backdate_seconds=iat_backdate_seconds,
+    )
+
+    assert authenticator.iat_backdate_seconds == expected
+
+
+def test_negative_iat_backdate_seconds_is_rejected():
+    with pytest.raises(ValueError, match="iat_backdate_seconds must be zero or positive"):
+        JwtAuthenticator(
+            config={},
+            parameters={},
+            secret_key="test",
+            algorithm="HS256",
+            token_duration=540,
+            iat_backdate_seconds=-60,
+        )
+
+
+def _pem(private_key, encryption=serialization.NoEncryption()):
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=encryption,
+    ).decode()
+
+
+_RSA_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_GARBLED_PEM = "-----BEGIN PRIVATE KEY-----\\nMIIEowIBAAKCAQEA\\n-----END PRIVATE KEY-----"
+
+
+@pytest.mark.parametrize(
+    "algorithm, secret_key, passphrase",
+    [
+        pytest.param("RS256", _GARBLED_PEM, None, id="rs256_line_breaks_escaped_as_text"),
+        pytest.param("RS256", "not a key", None, id="rs256_not_a_pem"),
+        pytest.param("PS256", "not a key", None, id="ps256_not_a_pem"),
+        pytest.param("ES256", "not a key", None, id="es256_not_a_pem"),
+        pytest.param("ES256", _GARBLED_PEM, None, id="es256_garbled_pem"),
+        pytest.param("EdDSA", _GARBLED_PEM, None, id="eddsa_garbled_pem"),
+        pytest.param("ES256", _pem(_RSA_KEY), None, id="es256_given_an_rsa_key"),
+        pytest.param(
+            "RS256", _pem(ec.generate_private_key(ec.SECP256R1())), None, id="rs256_given_an_ec_key"
+        ),
+        pytest.param(
+            "PS256",
+            _pem(ed25519.Ed25519PrivateKey.generate()),
+            None,
+            id="ps256_given_an_ed25519_key",
+        ),
+        pytest.param("HS256", _pem(_RSA_KEY), None, id="hs256_given_an_rsa_key"),
+        pytest.param(
+            "RS256",
+            _pem(_RSA_KEY, serialization.BestAvailableEncryption(b"correct_passphrase")),
+            None,
+            id="encrypted_key_without_passphrase",
+        ),
+        pytest.param(
+            "RS256",
+            _pem(_RSA_KEY, serialization.BestAvailableEncryption(b"correct_passphrase")),
+            "wrong_passphrase",
+            id="wrong_passphrase",
+        ),
+        pytest.param(
+            "RS256", _pem(_RSA_KEY), "unused_passphrase", id="passphrase_for_unencrypted_key"
+        ),
+    ],
+)
+def test_unusable_key_is_config_error(algorithm, secret_key, passphrase):
+    """PyJWT and cryptography report an unusable key with different exception types per algorithm
+    family, and PyJWT's text talks about a "public key"; each must surface as the same config error."""
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key=secret_key,
+        algorithm=algorithm,
+        token_duration=540,
+        passphrase=passphrase,
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator.token
+
+    assert error.value.failure_type == FailureType.config_error
+    assert f"could not be used with the {algorithm} algorithm" in error.value.message
+    expected_hint = (
+        "Check that the secret is set and complete."
+        if algorithm.startswith("HS")
+        else "BEGIN and END"
+    )
+    assert expected_hint in error.value.message
+    assert "public key" not in error.value.message
+    for secret in (passphrase, "correct_passphrase"):
+        if secret:
+            assert secret not in error.value.message
+            assert secret not in error.value.internal_message
+
+
+@pytest.mark.parametrize(
+    "algorithm, private_key",
+    [
+        pytest.param("RS256", _RSA_KEY, id="rs256"),
+        pytest.param("PS256", _RSA_KEY, id="ps256"),
+        pytest.param("ES256", ec.generate_private_key(ec.SECP256R1()), id="es256"),
+        pytest.param("EdDSA", ed25519.Ed25519PrivateKey.generate(), id="eddsa"),
+    ],
+)
+def test_valid_asymmetric_key_signs(algorithm, private_key):
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key=_pem(private_key),
+        algorithm=algorithm,
+        token_duration=540,
+    )
+
+    token = authenticator._get_signed_token()
+
+    claims = jwt.decode(token, private_key.public_key(), algorithms=[algorithm])
+    assert claims["exp"] - claims["iat"] == 540
+
+
+def test_unsupported_algorithm_is_still_a_value_error():
+    """Only unreadable keys became config errors; a manifest-side signing failure keeps its type."""
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key="test",
+        algorithm="invalid algorithm type",
+        token_duration=540,
+    )
+
+    with pytest.raises(ValueError, match="Failed to sign token"):
+        authenticator._get_signed_token()
