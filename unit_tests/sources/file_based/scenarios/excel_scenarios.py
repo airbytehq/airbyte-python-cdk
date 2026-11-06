@@ -467,3 +467,123 @@ multiple_streams_excel_scenario = (
         }
     )
 ).build()
+
+
+_multi_sheet_excel_file = {
+    "a.xlsx": {
+        "contents": {
+            "Sales": [
+                {"region": "West", "revenue": 100},
+                {"region": "East", "revenue": 200},
+            ],
+            "Inventory": [
+                {"sku": "A1", "qty": 5},
+            ],
+        },
+        "last_modified": "2023-06-05T03:54:07.000Z",
+    }
+}
+
+
+def _multi_sheet_scenario_builder(name, sheet_name, records, properties):
+    """Builds a multi-worksheet scenario differing only in the `sheet_name` option."""
+    excel_format = {"filetype": "excel"}
+    if sheet_name is not None:
+        excel_format["sheet_name"] = sheet_name
+    return (
+        TestScenarioBuilder()
+        .set_name(name)
+        .set_config(
+            {
+                "streams": [
+                    {
+                        "name": "stream1",
+                        "format": excel_format,
+                        "globs": ["*"],
+                        "validation_policy": "Emit Record",
+                    }
+                ]
+            }
+        )
+        .set_source_builder(
+            FileBasedSourceBuilder()
+            .set_stream_reader(
+                TemporaryExcelFilesStreamReader(files=_multi_sheet_excel_file, file_type="excel")
+            )
+            .set_file_type("excel")
+        )
+        .set_expected_check_status("SUCCEEDED")
+        .set_expected_records(
+            [
+                {
+                    "data": {
+                        **record,
+                        "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                        "_ab_source_file_url": "a.xlsx",
+                    },
+                    "stream": "stream1",
+                }
+                for record in records
+            ]
+        )
+        .set_expected_catalog(
+            {
+                "streams": [
+                    {
+                        "default_cursor_field": ["_ab_source_file_last_modified"],
+                        "json_schema": {
+                            "type": "object",
+                            "properties": {
+                                **properties,
+                                "_ab_source_file_last_modified": {"type": "string"},
+                                "_ab_source_file_url": {"type": "string"},
+                            },
+                        },
+                        "name": "stream1",
+                        "source_defined_cursor": True,
+                        "supported_sync_modes": ["full_refresh", "incremental"],
+                        "is_resumable": True,
+                    }
+                ]
+            }
+        )
+    ).build()
+
+
+# Unset `sheet_name` must behave exactly as it did before the option existed: first
+# worksheet only, and no worksheet-name field on the records.
+multi_sheet_excel_default_scenario = _multi_sheet_scenario_builder(
+    "multi_sheet_excel_default",
+    None,
+    [
+        {"region": "West", "revenue": 100},
+        {"region": "East", "revenue": 200},
+    ],
+    {"region": {"type": ["null", "string"]}, "revenue": {"type": ["null", "number"]}},
+)
+
+# A named worksheet reaches past the first one.
+multi_sheet_excel_named_scenario = _multi_sheet_scenario_builder(
+    "multi_sheet_excel_named",
+    "Inventory",
+    [{"sku": "A1", "qty": 5}],
+    {"sku": {"type": ["null", "string"]}, "qty": {"type": ["null", "number"]}},
+)
+
+# `*` reads every worksheet, unions their columns, and tags each record with its origin.
+multi_sheet_excel_all_scenario = _multi_sheet_scenario_builder(
+    "multi_sheet_excel_all",
+    "*",
+    [
+        {"region": "West", "revenue": 100, "_ab_source_sheet_name": "Sales"},
+        {"region": "East", "revenue": 200, "_ab_source_sheet_name": "Sales"},
+        {"sku": "A1", "qty": 5, "_ab_source_sheet_name": "Inventory"},
+    ],
+    {
+        "region": {"type": ["null", "string"]},
+        "revenue": {"type": ["null", "number"]},
+        "sku": {"type": ["null", "string"]},
+        "qty": {"type": ["null", "number"]},
+        "_ab_source_sheet_name": {"type": ["null", "string"]},
+    },
+)
