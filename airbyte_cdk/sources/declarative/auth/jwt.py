@@ -219,7 +219,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         Returns the secret key used to sign the JWT.
         """
         secret_key = self._eval_string(self._secret_key)
-        if secret_key is None:
+        if not secret_key:
             raise AirbyteTracedException(
                 message=self._unusable_key_message(),
                 internal_message="Failed to sign token: the secret key is not set",
@@ -267,8 +267,10 @@ class JwtAuthenticator(DeclarativeAuthenticator):
     def _prepare_signing_key(self, key: JwtKeyTypes) -> Any:
         """
         Parses the key the way PyJWT would, so an unusable key is reported as a config error whichever
-        algorithm family it belongs to: PyJWT raises `InvalidKeyError` for RSA and for a key of the
-        wrong type, but lets cryptography's `ValueError` through for EC and EdDSA keys.
+        algorithm family it belongs to. PyJWT raises `InvalidKeyError` for an unparseable RSA key but
+        lets cryptography's `ValueError` through for EC and EdDSA keys. Before 2.11 it also accepts a
+        private key of the wrong family when parsing a PEM, and only rejects it, with a `TypeError`,
+        when it prepares the loaded key object again inside `jwt.encode`.
         """
         try:
             algorithm = jwt.get_algorithm_by_name(self._algorithm)
@@ -276,7 +278,10 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             # An unsupported algorithm is a manifest problem; `jwt.encode` reports it.
             return key
         try:
-            return algorithm.prepare_key(key)
+            prepared = algorithm.prepare_key(key)
+            # Preparing the loaded key object runs the type check that PyJWT < 2.11 skips for PEM input.
+            algorithm.prepare_key(prepared)
+            return prepared
         except (jwt.exceptions.InvalidKeyError, ValueError, TypeError) as e:
             # PyJWT's messages talk about a "public key" even for a private one, so they stay internal.
             raise AirbyteTracedException(
@@ -286,6 +291,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             ) from e
 
     def _unusable_key_message(self) -> str:
+        """Returns the user-facing message for an unusable key, with a hint for the algorithm family."""
         hint = (
             _UNUSABLE_SECRET_HINT
             if str(self._algorithm).startswith("HS")

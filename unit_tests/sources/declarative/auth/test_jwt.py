@@ -539,21 +539,38 @@ def test_missing_optional_passphrase_signs_an_unencrypted_key():
     assert jwt.decode(token, private_key.public_key(), algorithms=["RS256"])["exp"]
 
 
-def test_missing_hmac_secret_is_config_error_about_the_secret():
+@pytest.mark.parametrize(
+    "algorithm, config, passphrase, expected_hint",
+    [
+        pytest.param(
+            "HS256", {}, None, "Check that the secret is set and complete.", id="hmac_missing"
+        ),
+        pytest.param(
+            "HS256",
+            {"secret": ""},
+            None,
+            "Check that the secret is set and complete.",
+            id="hmac_empty",
+        ),
+        pytest.param("RS256", {}, "pw", "BEGIN and END", id="private_key_missing_with_passphrase"),
+    ],
+)
+def test_missing_secret_is_config_error(algorithm, config, passphrase, expected_hint):
     authenticator = JwtAuthenticator(
-        config={},
+        config=config,
         parameters={},
         secret_key="{{ config.get('secret') }}",
-        algorithm="HS256",
+        algorithm=algorithm,
         token_duration=600,
+        passphrase=passphrase,
     )
 
     with pytest.raises(AirbyteTracedException) as error:
         authenticator.token
 
     assert error.value.failure_type == FailureType.config_error
-    assert "Check that the secret is set and complete." in error.value.message
-    assert "BEGIN" not in error.value.message
+    assert expected_hint in error.value.message
+    assert error.value.internal_message == "Failed to sign token: the secret key is not set"
 
 
 @pytest.mark.parametrize(
@@ -610,6 +627,15 @@ _GARBLED_PEM = "-----BEGIN PRIVATE KEY-----\\nMIIEowIBAAKCAQEA\\n-----END PRIVAT
         pytest.param("ES256", _GARBLED_PEM, None, id="es256_garbled_pem"),
         pytest.param("EdDSA", _GARBLED_PEM, None, id="eddsa_garbled_pem"),
         pytest.param("ES256", _pem(_RSA_KEY), None, id="es256_given_an_rsa_key"),
+        pytest.param(
+            "RS256", _pem(ec.generate_private_key(ec.SECP256R1())), None, id="rs256_given_an_ec_key"
+        ),
+        pytest.param(
+            "PS256",
+            _pem(ed25519.Ed25519PrivateKey.generate()),
+            None,
+            id="ps256_given_an_ed25519_key",
+        ),
         pytest.param("HS256", _pem(_RSA_KEY), None, id="hs256_given_an_rsa_key"),
         pytest.param(
             "RS256",
@@ -645,6 +671,12 @@ def test_unusable_key_is_config_error(algorithm, secret_key, passphrase):
 
     assert error.value.failure_type == FailureType.config_error
     assert f"could not be used with the {algorithm} algorithm" in error.value.message
+    expected_hint = (
+        "Check that the secret is set and complete."
+        if algorithm.startswith("HS")
+        else "BEGIN and END"
+    )
+    assert expected_hint in error.value.message
     assert "public key" not in error.value.message
     for secret in (passphrase, "correct_passphrase"):
         if secret:
