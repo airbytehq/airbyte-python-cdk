@@ -3,6 +3,7 @@
 #
 
 import logging
+import time
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, MutableMapping, Optional, Tuple
@@ -34,6 +35,13 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
     )
     DEFAULT_MAX_HISTORY_SIZE = 10_000
     DATE_TIME_FORMAT = DefaultFileBasedCursor.DATE_TIME_FORMAT
+    # Minimum interval between successive state-message emissions during a sync.
+    # Each state message contains the full file history dict, which grows linearly
+    # with files synced (O(N) per message, O(N^2) over the sync). Emitting one per
+    # file pressures destination input buffers and platform state storage; throttle
+    # so the host platform/destination is not overwhelmed by huge, redundant states.
+    # The final state is always force-emitted via ensure_at_least_one_state_emitted.
+    DEFAULT_STATE_EMISSION_INTERVAL_SECONDS = 600
     zero_value = datetime.min
     zero_cursor_value = f"0001-01-01T00:00:00.000000Z_{_NULL_FILE}"
 
@@ -64,6 +72,8 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         self._file_to_datetime_history = stream_state.get("history", {}) if stream_state else {}
         self._prev_cursor_value = self._compute_prev_sync_cursor(stream_state)
         self._sync_start = self._compute_start_time()
+        # Track the last time a state message was emitted, used by the throttle.
+        self._last_emission_time: float = 0.0
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -168,6 +178,21 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 self.emit_state_message()
 
     def emit_state_message(self) -> None:
+        """Emit a state message, throttled to one per DEFAULT_STATE_EMISSION_INTERVAL_SECONDS."""
+        self._emit_state_message(throttle=True)
+
+    def _throttle_state_message(self) -> Optional[float]:
+        current_time = time.time()
+        if current_time - self._last_emission_time <= self.DEFAULT_STATE_EMISSION_INTERVAL_SECONDS:
+            return None
+        return current_time
+
+    def _emit_state_message(self, throttle: bool = True) -> None:
+        if throttle:
+            current_time = self._throttle_state_message()
+            if current_time is None:
+                return
+            self._last_emission_time = current_time
         with self._state_lock:
             new_state = self.get_state()
             self._connector_state_manager.update_state_for_stream(
@@ -310,7 +335,9 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         pass
 
     def ensure_at_least_one_state_emitted(self) -> None:
-        self.emit_state_message()
+        # Bypass the throttle so the platform always receives a final state message,
+        # even when the sync completes within the throttle window.
+        self._emit_state_message(throttle=False)
 
     def should_be_synced(self, record: Record) -> bool:
         return True
