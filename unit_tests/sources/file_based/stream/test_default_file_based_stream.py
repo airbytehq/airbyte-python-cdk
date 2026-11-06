@@ -65,8 +65,8 @@ class MockFormat:
             id="simple-schema-already-has-null",
         ),
         pytest.param(
-            {"properties": {"type": "string"}},
-            {"properties": {"type": ["null", "string"]}},
+            {"properties": {"prop": {"type": "string"}}},
+            {"properties": {"prop": {"type": ["null", "string"]}}},
             id="nested-schema",
         ),
         pytest.param(
@@ -86,6 +86,29 @@ class MockFormat:
 )
 def test_fill_nulls(input_schema: Mapping[str, Any], expected_output: Mapping[str, Any]) -> None:
     assert DefaultFileBasedStream._fill_nulls(input_schema) == expected_output
+
+
+def test_fill_nulls_properties_map_only_exempts_x_keys_on_schema_objects() -> None:
+    properties = {
+        "x-status": {"type": "string"},
+        "content": {
+            "type": "string",
+            "x-airbyte-semantic-search": {"metadata": [{"type": "string"}]},
+        },
+        "nested": {"type": "object", "properties": {"x-inner": {"type": "string"}}},
+    }
+
+    assert DefaultFileBasedStream._fill_nulls(properties, is_properties_map=True) == {
+        "x-status": {"type": ["null", "string"]},
+        "content": {
+            "type": ["null", "string"],
+            "x-airbyte-semantic-search": {"metadata": [{"type": "string"}]},
+        },
+        "nested": {
+            "type": ["null", "object"],
+            "properties": {"x-inner": {"type": ["null", "string"]}},
+        },
+    }
 
 
 class DefaultFileBasedStreamTest(unittest.TestCase):
