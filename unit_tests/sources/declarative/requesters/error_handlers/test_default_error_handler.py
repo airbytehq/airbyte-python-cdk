@@ -76,6 +76,15 @@ def test_default_error_handler_falls_back_when_response_backoff_is_empty():
             DEFAULT_ERROR_MAPPING[408],
         ),
         (
+            "_with_http_response_status_413",
+            413,
+            ErrorResolution(
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.system_error,
+                error_message="HTTP Status Code: 413. Error: The request or its response exceeds the size limit accepted by the API.",
+            ),
+        ),
+        (
             "_with_unmapped_http_status_418",
             418,
             ErrorResolution(
