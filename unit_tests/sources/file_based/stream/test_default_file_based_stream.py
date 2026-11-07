@@ -395,6 +395,64 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             {"files": sorted(all_files, key=lambda f: (f.last_modified, f.uri))}
         ]
 
+    def test_duplicate_uris_raise_when_preserving_directory_structure(self) -> None:
+        all_files = [
+            RemoteFile(uri="same-uri", last_modified=self._NOW),
+            RemoteFile(uri="same-uri", last_modified=self._NOW),
+        ]
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+            pytest.raises(DuplicatedFilesError),
+        ):
+            self._stream.compute_slices()
+
+    def test_same_basename_different_folders_allowed_when_preserving(self) -> None:
+        all_files = [
+            RemoteFile(uri="folder_a/file.csv", last_modified=self._NOW),
+            RemoteFile(uri="folder_b/file.csv", last_modified=self._NOW),
+        ]
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+        ):
+            self._stream.compute_slices()
+
+    def test_records_mode_never_raises_on_duplicate_uris(self) -> None:
+        self._stream.use_file_transfer = False
+        all_files = [
+            RemoteFile(uri="same-uri", last_modified=self._NOW),
+            RemoteFile(uri="same-uri", last_modified=self._NOW),
+        ]
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+        ):
+            self._stream.compute_slices()
+
+    def test_guard_compares_source_file_relative_path(self) -> None:
+        class RemoteFileWithRelativePath(RemoteFile):
+            relative_path: str
+
+            @property
+            def source_file_relative_path(self) -> str:
+                return self.relative_path
+
+        all_files = [
+            RemoteFileWithRelativePath(
+                uri="source-a", relative_path="same/path.csv", last_modified=self._NOW
+            ),
+            RemoteFileWithRelativePath(
+                uri="source-b", relative_path="same/path.csv", last_modified=self._NOW
+            ),
+        ]
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+            pytest.raises(DuplicatedFilesError),
+        ):
+            self._stream.compute_slices()
+
 
 class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
@@ -489,13 +547,40 @@ class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.Tes
         with (
             mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
             mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+            pytest.raises(DuplicatedFilesError) as exc_info,
         ):
-            with pytest.raises(DuplicatedFilesError) as exc_info:
-                self._stream.compute_slices()
-        assert "Duplicate filenames found for stream" in str(exc_info.value)
-        assert "2 duplicates found for file name monthly-kickoff-202402.mpeg" in str(exc_info.value)
-        assert "2 duplicates found for file name monthly-kickoff-202401.mpeg" in str(exc_info.value)
-        assert "3 duplicates found for file name monthly-kickoff-202403.mpeg" in str(exc_info.value)
+            self._stream.compute_slices()
+        assert "Duplicate files found for stream" in str(exc_info.value)
+        assert "2 duplicates found for resolved output path monthly-kickoff-202402.mpeg" in str(
+            exc_info.value
+        )
+        assert "2 duplicates found for resolved output path monthly-kickoff-202401.mpeg" in str(
+            exc_info.value
+        )
+        assert "3 duplicates found for resolved output path monthly-kickoff-202403.mpeg" in str(
+            exc_info.value
+        )
+
+    def test_duplicate_detected_across_incremental_syncs(self) -> None:
+        all_files = [
+            RemoteFile(
+                uri="folder_a/file.csv",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+            ),
+            RemoteFile(
+                uri="folder_b/file.csv",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+            ),
+        ]
+        files_to_read = [all_files[1]]
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(
+                self._stream._cursor, "get_files_to_sync", return_value=files_to_read
+            ),
+            pytest.raises(DuplicatedFilesError),
+        ):
+            self._stream.compute_slices()
 
 
 class DefaultFileBasedStreamSchemaTest(unittest.TestCase):

@@ -18,6 +18,13 @@ class RemoteFile(BaseModel):
     mime_type: Optional[str] = None
 
     @property
+    def source_file_relative_path(self) -> str:
+        """
+        Returns the relative path of the source file.
+        """
+        return self.uri
+
+    @property
     def file_uri_for_logging(self) -> str:
         """Returns a user-friendly identifier for logging."""
         return self.uri
@@ -46,13 +53,6 @@ class UploadableRemoteFile(RemoteFile, ABC):
         Download the file from remote source to local storage.
         """
         ...
-
-    @property
-    def source_file_relative_path(self) -> str:
-        """
-        Returns the relative path of the source file.
-        """
-        return self.uri
 
     @property
     def source_uri(self) -> str:
