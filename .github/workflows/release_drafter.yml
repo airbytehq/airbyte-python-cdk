@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: release-drafter
@@ -16,6 +17,6 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: aaronsteers/semantic-pr-release-drafter@v0.3.0
+      - uses: aaronsteers/semantic-pr-release-drafter@v2.2.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

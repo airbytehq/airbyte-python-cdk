@@ -7,6 +7,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Union
 
 import requests
 
+from airbyte_cdk.sources.declarative.extractors.combined_extractor import _DroppedEmptyRecord
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
@@ -19,6 +20,19 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import DefaultFile
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TypeTransformer
+
+_EXTRACTED_RECORD_COUNT = "_airbyte_extracted_record_count"
+
+
+def extracted_record_count(response: requests.Response, default: int) -> int:
+    """How many records the extractor of a `RecordSelector` returned for `response` before any of
+    them was filtered out, or `default` if no `RecordSelector` has read the whole response.
+
+    Record-counting paginators compare this count with the page size: once a record filter dropped
+    records from a full page, the number of records emitted looks like a short last page.
+    """
+    count = getattr(response, _EXTRACTED_RECORD_COUNT, None)
+    return count if isinstance(count, int) else default
 
 
 @dataclass
@@ -86,10 +100,24 @@ class RecordSelector(HttpSelector):
         :param next_page_token: The paginator token
         :return: List of Records selected from the response
         """
-        all_data: Iterable[Mapping[str, Any]] = self.extractor.extract_records(response)
+        all_data: Iterable[Mapping[str, Any]] = self._extract_and_count(response)
         yield from self.filter_and_transform(
             all_data, stream_state, records_schema, stream_slice, next_page_token
         )
+        # A custom record filter can stop reading before the end of the page, which would leave the
+        # page uncounted.
+        for _ in all_data:
+            pass
+
+    def _extract_and_count(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
+        count = 0
+        for record in self.extractor.extract_records(response):
+            count += 1
+            if not isinstance(record, _DroppedEmptyRecord):
+                yield record
+        # Kept on the response, not on the selector: a stream has one retriever, and so one
+        # selector, reading all of its partitions concurrently.
+        setattr(response, _EXTRACTED_RECORD_COUNT, count)
 
     def filter_and_transform(
         self,

@@ -4,6 +4,7 @@
 
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Set, Union
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -36,6 +37,11 @@ class HttpResponseFilter:
         error_message_contains (str): error substring of matching requests
         predicate (str): predicate to apply to determine if a request is matching
         error_message (Union[InterpolatedString, str): error message to display if the response matches the filter
+
+    `error_message` and `predicate` can interpolate `response` (the parsed JSON body), `headers`
+    and `request_url`, the URL the response came from (the final URL after any redirects) with its
+    query string, fragment and userinfo (user:password@) removed. The path is kept as-is, so a
+    credential an API puts in the path is not removed. `error_message` can also interpolate `config`.
     """
 
     config: Config
@@ -139,6 +145,17 @@ class HttpResponseFilter:
         return None
 
     @staticmethod
+    def _request_url(response: requests.Response) -> str:
+        # The query string is dropped because some APIs authenticate with a query parameter, and
+        # an error message can end up in a user-facing failure.
+        url = response.url
+        if not isinstance(url, str) or not url:
+            return ""
+        parts = urlsplit(url)
+        host = parts.netloc.rsplit("@", 1)[-1]
+        return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+    @staticmethod
     def _safe_response_json(response: requests.Response) -> dict[str, Any]:
         try:
             return response.json()  # type: ignore # Response.json() returns a dictionary even if the signature does not
@@ -152,7 +169,10 @@ class HttpResponseFilter:
         :return: The evaluated error message string to be emitted
         """
         return self.error_message.eval(  # type: ignore[no-any-return, union-attr]
-            self.config, response=self._safe_response_json(response), headers=response.headers
+            self.config,
+            response=self._safe_response_json(response),
+            headers=response.headers,
+            request_url=self._request_url(response),
         )
 
     def _response_matches_predicate(self, response: requests.Response) -> bool:
@@ -163,6 +183,7 @@ class HttpResponseFilter:
                     None,  # type: ignore[arg-type]
                     response=self._safe_response_json(response),
                     headers=response.headers,
+                    request_url=self._request_url(response),
                 )
             )
             if self.predicate

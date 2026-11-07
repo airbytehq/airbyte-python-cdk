@@ -3,6 +3,7 @@
 import json
 import logging
 import pkgutil
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import Queue
@@ -19,10 +20,9 @@ from typing import (
 )
 
 import orjson
-import yaml
 from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, StreamDescriptor
-from jsonschema.exceptions import ValidationError
-from jsonschema.validators import validate
+from jsonschema.exceptions import ValidationError, best_match
+from jsonschema.validators import validator_for
 
 from airbyte_cdk.config_observation import create_connector_config_control_message
 from airbyte_cdk.connector_builder.models import (
@@ -76,11 +76,17 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+    CartesianProductStreamSlicer,
+)
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
     GroupingPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
@@ -95,8 +101,10 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, get_secrets
 from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from airbyte_cdk.utils.yaml_loader import safe_load_yaml
 
 
 @dataclass
@@ -114,13 +122,13 @@ class TestLimits:
     max_streams: int = field(default=DEFAULT_MAX_STREAMS)
 
 
-def _get_declarative_component_schema() -> Dict[str, Any]:
+def get_declarative_component_schema() -> Dict[str, Any]:
     try:
         raw_component_schema = pkgutil.get_data(
             "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
         )
         if raw_component_schema is not None:
-            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+            declarative_component_schema = safe_load_yaml(raw_component_schema)
             return declarative_component_schema  # type: ignore
         else:
             raise RuntimeError(
@@ -132,10 +140,39 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
         )
 
 
+def validate_manifest(manifest: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
+    """Validate a manifest against the shipped component schema.
+
+    Unit tests check the schema's metaschema, so valid manifests skip `check_schema`. On failure,
+    check the schema first to surface `SchemaError`, while preserving `jsonschema.validate`'s
+    best-match error as the cause with a traceback.
+    """
+    validator_class = validator_for(schema)
+    try:
+        error = best_match(validator_class(schema).iter_errors(manifest))
+        if error is not None:
+            raise error
+    except ValidationError as e:
+        validator_class.check_schema(schema)
+        raise ValidationError(
+            "Validation against json schema defined in declarative_component_schema.yaml schema failed"
+        ) from e
+    except Exception:
+        validator_class.check_schema(schema)
+        raise
+
+
 class ConcurrentDeclarativeSource(Source):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
     _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
+
+    # Component types that hold the connector config and can write it back. `refresh_token_updater` is
+    # declared on `OAuthAuthenticator` alone; `CustomAuthenticator` is the type the transformer injects
+    # for a `class_name` component.
+    _CONFIG_PERSISTING_AUTHENTICATOR_TYPES = frozenset(
+        {"OAuthAuthenticator", "CustomAuthenticator"}
+    )
 
     def __init__(
         self,
@@ -150,6 +187,7 @@ class ConcurrentDeclarativeSource(Source):
         normalize_manifest: bool = False,
         limits: Optional[TestLimits] = None,
         config_path: Optional[str] = None,
+        custom_components_trusted: bool = True,
         **kwargs: Any,
     ) -> None:
         self.logger = logging.getLogger(f"airbyte.{self.name}")
@@ -174,6 +212,7 @@ class ConcurrentDeclarativeSource(Source):
         # the declarative models into runtime components. Concurrent sources will continue to checkpoint
         # incremental streams running in full refresh.
         component_factory = ModelToComponentFactory(
+            custom_components_trusted=custom_components_trusted,
             emit_connector_builder_messages=emit_connector_builder_messages,
             message_repository=ConcurrentMessageRepository(queue, message_repository),
             configured_catalog=catalog,
@@ -187,7 +226,7 @@ class ConcurrentDeclarativeSource(Source):
 
         self._should_normalize = normalize_manifest
         self._should_migrate = migrate_manifest
-        self._declarative_component_schema = _get_declarative_component_schema()
+        self._declarative_component_schema = get_declarative_component_schema()
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
         # set additional attributes
@@ -197,6 +236,7 @@ class ConcurrentDeclarativeSource(Source):
             component_factory
             if component_factory
             else ModelToComponentFactory(
+                custom_components_trusted=custom_components_trusted,
                 emit_connector_builder_messages=emit_connector_builder_messages,
                 max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
             )
@@ -219,13 +259,17 @@ class ConcurrentDeclarativeSource(Source):
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
         )
         self._config = self._migrate_and_transform_config(config_path, config) or {}
+        # `check` may temporarily overlay values onto `self._config` (see
+        # `_config_overridden_for_check`). The manifest's `config_validations` express intent about the
+        # config as supplied, so they must run against it rather than against a check-time overlay.
+        self._config_for_validation = self._config
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
         if concurrency_level_from_manifest:
             concurrency_level_component = self._constructor.create_component(
                 model_type=ConcurrencyLevelModel,
                 component_definition=concurrency_level_from_manifest,
-                config=config or {},
+                config=self._config,
             )
             if not isinstance(concurrency_level_component, ConcurrencyLevel):
                 raise ValueError(
@@ -323,12 +367,7 @@ class ConcurrentDeclarativeSource(Source):
         Validates the connector manifest against the declarative component schema
         """
 
-        try:
-            validate(self._source_config, self._declarative_component_schema)
-        except ValidationError as e:
-            raise ValidationError(
-                "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-            ) from e
+        validate_manifest(self._source_config, self._declarative_component_schema)
 
     def _migrate_and_transform_config(
         self,
@@ -403,16 +442,26 @@ class ConcurrentDeclarativeSource(Source):
         In both case, we will assume that calling the DeclarativeStream is perfectly fine as the result for these is the same regardless of if it is a DeclarativeStream or a DefaultStream (concurrent). This should simply be removed once we have moved away from the mentioned code paths above.
         """
 
-        if self._spec_component:
-            self._spec_component.validate_config(self._config)
-
+        self._prepare_for_stream_build()
         stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
+        return self._create_streams(stream_configs, stream_configs)
+
+    def _prepare_for_stream_build(self) -> None:
+        if self._spec_component:
+            self._spec_component.validate_config(self._config_for_validation)
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, self._config)
 
-        prepared_configs = self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
+    def _create_streams(
+        self,
+        selected_configs: List[Dict[str, Any]],
+        all_configs: List[Dict[str, Any]],
+    ) -> List[AbstractStream]:
+        prepared_configs = self._initialize_cache_for_parent_streams(
+            deepcopy(selected_configs), all_stream_configs=all_configs
+        )
 
         source_streams = [
             self._constructor.create_component(
@@ -428,11 +477,61 @@ class ConcurrentDeclarativeSource(Source):
             for stream_config in prepared_configs
         ]
 
-        self._apply_stream_groups(source_streams)
+        top_level_stream_names: Set[str] = set()
+        for stream_config in all_configs:
+            stream_name = stream_config.get("name")
+            if isinstance(stream_name, str):
+                top_level_stream_names.add(stream_name)
+        self._apply_stream_groups(source_streams, top_level_stream_names)
 
         return source_streams
 
-    def _apply_stream_groups(self, streams: List[AbstractStream]) -> None:
+    def _uses_default_streams(self) -> bool:
+        """A subclass that overrides `streams()` must keep going through it during check."""
+        return type(self).streams is ConcurrentDeclarativeSource.streams
+
+    def _streams_by_name(self, stream_names: List[str]) -> Optional[List[AbstractStream]]:
+        """Build the named static streams without resolving or building dynamic streams.
+
+        Return None when the names are empty, any name isn't static, or `streams()` is overridden.
+        """
+        if not self._uses_default_streams():
+            return None
+        try:
+            static_configs = self._stream_configs(self._source_config)
+        except Exception:
+            return None
+        static_stream_names = {stream_config.get("name") for stream_config in static_configs}
+        if not stream_names or any(name not in static_stream_names for name in stream_names):
+            return None
+
+        self._prepare_for_stream_build()
+        selected_names = set(stream_names)
+        selected_configs = [
+            stream_config
+            for stream_config in static_configs
+            if stream_config.get("name") in selected_names
+        ]
+        return self._create_streams(selected_configs, static_configs)
+
+    def _first_streams(self, count: int) -> Optional[List[AbstractStream]]:
+        """Build the first `count` streams, static then dynamic, in `streams()` order.
+
+        `count` must be at least 1. Return None when `streams()` is overridden.
+        """
+        if not self._uses_default_streams():
+            return None
+        if count < 1:
+            raise ValueError("count must be >= 1")
+        self._prepare_for_stream_build()
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
+        return self._create_streams(stream_configs[:count], stream_configs)
+
+    def _apply_stream_groups(
+        self,
+        streams: List[AbstractStream],
+        top_level_stream_names: Optional[Set[str]] = None,
+    ) -> None:
         """Set block_simultaneous_read on streams based on the manifest's stream_groups config.
 
         Iterates over the resolved manifest's stream_groups and matches group membership
@@ -455,21 +554,34 @@ class ConcurrentDeclarativeSource(Source):
         # Validate no stream shares a group with any of its ancestor streams
         stream_name_to_instance: Dict[str, AbstractStream] = {s.name: s for s in streams}
 
-        def _collect_all_ancestor_names(stream_name: str) -> Set[str]:
+        def _collect_all_ancestor_names(
+            stream_name: str, inline_instance: Optional[AbstractStream] = None
+        ) -> Set[str]:
             """Recursively collect all ancestor stream names."""
             ancestors: Set[str] = set()
             inst = stream_name_to_instance.get(stream_name)
+            if inst is None and stream_name in (top_level_stream_names or set()):
+                # A top-level stream that this call did not build: walk the copy inlined in the child
+                inst = inline_instance
             if not isinstance(inst, DefaultStream):
                 return ancestors
-            router = inst.get_partition_router()
-            if isinstance(router, GroupingPartitionRouter):
-                router = router.underlying_partition_router
-            if not isinstance(router, SubstreamPartitionRouter):
-                return ancestors
-            for parent_config in router.parent_stream_configs:
-                parent_name = parent_config.stream.name
-                ancestors.add(parent_name)
-                ancestors.update(_collect_all_ancestor_names(parent_name))
+            partition_router = inst.get_partition_router()
+            routers = [partition_router] if partition_router is not None else []
+            while routers:
+                router = routers.pop()
+                if isinstance(router, GroupingPartitionRouter):
+                    routers.append(router.underlying_partition_router)
+                elif isinstance(router, UnionPartitionRouter):
+                    routers.extend(router.partition_routers)
+                elif isinstance(router, CartesianProductStreamSlicer):
+                    routers.extend(router.stream_slicers)
+                elif isinstance(router, SubstreamPartitionRouter):
+                    for parent_config in router.parent_stream_configs:
+                        parent_name = parent_config.stream.name
+                        ancestors.add(parent_name)
+                        ancestors.update(
+                            _collect_all_ancestor_names(parent_name, parent_config.stream)
+                        )
             return ancestors
 
         for stream in streams:
@@ -490,8 +602,36 @@ class ConcurrentDeclarativeSource(Source):
                 stream.block_simultaneous_read = stream_name_to_group[stream.name]
 
     @staticmethod
+    def _parent_stream_names(stream_configs: List[Dict[str, Any]]) -> Set[str]:
+        parent_stream_names: Set[str] = set()
+        for stream_config in stream_configs:
+            parent_stream = stream_config.get("incremental_sync", {}).get("parent_stream")
+            if parent_stream:
+                parent_stream_names.add(parent_stream["name"])
+            elif stream_config.get("retriever", {}).get("partition_router", {}):
+                partition_router = stream_config["retriever"]["partition_router"]
+                routers = (
+                    list(partition_router)
+                    if isinstance(partition_router, list)
+                    else [partition_router]
+                )
+                while routers:
+                    router = routers.pop()
+                    if not isinstance(router, dict):
+                        continue
+                    parent_stream_names.update(
+                        parent_config["stream"]["name"]
+                        for parent_config in router.get("parent_stream_configs") or []
+                    )
+                    routers.extend(router.get("partition_routers") or [])
+                    if router.get("underlying_partition_router"):
+                        routers.append(router["underlying_partition_router"])
+        return parent_stream_names
+
+    @staticmethod
     def _initialize_cache_for_parent_streams(
         stream_configs: List[Dict[str, Any]],
+        all_stream_configs: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """Enable caching for parent streams unless explicitly disabled.
 
@@ -500,7 +640,10 @@ class ConcurrentDeclarativeSource(Source):
         settings are respected for streams that cannot use caching (e.g., scroll-based pagination
         APIs where caching causes duplicate records).
         """
-        parent_streams = set()
+        parent_streams = ConcurrentDeclarativeSource._parent_stream_names(stream_configs)
+        parent_streams.update(
+            ConcurrentDeclarativeSource._parent_stream_names(all_stream_configs or [])
+        )
 
         def _set_cache_if_not_disabled(requester: Dict[str, Any]) -> None:
             """Set use_cache to True only if not explicitly disabled."""
@@ -511,7 +654,6 @@ class ConcurrentDeclarativeSource(Source):
             parent_configs: list[dict[str, Any]],
         ) -> None:
             for parent_config in parent_configs:
-                parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["type"] == "StateDelegatingStream":
                     _set_cache_if_not_disabled(
                         parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"]
@@ -524,7 +666,6 @@ class ConcurrentDeclarativeSource(Source):
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
-                parent_streams.add(stream_config["incremental_sync"]["parent_stream"]["name"])
                 _set_cache_if_not_disabled(
                     stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"]
                 )
@@ -532,14 +673,23 @@ class ConcurrentDeclarativeSource(Source):
             elif stream_config.get("retriever", {}).get("partition_router", {}):
                 partition_router = stream_config["retriever"]["partition_router"]
 
-                if isinstance(partition_router, dict) and partition_router.get(
-                    "parent_stream_configs"
-                ):
-                    update_with_cache_parent_configs(partition_router["parent_stream_configs"])
-                elif isinstance(partition_router, list):
-                    for router in partition_router:
-                        if router.get("parent_stream_configs"):
-                            update_with_cache_parent_configs(router["parent_stream_configs"])
+                routers = (
+                    list(partition_router)
+                    if isinstance(partition_router, list)
+                    else [partition_router]
+                )
+                while routers:
+                    router = routers.pop()
+                    if not isinstance(router, dict):
+                        continue
+                    if router.get("parent_stream_configs"):
+                        update_with_cache_parent_configs(router["parent_stream_configs"])
+                    # Descend into composed partition routers (e.g. UnionPartitionRouter's
+                    # partition_routers or GroupingPartitionRouter's underlying_partition_router)
+                    # so nested parent streams also get caching enabled.
+                    routers.extend(router.get("partition_routers") or [])
+                    if router.get("underlying_partition_router"):
+                        routers.append(router["underlying_partition_router"])
 
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
@@ -583,10 +733,233 @@ class ConcurrentDeclarativeSource(Source):
                 f"Expected to generate a ConnectionChecker component, but received {connection_checker.__class__}"
             )
 
-        check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
+        with self._config_overridden_for_check(check.get("config_overrides")):
+            check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
         if not check_succeeded:
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
+
+    def check_section(
+        self, logger: logging.Logger, section: str, config: Mapping[str, Any]
+    ) -> AirbyteConnectionStatus:
+        """
+        Section check for the stepped setup form, see `airbyte_cdk.sources.utils.check_section`.
+
+        A declarative source validates a configuration by reading from the streams its `check` component names, so a
+        section check runs that same check on the configuration collected so far. The manifest is responsible for
+        ordering its `sections` so that the sections which declare `"check": true` already hold every field those
+        streams need; the entrypoint has validated that the required fields of the section and of the sections before
+        it are present.
+        """
+        logger.info(f"Checking configuration section '{section}' with the declared check streams.")
+        return self.check(logger, config)
+
+    @contextmanager
+    def _config_overridden_for_check(
+        self, config_overrides: Optional[Mapping[str, Any]]
+    ) -> Iterator[None]:
+        """Overlay the check component's `config_overrides` onto the config for the duration of a check.
+
+        Rebinding `self._config` reaches the whole component tree, because `streams()` interpolates from
+        it and ignores its own `config` argument. Not thread safe; `check` is one command per process.
+
+        Semantics:
+          - values are applied verbatim, never interpolated;
+          - the merge is one level deep, so an object-valued override replaces rather than merges;
+          - it happens after `_migrate_and_transform_config`, so derived fields are not recomputed;
+          - `config_validations` run against `self._config_for_validation`, not the overlay.
+
+        The copy is shallow, so a component writing into a nested path writes through to the config the
+        source was constructed with and the restore does not undo it. Only top-level writes are
+        discarded, which is why `_raise_if_config_is_persisted` refuses config-persisting manifests.
+
+        Known limitation: `$parameters` declared on a check component still propagate into object-valued
+        overrides. See https://github.com/airbytehq/airbyte-internal-issues/issues/16995.
+        """
+        if not config_overrides:
+            yield
+            return
+
+        self._raise_on_non_string_override_keys(config_overrides)
+        self._raise_on_reserved_override_keys(config_overrides)
+        self._raise_if_config_is_persisted(config_overrides)
+        self._warn_on_unknown_override_keys(config_overrides)
+        self._register_override_secrets(config_overrides)
+        # Keys only. An override may name a secret field, so values must not reach the logs.
+        self.logger.info(
+            f"Overriding config keys for the check operation: {', '.join(sorted(config_overrides))}"
+        )
+
+        unmodified_config = self._config
+        self._config = {**self._config, **config_overrides}
+        try:
+            yield
+        finally:
+            self._config = unmodified_config
+
+    @staticmethod
+    def _raise_on_reserved_override_keys(config_overrides: Mapping[str, Any]) -> None:
+        """Refuse keys in the platform's reserved `__airbyte` namespace.
+
+        `CheckStream` reads `__airbyte_check_stream_names` out of the config this overlay writes to, so
+        an override there would change which streams a check tests. The whole prefix is refused.
+        """
+        reserved = sorted(key for key in config_overrides if key.startswith("__airbyte"))
+        if reserved:
+            raise AirbyteTracedException(
+                message=(
+                    f"This connector's manifest is invalid: its check component overrides the "
+                    f"reserved config key(s) {reserved}. Keys prefixed with `__airbyte` belong to "
+                    "the platform, not to the connector's spec. This is a bug in the connector "
+                    "rather than in this connection's settings."
+                ),
+                internal_message=(
+                    f"config_overrides rejected: reserved __airbyte key(s) {reserved}. "
+                    "`CheckStream` reads `__airbyte_check_stream_names` out of the config this "
+                    "overlay writes to, so an override there would change which streams a check "
+                    "tests. Use `stream_names` instead."
+                ),
+                failure_type=FailureType.system_error,
+            )
+
+    @staticmethod
+    def _raise_on_non_string_override_keys(config_overrides: Mapping[str, Any]) -> None:
+        """Reject non-string keys, which YAML allows and every consumer below assumes away."""
+        non_strings = [key for key in config_overrides if not isinstance(key, str)]
+        if non_strings:
+            raise AirbyteTracedException(
+                message=(
+                    "This connector's manifest is invalid: its check component has "
+                    f"`config_overrides` key(s) {sorted(map(repr, non_strings))} that are not "
+                    "strings, so they cannot name a field in the connector's spec. This is a bug "
+                    "in the connector rather than in this connection's settings."
+                ),
+                internal_message=(
+                    "config_overrides rejected: non-string key(s) "
+                    f"{sorted(map(repr, non_strings))}. Quote them in the manifest so they name a "
+                    "field in the connector's spec."
+                ),
+                failure_type=FailureType.system_error,
+            )
+
+    def _raise_if_config_is_persisted(self, config_overrides: Mapping[str, Any]) -> None:
+        """Reject `config_overrides` on a manifest whose authenticator writes the config back.
+
+        A `refresh_token_updater` builds a `DeclarativeSingleUseRefreshTokenOauth2Authenticator`, whose
+        `_emit_control_message` emits the entire config it was handed as a `CONNECTOR_CONFIG` message.
+        During a check that is the overlay, and the platform persists it, so a check-only override would
+        become the connection's saved config. The restore cannot recall a message already on stdout.
+        """
+        if not self._manifest_writes_back_config(self._source_config):
+            return
+        raise AirbyteTracedException(
+            message=(
+                "This connector's manifest is invalid: `config_overrides` cannot be used by a "
+                "manifest that declares a `refresh_token_updater`. A token refresh during `check` "
+                "emits the whole config it was handed as a CONNECTOR_CONFIG control message, which "
+                f"the platform persists, so the check-only override(s) {sorted(config_overrides)} "
+                "would be saved as this connection's config and applied to every later sync. This "
+                "is a bug in the connector rather than in this connection's settings."
+            ),
+            internal_message=(
+                "config_overrides rejected: manifest persists config via refresh_token_updater. "
+                "Remove `config_overrides` from the check component, or drop the "
+                "`refresh_token_updater`."
+            ),
+            failure_type=FailureType.system_error,
+        )
+
+    @staticmethod
+    def _manifest_writes_back_config(definition: Any) -> bool:
+        """Whether any component in the manifest emits the connector config back to the platform.
+
+        Walks the whole manifest, since an authenticator can sit under any requester, inside a
+        `SelectiveAuthenticator`, or in a `ConditionalStreams` branch. Callers pass `self._source_config`,
+        which is post-`_pre_process_manifest`, so a `$ref`-ed authenticator is already inlined and
+        carries its own `type`.
+
+        `is not None` rather than truthiness because `refresh_token_updater: {}` takes every default and
+        still builds a single-use authenticator - the factory tests a model instance, which is truthy.
+        The type condition is what separates a component from a data blob that happens to use the name.
+
+        Does not detect a `CustomAuthenticator` that persists config without declaring the field.
+        """
+        if isinstance(definition, Mapping):
+            if (
+                definition.get("refresh_token_updater") is not None
+                and definition.get("type")
+                in ConcurrentDeclarativeSource._CONFIG_PERSISTING_AUTHENTICATOR_TYPES
+            ):
+                return True
+            return any(
+                ConcurrentDeclarativeSource._manifest_writes_back_config(value)
+                for value in definition.values()
+            )
+        if isinstance(definition, list):
+            return any(
+                ConcurrentDeclarativeSource._manifest_writes_back_config(item)
+                for item in definition
+            )
+        return False
+
+    def _warn_on_unknown_override_keys(self, config_overrides: Mapping[str, Any]) -> None:
+        """Warn about override keys the spec does not declare.
+
+        Nothing validates the overlay - the entrypoint validates what the user supplied, and
+        `config_validations` run against `self._config_for_validation` - so a typo is a silent no-op.
+        """
+        if not self._spec_component:
+            return
+        declared = self._declared_config_properties(self._spec_component.connection_specification)
+        if declared is None:
+            return
+        unknown = sorted(key for key in config_overrides if key not in declared)
+        if unknown:
+            self.logger.warning(
+                f"Check-only config override(s) {unknown} are not declared in the connector spec, so "
+                "they will have no effect on any component that reads the config by field name."
+            )
+
+    @staticmethod
+    def _declared_config_properties(
+        connection_specification: Mapping[str, Any],
+    ) -> Optional[Set[str]]:
+        """Every field name a spec declares, or `None` when it does not enumerate them.
+
+        `oneOf` and `allOf` composition put declarations one level down, so reading only the top-level
+        `properties` would report a declared field as undeclared.
+        """
+        if not isinstance(connection_specification, Mapping):
+            return None
+
+        names: Set[str] = set()
+        found_any = False
+        properties = connection_specification.get("properties")
+        if isinstance(properties, Mapping):
+            found_any = True
+            names.update(str(key) for key in properties)
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            for branch in connection_specification.get(keyword) or []:
+                nested = ConcurrentDeclarativeSource._declared_config_properties(branch)
+                if nested is not None:
+                    found_any = True
+                    names.update(nested)
+        return names if found_any else None
+
+    def _register_override_secrets(self, config_overrides: Mapping[str, Any]) -> None:
+        """Register override values landing on an `airbyte_secret` field, so they get redacted.
+
+        The entrypoint builds the secret list from the config the user supplied, so a value substituted
+        here is unknown to `filter_secrets`. Uses the same discovery as the entrypoint, so the overlay is
+        redacted exactly where the user's own value at that path would be.
+        """
+        if not self._spec_component:
+            return
+        for secret in get_secrets(
+            self._spec_component.connection_specification, dict(config_overrides)
+        ):
+            if secret is not None:
+                add_to_secrets(str(secret))
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
@@ -645,7 +1018,8 @@ class ConcurrentDeclarativeSource(Source):
                     f"Expected one of {list(COMPONENTS_RESOLVER_TYPE_MAPPING.keys())}."
                 )
 
-            if "retriever" in components_resolver_config:
+            # AsyncRetriever has no `requester`, and a cached polling request replays a stale status
+            if "requester" in components_resolver_config.get("retriever", {}):
                 components_resolver_config["retriever"]["requester"]["use_cache"] = True
 
             # Create a resolver for dynamic components based on type

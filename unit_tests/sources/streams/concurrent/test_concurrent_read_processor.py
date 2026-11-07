@@ -29,11 +29,17 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+    CartesianProductStreamSlicer,
+)
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
     GroupingPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.message import LogMessage, MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -1645,3 +1651,69 @@ def test_collect_parent_stream_names_unwraps_grouping_partition_router():
 
     parent_names = handler._collect_all_parent_stream_names("child")
     assert parent_names == {"parent"}
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        pytest.param(None, id="union_router"),
+        pytest.param("grouping", id="union_nested_in_grouping_router"),
+        pytest.param("cartesian", id="union_nested_in_cartesian_product_slicer"),
+    ],
+)
+def test_collect_parent_stream_names_unwraps_union_partition_router(wrapper):
+    """Test _collect_all_parent_stream_names collects parents from all UnionPartitionRouter children."""
+    partition_enqueuer = Mock(spec=PartitionEnqueuer)
+    thread_pool_manager = Mock(spec=ThreadPoolManager)
+    logger = Mock(spec=logging.Logger)
+    slice_logger = Mock(spec=SliceLogger)
+    message_repository = Mock(spec=MessageRepository)
+    message_repository.consume_queue.return_value = []
+    partition_reader = Mock(spec=PartitionReader)
+
+    parent_a = Mock(spec=AbstractStream)
+    parent_a.name = "parent_a"
+    parent_a.block_simultaneous_read = ""
+
+    parent_b = Mock(spec=AbstractStream)
+    parent_b.name = "parent_b"
+    parent_b.block_simultaneous_read = ""
+
+    child_stream = Mock(spec=DefaultStream)
+    child_stream.name = "child"
+    child_stream.block_simultaneous_read = ""
+
+    substream_routers = []
+    for parent in (parent_a, parent_b):
+        substream_router = Mock(spec=SubstreamPartitionRouter)
+        parent_config = Mock()
+        parent_config.stream = parent
+        substream_router.parent_stream_configs = [parent_config]
+        substream_routers.append(substream_router)
+
+    union_router = Mock(spec=UnionPartitionRouter)
+    union_router.partition_routers = substream_routers
+
+    if wrapper == "grouping":
+        grouping_router = Mock(spec=GroupingPartitionRouter)
+        grouping_router.underlying_partition_router = union_router
+        child_stream.get_partition_router.return_value = grouping_router
+    elif wrapper == "cartesian":
+        cartesian_slicer = Mock(spec=CartesianProductStreamSlicer)
+        cartesian_slicer.stream_slicers = [union_router]
+        child_stream.get_partition_router.return_value = cartesian_slicer
+    else:
+        child_stream.get_partition_router.return_value = union_router
+
+    handler = ConcurrentReadProcessor(
+        [parent_a, parent_b, child_stream],
+        partition_enqueuer,
+        thread_pool_manager,
+        logger,
+        slice_logger,
+        message_repository,
+        partition_reader,
+    )
+
+    parent_names = handler._collect_all_parent_stream_names("child")
+    assert parent_names == {"parent_a", "parent_b"}

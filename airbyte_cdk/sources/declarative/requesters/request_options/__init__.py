@@ -14,10 +14,14 @@ from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_req
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
+from airbyte_cdk.sources.declarative.requesters.request_options.sync_token_request_options_provider import (
+    SyncTokenRequestOptionsProvider,
+)
 
 __all__ = [
     "DatetimeBasedRequestOptionsProvider",
     "DefaultRequestOptionsProvider",
     "InterpolatedRequestOptionsProvider",
+    "SyncTokenRequestOptionsProvider",
     "RequestOptionsProvider",
 ]

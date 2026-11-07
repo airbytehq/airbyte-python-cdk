@@ -11,7 +11,10 @@ import requests
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
-from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
+from airbyte_cdk.sources.declarative.extractors.record_selector import (
+    RecordSelector,
+    extracted_record_count,
+)
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
@@ -312,3 +315,48 @@ def test_transform_before_filtering(transform_before_filtering):
     else:
         assert final_record_data[0]["id"] == 2
         assert final_record_data[0]["myfield"] == 999
+
+
+class _StopReadingAtTheFirstRejectedRecord(RecordFilter):
+    def filter_records(self, records, stream_state, stream_slice=None, next_page_token=None):
+        for record in records:
+            if record["id"] == 2:
+                return
+            yield record
+
+
+@pytest.mark.parametrize(
+    "record_filter, expected_ids",
+    [
+        pytest.param(
+            RecordFilter(config={}, condition="{{ record['id'] != 2 }}", parameters={}),
+            [1, 3],
+            id="record_filter",
+        ),
+        pytest.param(
+            _StopReadingAtTheFirstRejectedRecord(config={}, parameters={}),
+            [1],
+            id="filter_that_stops_reading_the_page",
+        ),
+    ],
+)
+def test_select_records_counts_the_records_of_the_page_before_filtering_them(
+    record_filter, expected_ids
+):
+    record_selector = RecordSelector(
+        extractor=DpathExtractor(field_path=["data"], config={}, parameters={}),
+        record_filter=record_filter,
+        config={},
+        name="test_stream",
+        schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+        parameters={},
+    )
+    response = create_response({"data": [{"id": 1}, {"id": 2}, {"id": 3}]})
+    assert extracted_record_count(response, default=-1) == -1
+
+    records = list(
+        record_selector.select_records(response=response, stream_state={}, records_schema={})
+    )
+
+    assert [record.data["id"] for record in records] == expected_ids
+    assert extracted_record_count(response, default=-1) == 3

@@ -4,6 +4,11 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   slashCommandDispatch:
     runs-on: ubuntu-24.04
@@ -18,9 +23,7 @@ jobs:
           private-key: ${{ secrets.OCTAVIA_BOT_PRIVATE_KEY }}
       - name: Slash Command Dispatch
         id: dispatch
-        # TODO: Revert to `peter-evans/slash-command-dispatch@v4` after PR merges:
-        # - https://github.com/peter-evans/slash-command-dispatch/pull/372/files
-        uses: aaronsteers/slash-command-dispatch@aj/fix/add-dispatched-bool-output
+        uses: peter-evans/slash-command-dispatch@v4
         with:
           repository: ${{ github.repository }}
           token: ${{ steps.get-app-token.outputs.token }}
@@ -52,34 +55,3 @@ jobs:
           comment-id: ${{ github.event.comment.id }}
           body: |
             > Error: ${{ steps.dispatch.outputs.error-message }}
-
-      - name: Generate help text
-        id: help
-        if: >
-          startsWith(github.event.comment.body, '/') &&
-          !steps.dispatch.outputs.dispatched
-        run: |
-          HELP_TEXT="The following slash commands are available:
-
-          - \`/autofix\` - Corrects any linting or formatting issues
-          - \`/test\` - Runs the test suite
-          - \`/poetry-lock\` - Re-locks dependencies and updates the poetry.lock file
-          - \`/prerelease\` - Triggers a prerelease publish with default arguments
-          - \`/help\` - Shows this help message"
-
-          if [[ "${{ github.event.comment.body }}" == "/help" ]]; then
-            echo "body=$HELP_TEXT" >> $GITHUB_OUTPUT
-          else
-            echo "body=It looks like you are trying to enter a slash command. Either the slash command is unrecognized or you don't have access to call it.
-
-          $HELP_TEXT" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Post help message
-        if: >
-          startsWith(github.event.comment.body, '/') &&
-          !steps.dispatch.outputs.dispatched
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          comment-id: ${{ github.event.comment.id }}
-          body: ${{ steps.help.outputs.body }}

@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import orjson
-import yaml
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -43,9 +42,14 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
+)
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
+from airbyte_cdk.utils.yaml_loader import safe_load_yaml
 
 
 class SourceLocalYaml(YamlDeclarativeSource):
@@ -212,6 +216,10 @@ def create_declarative_source(
             state=state,
             source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
             config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
+            # The manifest is supplied by the caller (via config or --manifest-path) rather than
+            # bundled in a connector image, so any custom components it references are untrusted
+            # code. Bundled manifest-only connectors take the local-manifest path instead.
+            custom_components_trusted=False,
         )
     except Exception as error:
         print(
@@ -264,7 +272,7 @@ def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
     """Extract and parse a manifest file specified in the args."""
     try:
         with open(filepath, "r", encoding="utf-8") as manifest_file:
-            manifest_content = yaml.safe_load(manifest_file)
+            manifest_content = safe_load_yaml(manifest_file)
             if manifest_content is None:
                 raise ValueError(f"Manifest file at {filepath} is empty")
             if not isinstance(manifest_content, dict):
@@ -275,9 +283,16 @@ def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
 
 
 def _register_components_from_file(filepath: str) -> None:
-    """Load and register components from a Python file specified in the args."""
+    """Load and register components from a Python file specified in the args.
+
+    The file is caller-supplied Python that is executed via `exec_module`, so it is
+    untrusted code and must be gated behind `AIRBYTE_ENABLE_UNSAFE_CODE`.
+    """
     import importlib.util
     import sys
+
+    if not custom_code_execution_permitted():
+        raise AirbyteCustomCodeNotPermittedError
 
     components_path = Path(filepath)
 

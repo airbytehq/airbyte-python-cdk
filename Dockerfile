@@ -5,7 +5,7 @@
 # A new version of source-declarative-manifest is built for every new Airbyte CDK release, and their versions are kept in sync.
 #
 
-FROM docker.io/airbyte/python-connector-base:4.1.0@sha256:1d1aa21d34e851df4e8a87b391c27724c06e2597608e7161f4d167be853bd7b6
+FROM docker.io/airbyte/python-connector-base:4.1.1@sha256:a268b44c733ae699a60f5fbc06a324945dba98945c6e2ab7f8609f2f895b0d28
 
 WORKDIR /airbyte/integration_code
 
@@ -19,6 +19,15 @@ RUN poetry config virtualenvs.create false \
 
 # Build and install the package
 RUN pip install dist/*.whl
+
+# pandas is imported lazily by the CDK, so verify it is importable at build time
+RUN python -c "import pandas"
+
+# Precompile bytecode for installed packages, skipping test directories. `poetry install` does not
+# compile it, and the runtime `airbyte` user cannot write to the root-owned site-packages, so without
+# this every connector process recompiles its dependencies on start.
+RUN python -m compileall -q -j 0 -x '/tests?/' /usr/local/lib/python3.13/site-packages \
+    || echo "WARNING: some files failed to compile (see errors above); continuing without their bytecode"
 
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \

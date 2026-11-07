@@ -147,6 +147,7 @@ class TestJwtAuthenticator:
         expected = "test"
         assert authenticator._get_secret_key() == expected
 
+    @freezegun.freeze_time("2022-01-01 00:00:00")
     def test_get_signed_token(self):
         authenticator = JwtAuthenticator(
             config={},
@@ -318,6 +319,7 @@ class TestJwtAuthenticator:
             ),
         ],
     )
+    @freezegun.freeze_time("2022-01-01 00:00:00")
     def test_get_request_options(self, request_option, expected_request_key):
         authenticator = JwtAuthenticator(
             config={},
@@ -368,6 +370,7 @@ class TestJwtAuthenticator:
             pytest.param(None, "Authorization", id="test_with_default_authorization_header"),
         ],
     )
+    @freezegun.freeze_time("2022-01-01 00:00:00")
     def test_get_request_headers(self, request_option, expected_header_key):
         authenticator = JwtAuthenticator(
             config={},

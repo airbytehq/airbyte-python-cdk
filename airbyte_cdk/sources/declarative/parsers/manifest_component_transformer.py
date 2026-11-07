@@ -50,6 +50,8 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     # ParentStreamConfig
     "ParentStreamConfig.request_option": "RequestOption",
     "ParentStreamConfig.stream": "DeclarativeStream",
+    # RecordExpander
+    "RecordExpander.parent_fields": "ParentFieldPath",
     # RecordSelector
     "RecordSelector.extractor": "DpathExtractor",
     "RecordSelector.record_filter": "RecordFilter",
@@ -190,10 +192,10 @@ class ManifestComponentTransformer:
 
     @staticmethod
     def _is_json_schema_object(propagated_component: Mapping[str, Any]) -> bool:
-        return propagated_component.get("type") == "object" or propagated_component.get("type") == [
-            "null",
-            "object",
-        ]
+        # Component types are always strings: a list is a JSON schema type union and a dict is a
+        # `properties` map that has a property named `type`.
+        component_type = propagated_component.get("type")
+        return component_type == "object" or isinstance(component_type, (list, dict))
 
     @staticmethod
     def _has_nested_components(propagated_component: Dict[str, Any]) -> bool:

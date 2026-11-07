@@ -158,16 +158,22 @@ def test_invalid_checksum_fails_to_run(
         datetime.datetime.now() - datetime.timedelta(days=2)
     ).strftime("%Y-%m-%d")
 
+    actual_checksum = py_components_config_dict["__injected_components_py_checksums"][hash_type]
     py_components_config_dict["__injected_components_py_checksums"][hash_type] = "invalid_checksum"
 
     with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
         json_str = json.dumps(py_components_config_dict)
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
-        with pytest.raises(AirbyteCodeTamperedError):
+        with pytest.raises(AirbyteCodeTamperedError) as exc_info:
             source = create_declarative_source(
                 ["check", "--config", temp_config_file.name],
             )
+
+    # No components code in the message: it lands in failure reasons and logs
+    assert str(exc_info.value) == f"{hash_type} checksum does not match." + str(
+        {"expected_checksum": "invalid_checksum", "actual_checksum": actual_checksum}
+    )
 
 
 @pytest.mark.parametrize(
@@ -288,10 +294,34 @@ def test_sync_with_injected_py_components(
             _read_fn()
 
 
-def test_register_components_from_file(components_file: str) -> None:
-    """Test that components can be properly loaded from a file."""
+def test_register_components_from_file(
+    components_file: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that components can be properly loaded from a file when custom code is permitted."""
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
+
     # Register the components
     _register_components_from_file(components_file)
 
     # Verify the components were loaded correctly
     verify_components_loaded()
+
+
+def test_register_components_from_file_is_gated(
+    components_file: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `--components-path` file is caller-supplied Python executed via `exec_module`.
+
+    It must be gated behind `AIRBYTE_ENABLE_UNSAFE_CODE`: with the env var unset the file must
+    not be executed and the loader must raise `AirbyteCustomCodeNotPermittedError` before any
+    module-level code runs.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        _register_components_from_file(components_file)
+
+    assert "components" not in sys.modules
+    assert "source_declarative_manifest.components" not in sys.modules
