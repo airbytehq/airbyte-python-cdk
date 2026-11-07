@@ -93,7 +93,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def cursor(self) -> Optional[AbstractFileBasedCursor]:
         return self._cursor
 
-    @cursor.setter
+    @cursor.setter  # type: ignore[override]
     def cursor(self, value: AbstractFileBasedCursor) -> None:
         if self._cursor is not None:
             raise RuntimeError(
