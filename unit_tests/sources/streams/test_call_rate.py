@@ -14,6 +14,7 @@ from requests import Request
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams.call_rate import (
+    AbstractCallRatePolicy,
     APIBudget,
     CallRateLimitHit,
     FixedWindowCallRatePolicy,
@@ -59,6 +60,117 @@ def enable_cache_fixture():
 
     if prev_cache_path is not None:
         os.environ[ENV_REQUEST_CACHE_PATH] = prev_cache_path
+
+
+class StubCallRatePolicy(AbstractCallRatePolicy):
+    def __init__(self, failures: Optional[int] = None):
+        self._failures = failures
+        self.try_acquire_calls = 0
+
+    def matches(self, request: Any) -> bool:
+        return True
+
+    def try_acquire(self, request: Any, weight: int) -> None:
+        self.try_acquire_calls += 1
+        if self._failures is None or self._failures > 0:
+            if self._failures is not None:
+                self._failures -= 1
+            raise CallRateLimitHit(
+                error="x",
+                item=request,
+                weight=1,
+                rate="r",
+                time_to_wait=timedelta(seconds=60),
+            )
+
+    def update(self, available_calls: Optional[int], call_reset_ts: Optional[datetime]) -> None:
+        pass
+
+
+@pytest.fixture
+def fake_clock(mocker):
+    class FakeClock:
+        def __init__(self):
+            self.now = 0.0
+            self.sleep_calls = []
+
+        def monotonic(self) -> float:
+            return self.now
+
+        def sleep(self, seconds: float) -> None:
+            self.sleep_calls.append(seconds)
+            self.now += seconds
+
+    clock = FakeClock()
+    mocker.patch(
+        "airbyte_cdk.sources.streams.call_rate.time.monotonic",
+        side_effect=clock.monotonic,
+    )
+    mocker.patch(
+        "airbyte_cdk.sources.streams.call_rate.time.sleep",
+        side_effect=clock.sleep,
+    )
+    return clock
+
+
+class TestAPIBudgetAcquireTimeout:
+    def test_timeout_is_total_budget(self, fake_clock):
+        policy = StubCallRatePolicy()
+        budget = APIBudget(policies=[policy], maximum_attempts_to_acquire=4)
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(object(), block=True, timeout=1)
+
+        assert fake_clock.sleep_calls == [1.0]
+        assert policy.try_acquire_calls == 2
+
+    def test_zero_timeout_does_not_sleep(self, fake_clock):
+        policy = StubCallRatePolicy()
+        budget = APIBudget(policies=[policy], maximum_attempts_to_acquire=4)
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(object(), block=True, timeout=0)
+
+        assert fake_clock.sleep_calls == []
+        assert policy.try_acquire_calls == 1
+
+    def test_succeeds_before_timeout(self, fake_clock):
+        policy = StubCallRatePolicy(failures=2)
+        budget = APIBudget(policies=[policy], maximum_attempts_to_acquire=4)
+
+        budget.acquire_call(object(), block=True, timeout=200)
+
+        assert fake_clock.sleep_calls == [60.0, 60.0]
+        assert policy.try_acquire_calls == 3
+
+    def test_none_timeout_preserves_success_behavior(self, fake_clock):
+        policy = StubCallRatePolicy(failures=2)
+        budget = APIBudget(policies=[policy], maximum_attempts_to_acquire=4)
+
+        budget.acquire_call(object(), block=True, timeout=None)
+
+        assert fake_clock.sleep_calls == [60.0, 60.0]
+        assert policy.try_acquire_calls == 3
+
+    def test_none_timeout_preserves_attempt_behavior(self, fake_clock):
+        policy = StubCallRatePolicy()
+        budget = APIBudget(policies=[policy], maximum_attempts_to_acquire=4)
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(object(), block=True, timeout=None)
+
+        assert fake_clock.sleep_calls == [60.0, 60.0, 60.0]
+        assert policy.try_acquire_calls == 3
+
+    def test_non_blocking_raises_immediately(self, fake_clock):
+        policy = StubCallRatePolicy()
+        budget = APIBudget(policies=[policy], maximum_attempts_to_acquire=4)
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(object(), block=False, timeout=1)
+
+        assert fake_clock.sleep_calls == []
+        assert policy.try_acquire_calls == 1
 
 
 class TestHttpRequestMatcher:
