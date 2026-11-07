@@ -579,7 +579,7 @@ class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
     factor: Optional[Union[float, str]] = Field(
         5,
-        description="Multiplicative constant applied on each retry.",
+        description="The number of seconds to multiply by `2^attempt_count` to get each wait time.",
         examples=[5, 5.5, "10"],
         title="Factor",
     )
@@ -1062,7 +1062,7 @@ class OAuthConfigSpecification(BaseModel):
 
     oauth_user_input_from_connector_config_specification: Optional[Dict[str, Any]] = Field(
         None,
-        description="OAuth specific blob. This is a Json Schema used to validate Json configurations used as input to OAuth.\nMust be a valid non-nested JSON that refers to properties from ConnectorSpecification.connectionSpecification\nusing special annotation 'path_in_connector_config'.\nThese are input values the user is entering through the UI to authenticate to the connector, that might also shared\nas inputs for syncing data via the connector.\nExamples:\nif no connector values is shared during oauth flow, oauth_user_input_from_connector_config_specification=[]\nif connector values such as 'app_id' inside the top level are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['app_id']\n    }\n  }\nif connector values such as 'info.app_id' nested inside another object are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['info', 'app_id']\n    }\n  }",
+        description="Fields users enter to sign in with OAuth, and where to find them in the connector config.\nUse valid JSON with no nested objects. Refer to properties from `ConnectorSpecification.connectionSpecification`\nwith the special annotation `path_in_connector_config`.\nUsers enter these values in the UI to sign in. The connector may also use them to sync data.\nExamples:\nif no connector values is shared during oauth flow, oauth_user_input_from_connector_config_specification=[]\nif connector values such as 'app_id' inside the top level are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['app_id']\n    }\n  }\nif connector values such as 'info.app_id' nested inside another object are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['info', 'app_id']\n    }\n  }",
         examples=[
             {"app_id": {"type": "string", "path_in_connector_config": ["app_id"]}},
             {
@@ -1076,12 +1076,12 @@ class OAuthConfigSpecification(BaseModel):
     )
     oauth_connector_input_specification: Optional[OauthConnectorInputSpecification] = Field(
         None,
-        description='The DeclarativeOAuth specific blob.\nPertains to the fields defined by the connector relating to the OAuth flow.\n\nInterpolation capabilities:\n- The variables placeholders are declared as `{{my_var}}`.\n- The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {{ {{my_var_a}}:{{my_var_b}} | base64Encoder }}\n  + base64Decorer - decode from `base64` encoded string, {{ {{my_string_variable_or_string_value}} | base64Decoder }}\n  + urlEncoder - encode the input string to URL-like format, {{ https://test.host.com/endpoint | urlEncoder}}\n  + urlDecorer - decode the input url-encoded string into text format, {{ urlDecoder:https%3A%2F%2Fairbyte.io | urlDecoder}}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {{ {{state_value}} | codeChallengeS256 }}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{ {{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{{ auth_code_key }}": "{{ auth_code_value }}",\n              "{{ client_id_key }}": "{{ client_id_value }}",\n              "{{ client_secret_key }}": "{{ client_secret_value }}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
+        description='Connector settings for the OAuth flow.\nInterpolation capabilities:\n- The variables placeholders are declared as `{{my_var}}`.\n- The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {{ {{my_var_a}}:{{my_var_b}} | base64Encoder }}\n  + base64Decorer - decode from `base64` encoded string, {{ {{my_string_variable_or_string_value}} | base64Decoder }}\n  + urlEncoder - encode the input string to URL-like format, {{ https://test.host.com/endpoint | urlEncoder}}\n  + urlDecorer - decode the input url-encoded string into text format, {{ urlDecoder:https%3A%2F%2Fairbyte.io | urlDecoder}}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {{ {{state_value}} | codeChallengeS256 }}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{ {{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{{ auth_code_key }}": "{{ auth_code_value }}",\n              "{{ client_id_key }}": "{{ client_id_value }}",\n              "{{ client_secret_key }}": "{{ client_secret_value }}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
         title="DeclarativeOAuth Connector Specification",
     )
     complete_oauth_output_specification: Optional[Dict[str, Any]] = Field(
         None,
-        description="OAuth specific blob. This is a Json Schema used to validate Json configurations produced by the OAuth flows as they are\nreturned by the distant OAuth APIs.\nMust be a valid JSON describing the fields to merge back to `ConnectorSpecification.connectionSpecification`.\nFor each field, a special annotation `path_in_connector_config` can be specified to determine where to merge it,\nExamples:\n    complete_oauth_output_specification={\n      refresh_token: {\n        type: string,\n        path_in_connector_config: ['credentials', 'refresh_token']\n      }\n    }",
+        description="Fields the OAuth provider returns, like the access token, and where to put them in the connector config.\nUse valid JSON that describes the fields to merge back into `ConnectorSpecification.connectionSpecification`.\nFor each field, set `path_in_connector_config` to choose where to put it.\nExamples:\n    complete_oauth_output_specification={\n      refresh_token: {\n        type: string,\n        path_in_connector_config: ['credentials', 'refresh_token']\n      }\n    }",
         examples=[
             {
                 "refresh_token": {
@@ -1094,7 +1094,7 @@ class OAuthConfigSpecification(BaseModel):
     )
     complete_oauth_server_input_specification: Optional[Dict[str, Any]] = Field(
         None,
-        description="OAuth specific blob. This is a Json Schema used to validate Json configurations persisted as Airbyte Server configurations.\nMust be a valid non-nested JSON describing additional fields configured by the Airbyte Instance or Workspace Admins to be used by the\nserver when completing an OAuth flow (typically exchanging an auth code for refresh token).\nExamples:\n    complete_oauth_server_input_specification={\n      client_id: {\n        type: string\n      },\n      client_secret: {\n        type: string\n      }\n    }",
+        description="Extra OAuth settings that an instance or workspace admin provides on the Airbyte server.\nUse valid JSON with no nested objects to describe these extra fields. The server uses them to complete the OAuth flow,\nusually to exchange an auth code for a refresh token.\nExamples:\n    complete_oauth_server_input_specification={\n      client_id: {\n        type: string\n      },\n      client_secret: {\n        type: string\n      }\n    }",
         examples=[{"client_id": {"type": "string"}, "client_secret": {"type": "string"}}],
         title="OAuth input specification",
     )
@@ -1158,7 +1158,7 @@ class PageIncrement(BaseModel):
 class PrimaryKey(BaseModel):
     __root__: Union[str, List[str], List[List[str]]] = Field(
         ...,
-        description="The stream field to be used to distinguish unique records. Can either be a single field, an array of fields representing a composite key, or an array of arrays representing a composite key where the fields are nested fields.",
+        description="The field, or fields, that make each record unique. Use one field, a list of fields, or a list of paths for nested fields.",
         examples=["id", ["code", "type"]],
         title="Primary Key",
     )
@@ -1212,7 +1212,7 @@ class RemoveFields(BaseModel):
     type: Literal["RemoveFields"]
     condition: Optional[str] = Field(
         "",
-        description="The predicate to filter a property by a property value. Property will be removed if it is empty OR expression is evaluated to True.,",
+        description="Optional. A condition that limits which fields are removed. If it's not set, every field in `field_pointers` is removed. If it's set, only the fields where the condition is true are removed.",
         examples=[
             "{{ property|string == '' }}",
             "{{ property is integer }}",
@@ -1916,7 +1916,7 @@ class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
     clamping: Optional[Clamping] = Field(
         None,
-        description="This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)",
+        description="Moves the start and end of each date window to the start and end of a day, week or month.",
         title="Date Range Clamping",
     )
     cursor_field: str = Field(
@@ -2225,19 +2225,19 @@ class OAuthAuthenticator(BaseModel):
     )
     refresh_token_error_status_codes: Optional[List[int]] = Field(
         None,
-        description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error",
+        description="Status codes that mean the refresh token is no longer valid. Also set `refresh_token_error_key` and `refresh_token_error_values`. When a response matches all three, the sync fails with a config error that tells the user to re-authenticate.",
         examples=[[400, 500]],
         title="Refresh Token Error Status Codes",
     )
     refresh_token_error_key: Optional[str] = Field(
         None,
-        description="Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).",
+        description="The response key to check when the refresh token is no longer valid. Also set `refresh_token_error_status_codes` and `refresh_token_error_values`. When a response matches all three, the sync fails with a config error that tells the user to re-authenticate.",
         examples=["error"],
         title="Refresh Token Error Key",
     )
     refresh_token_error_values: Optional[List[str]] = Field(
         None,
-        description='List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error',
+        description="Response values that mean the refresh token is no longer valid. Also set `refresh_token_error_status_codes` and `refresh_token_error_key`. When a response matches all three, the sync fails with a config error that tells the user to re-authenticate.",
         examples=[["invalid_grant", "invalid_permissions"]],
         title="Refresh Token Error Values",
     )
@@ -2253,12 +2253,12 @@ class OAuthAuthenticator(BaseModel):
     )
     refresh_token_updater: Optional[RefreshTokenUpdater] = Field(
         None,
-        description="When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.",
+        description="Saves the new refresh token, access token and expiry date from each refresh back to the config. Use it when each refresh token works only once.",
         title="Refresh Token Updater",
     )
     profile_assertion: Optional[JwtAuthenticator] = Field(
         None,
-        description="The authenticator being used to authenticate the client authenticator.",
+        description="A JWT authenticator that makes the signed JWT. When `use_profile_assertion` is true, the connector sends that JWT as the assertion to get an access token, with the `urn:ietf:params:oauth:grant-type:jwt-bearer` grant type.",
         title="Profile Assertion",
     )
     use_profile_assertion: Optional[bool] = Field(
@@ -2356,7 +2356,7 @@ class DefaultPaginator(BaseModel):
         PageIncrement, OffsetIncrement, CursorPagination, CustomPaginationStrategy
     ] = Field(
         ...,
-        description="Strategy defining how records are paginated.",
+        description="How to find the next page.",
         title="Pagination Strategy",
     )
     page_size_option: Optional[RequestOption] = Field(
@@ -2725,7 +2725,7 @@ class RecordSelector(BaseModel):
     )
     schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
         None,
-        description="Responsible for normalization according to the schema.",
+        description="How to change record values to match the schema's types.",
         title="Schema Normalization",
     )
     transform_before_filtering: Optional[bool] = Field(
@@ -2790,7 +2790,7 @@ class Spec(BaseModel):
     type: Literal["Spec"]
     connection_specification: Dict[str, Any] = Field(
         ...,
-        description="A connection specification describing how a the connector can be configured.",
+        description="A JSON schema of the settings users fill in to set up the connector.",
         title="Connection Specification",
     )
     documentation_url: Optional[str] = Field(
@@ -2801,7 +2801,7 @@ class Spec(BaseModel):
     )
     advanced_auth: Optional[AuthFlow] = Field(
         None,
-        description="Advanced specification for configuring the authentication flow.",
+        description="Settings for an advanced sign-in flow, like OAuth.",
         title="Advanced Auth",
     )
     config_normalization_rules: Optional[ConfigNormalizationRules] = Field(
@@ -3207,7 +3207,7 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     query_properties: Optional[QueryProperties] = Field(
         None,
-        description="For APIs that require explicit specification of the properties to query for, this component will take a static or dynamic set of properties (which can be optionally split into chunks) and allow them to be injected into an outbound request by accessing stream_partition.extra_fields.",
+        description="For APIs that make you list the fields you want. Sets the fields, which can come from a list or an endpoint and can be split into groups. Each request gets its fields in `stream_partition.extra_fields['query_properties']`.",
         title="Query Properties",
     )
     request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = Field(
@@ -3225,7 +3225,7 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     request_headers: Optional[Union[Dict[str, str], str]] = Field(
         None,
-        description="Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.",
+        description="Headers to send with each request, other than authentication headers. Don't set a header the authenticator also sets: the request fails with a duplicate-key error.",
         examples=[{"Output-Format": "JSON"}, {"Version": "{{ config['version'] }}"}],
         title="Request Headers",
     )
@@ -3462,7 +3462,7 @@ class SimpleRetriever(BaseModel):
     )
     paginator: Optional[Union[DefaultPaginator, NoPagination]] = Field(
         None,
-        description="Paginator component that describes how to navigate through the API's pages.",
+        description="How to move through the API's pages.",
     )
     pagination_reset: Optional[PaginationReset] = Field(
         None,
@@ -3499,7 +3499,7 @@ class SimpleRetriever(BaseModel):
         ]
     ] = Field(
         None,
-        description="Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.",
+        description="Runs the stream once for each value in a set, like each parent record or each item in a list.",
         title="Partition Router",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -3521,7 +3521,7 @@ class AsyncRetriever(BaseModel):
         Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
     ] = Field(
         None,
-        description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
+        description="Gets the download URLs from a finished job.",
     )
     download_extractor: Optional[
         Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor, CombinedExtractor]
@@ -3545,11 +3545,11 @@ class AsyncRetriever(BaseModel):
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
-        description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
+        description="How to request the download URL once the job is done.",
     )
     download_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
-        description="Requester component that describes how to prepare HTTP requests to send to the source API to download the data provided by the completed async job.",
+        description="How to request the job's results once the job is done.",
     )
     download_paginator: Optional[Union[DefaultPaginator, NoPagination]] = Field(
         None,
@@ -3557,7 +3557,7 @@ class AsyncRetriever(BaseModel):
     )
     abort_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
-        description="Requester component that describes how to prepare HTTP requests to send to the source API to abort a job once it is timed out from the source's perspective.",
+        description="How to cancel a job on the API. The connector cancels jobs that time out, and jobs that are still running when it stops a partition or the sync.",
     )
     delete_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
@@ -3582,7 +3582,7 @@ class AsyncRetriever(BaseModel):
         ]
     ] = Field(
         [],
-        description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
+        description="Runs the stream once for each value in a set, like each parent record or each item in a list.",
         title="Partition Router",
     )
     decoder: Optional[
@@ -3715,7 +3715,7 @@ class DynamicDeclarativeStream(BaseModel):
         HttpComponentsResolver, ConfigComponentsResolver, ParametrizedComponentsResolver
     ] = Field(
         ...,
-        description="Component resolve and populates stream templates with components values.",
+        description="Where to get the values that fill in the stream template.",
         title="Components Resolver",
     )
     use_parent_parameters: Optional[bool] = Field(
