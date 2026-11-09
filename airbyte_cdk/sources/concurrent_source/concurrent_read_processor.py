@@ -258,7 +258,7 @@ class ConcurrentReadProcessor:
                 exception.exception,
                 stream_descriptor=stream_descriptor,
                 message=f"An unexpected error occurred in stream {exception.stream_name}: {type(exception.exception).__name__}",
-            ).as_sanitized_airbyte_message(stream_descriptor=stream_descriptor)
+            ).as_sanitized_airbyte_message()
 
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
         self._exceptions_per_stream_name.setdefault(stream_name, []).append(exception)
