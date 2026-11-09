@@ -29,7 +29,6 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteStream,
     DestinationSyncMode,
     SyncMode,
-    Type,
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -48,16 +47,6 @@ STATE_MESSAGE_EXAMPLE = (
 
 _NOT_CURSOR_VALUES = frozenset({"parent_state", "partition"})
 """Keys of a declarative stream's state whose content is not the stream's own cursor value."""
-
-
-FUTURE_STATE_READ_UNSCANNED_MESSAGES = (Type.STATE,)
-"""Messages of a future-state read that the secret scan leaves out.
-
-A state message holds the position the platform stores in its state store, never in a log, and
-the test does not print it. Its partition values can hold an `airbyte_secret` value that is also
-API data: source-twilio partitions by `account_sid`, which its records also carry. Logs, traces,
-connection statuses, records and stderr are still scanned.
-"""
 
 
 class CursorFormatWarning(UserWarning):

@@ -43,7 +43,6 @@ from airbyte_cdk.test.standard_tests._assertions import (
     assert_config_matches_spec,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
-    FUTURE_STATE_READ_UNSCANNED_MESSAGES,
     assert_future_state_covers_streams,
     assert_future_state_read,
     build_future_state_catalog,
@@ -1380,7 +1379,6 @@ class DockerConnectorTestSuite:
             config=config,
             verb="read",
             connector_name=connector_name,
-            skip_message_types=FUTURE_STATE_READ_UNSCANNED_MESSAGES,
         )
         read_result.raise_if_errors()
         assert_future_state_read(

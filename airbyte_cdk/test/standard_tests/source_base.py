@@ -31,7 +31,6 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
     format_catalog_problems,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
-    FUTURE_STATE_READ_UNSCANNED_MESSAGES,
     CursorFormatWarning,
     assert_future_state_covers_streams,
     assert_future_state_read,
@@ -332,8 +331,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
           the state it was built with (use `DeclarativeSourceTestSuite`, or override
           `create_connector`);
         - a stream it reads has no state in the file;
-        - `discover` or `read` outputs an `airbyte_secret` value from the config, outside the
-          read's state messages (see `FUTURE_STATE_READ_UNSCANNED_MESSAGES`);
+        - `discover` or `read` outputs an `airbyte_secret` value from the config, outside its
+          records and state messages (see `_assert_no_secrets_in_output`);
         - the read fails, for example because the connector cannot parse the state;
         - a stream returns any record, or emits no state message;
         - for a declarative stream, the state file or the read's emitted state holds a cursor
@@ -365,9 +364,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "discover",
             connector_root=connector_root,
             test_scenario=scenario.without_expected_outcome(),
-            inspect_output=lambda output: self._assert_no_secrets_in_output(
-                scenario, output, verb="discover"
-            ),
+            inspect_output=self._secret_leak_check(scenario, "discover"),
         )
         if discover_result.errors:
             raise discover_result.as_exception()
@@ -389,12 +386,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             connector_root=connector_root,
             catalog=catalog,
             state=state,
-            inspect_output=lambda output: self._assert_no_secrets_in_output(
-                scenario,
-                output,
-                verb="read",
-                skip_message_types=FUTURE_STATE_READ_UNSCANNED_MESSAGES,
-            ),
+            inspect_output=self._secret_leak_check(scenario, "read"),
         )
         cursor_formats = check_cursor_formats(
             self._create_connector_with_state(
