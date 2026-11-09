@@ -1598,6 +1598,14 @@ definitions:
         examples:
           - 1200
           - 3600
+      iat_backdate_seconds:
+        type: integer
+        title: Issued-At Backdate
+        description: Number of seconds to move the `iat` (issued at) and `nbf` (not before) claims into the past, so a small clock difference between this machine and the API server does not make the token look issued in the future. `exp` is not moved. Only set this when the API recommends it.
+        default: 0
+        minimum: 0
+        examples:
+          - 60
       header_prefix:
         type: string
         title: Header Prefix

@@ -1,4 +1,6 @@
+import logging
 import os
+from collections.abc import Iterator, Mapping
 from hashlib import md5
 from pathlib import Path
 from typing import Any, cast
@@ -6,6 +8,7 @@ from typing import Any, cast
 import yaml
 from boltons.typeutils import classproperty
 
+from airbyte_cdk.models import AirbyteMessage, AirbyteStateMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -61,17 +64,11 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
         return None
 
     @classmethod
-    def create_connector(
+    def _injected_config(
         cls,
         scenario: ConnectorTestScenario | None,
-    ) -> IConnector:
-        """Create a connector scenario for the test suite.
-
-        This overrides `create_connector` from the create a declarative source object
-        instead of requiring a custom python source object.
-
-        Subclasses should not need to override this method.
-        """
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The scenario's config with the manifest (and `components.py`) injected, and the manifest."""
         scenario = scenario or ConnectorTestScenario()  # Use default (empty) scenario if None
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
         config = {
@@ -90,13 +87,70 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
             config["__injected_components_py_checksums"] = {
                 "md5": md5_checksum(cls.components_py_path),
             }
+        return config, manifest_dict
 
+    @classmethod
+    def create_connector(
+        cls,
+        scenario: ConnectorTestScenario | None,
+    ) -> IConnector:
+        """Create a connector scenario for the test suite.
+
+        This overrides `create_connector` from the create a declarative source object
+        instead of requiring a custom python source object.
+
+        Subclasses should not need to override this method.
+
+        `ConcurrentDeclarativeSource` reads only the state it was built with, not the state its
+        `read` is given. A `read` with input state therefore reads from a source built with that
+        state and the read's catalog, as `source-declarative-manifest` builds it for the platform.
+        """
+        config, manifest_dict = cls._injected_config(scenario)
+        source = ConcurrentDeclarativeSource(
+            config=config,
+            catalog=None,
+            state=None,
+            source_config=manifest_dict,
+        )
+        read_without_state = source.read
+        injected_config = config
+
+        def read(
+            logger: logging.Logger,
+            config: Mapping[str, Any],
+            catalog: ConfiguredAirbyteCatalog,
+            state: list[AirbyteStateMessage] | None = None,
+        ) -> Iterator[AirbyteMessage]:
+            if not state:
+                return read_without_state(logger, config, catalog, state)
+            # Built from the config the first source was built with, as
+            # `source-declarative-manifest` builds it from the config file. `config` is that
+            # source's config after its migrations.
+            return ConcurrentDeclarativeSource(
+                config=injected_config,
+                catalog=catalog,
+                state=state,
+                source_config=manifest_dict,
+            ).read(logger, config, catalog, state)
+
+        source.read = read  # type: ignore[method-assign]
+        return cast(IConnector, source)
+
+    def _create_connector_with_state(
+        self,
+        scenario: ConnectorTestScenario,
+        *,
+        catalog: ConfiguredAirbyteCatalog,
+        state: list[AirbyteStateMessage],
+    ) -> IConnector:
+        """The source a `read` with `catalog` and `state` reads from (see `create_connector`).
+
+        A `StateDelegatingStream` is its incremental stream only in a source built with state.
+        """
+        config, manifest_dict = self._injected_config(scenario)
         return cast(
             IConnector,
             ConcurrentDeclarativeSource(
-                config=config,
-                catalog=None,
-                state=None,
-                source_config=manifest_dict,
+                config=config, catalog=catalog, state=state, source_config=manifest_dict
             ),
         )

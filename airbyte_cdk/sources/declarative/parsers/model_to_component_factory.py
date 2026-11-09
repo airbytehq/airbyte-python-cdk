@@ -3333,6 +3333,7 @@ class ModelToComponentFactory:
             secret_key=model.secret_key,
             base64_encode_secret_key=model.base64_encode_secret_key,
             token_duration=model.token_duration,
+            iat_backdate_seconds=model.iat_backdate_seconds or 0,
             header_prefix=model.header_prefix,
             kid=jwt_headers.kid,
             typ=jwt_headers.typ,
