@@ -10,10 +10,13 @@ from typing import Any, Mapping, MutableMapping, Optional, Union, cast
 
 import jwt
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
-from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.asymmetric.ec import (
+    EllipticCurvePrivateKey,
+    EllipticCurvePublicKey,
+)
+from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey, Ed448PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
@@ -32,6 +35,7 @@ JwtKeyTypes = Union[
 ]
 
 
+_PUBLIC_KEY_TYPES = (RSAPublicKey, EllipticCurvePublicKey, Ed25519PublicKey, Ed448PublicKey)
 _UNUSABLE_KEY_MESSAGE = (
     "The key used to sign the JWT could not be used with the {algorithm} algorithm. {hint}"
 )
@@ -207,12 +211,13 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         Interpolation would turn a value that only looks numeric (an application, account or key ID,
         or an all-digit secret or passphrase) into an int or float. PyJWT refuses a non-string key
         and `kid`, and from 2.11 a non-string `iss`; older versions emit `iss` and `sub` as JSON
-        numbers. A missing optional config value renders as "None" and is returned as `None`.
+        numbers. A missing config value renders as "None" (`config.get(...)`, or a null value) or as
+        an empty string (`config['...']` on a missing key), and both are returned as `None`.
         """
         if value is None:
             return None
         evaluated = value.eval(self.config, json_loads=json.loads, valid_types=(str,))
-        return None if evaluated == "None" else cast(Optional[str], evaluated)
+        return None if evaluated in ("None", "") else cast(Optional[str], evaluated)
 
     def _get_secret_key(self) -> JwtKeyTypes:
         """
@@ -281,6 +286,9 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             prepared = algorithm.prepare_key(key)
             # Preparing the loaded key object runs the type check that PyJWT < 2.11 skips for PEM input.
             algorithm.prepare_key(prepared)
+            # PyJWT accepts a public key, which can only verify, and fails later inside `jwt.encode`.
+            if isinstance(prepared, _PUBLIC_KEY_TYPES):
+                raise TypeError("a public key cannot sign a token")
             return prepared
         except (jwt.exceptions.InvalidKeyError, ValueError, TypeError) as e:
             # PyJWT's messages talk about a "public key" even for a private one, so they stay internal.

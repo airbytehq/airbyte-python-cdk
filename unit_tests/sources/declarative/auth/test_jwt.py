@@ -10,7 +10,7 @@ import jwt
 import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
@@ -481,6 +481,37 @@ def test_missing_optional_claim_is_omitted():
 
 
 @pytest.mark.parametrize(
+    "config, template",
+    [
+        pytest.param({}, "{{ config['value'] }}", id="missing_key_by_subscript"),
+        pytest.param({"nested": {}}, "{{ config['nested']['value'] }}", id="missing_nested_key"),
+        pytest.param({"value": ""}, "{{ config['value'] }}", id="empty_value"),
+        pytest.param({"value": None}, "{{ config['value'] }}", id="null_value"),
+    ],
+)
+def test_missing_or_empty_claim_by_subscript_is_omitted(config, template):
+    """`config['x']` renders a missing key as an empty string rather than "None"; an empty claim is
+    left out like a missing one instead of being sent as `""`."""
+    authenticator = JwtAuthenticator(
+        config=config,
+        parameters={},
+        secret_key="test",
+        algorithm="HS256",
+        token_duration=600,
+        kid=template,
+        iss=template,
+        sub=template,
+    )
+
+    token = authenticator._get_signed_token()
+
+    claims = jwt.decode(token, "test", algorithms=["HS256"])
+    assert "iss" not in claims
+    assert "sub" not in claims
+    assert "kid" not in jwt.get_unverified_header(token)
+
+
+@pytest.mark.parametrize(
     "secret",
     [
         pytest.param("1234567890", id="integer_like"),
@@ -682,6 +713,46 @@ def test_unusable_key_is_config_error(algorithm, secret_key, passphrase):
         if secret:
             assert secret not in error.value.message
             assert secret not in error.value.internal_message
+
+
+def _public_pem(private_key):
+    return (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+
+
+@pytest.mark.parametrize(
+    "algorithm, private_key",
+    [
+        pytest.param("RS256", _RSA_KEY, id="rs256"),
+        pytest.param("PS256", _RSA_KEY, id="ps256"),
+        pytest.param("ES256", ec.generate_private_key(ec.SECP256R1()), id="es256"),
+        pytest.param("EdDSA", ed25519.Ed25519PrivateKey.generate(), id="eddsa_ed25519"),
+        pytest.param("EdDSA", ed448.Ed448PrivateKey.generate(), id="eddsa_ed448"),
+    ],
+)
+def test_public_key_is_config_error(algorithm, private_key):
+    """Pasting the public half of the key pair: PyJWT accepts it while preparing the key and only
+    fails inside `jwt.encode`, which used to surface as a plain `ValueError`."""
+    authenticator = JwtAuthenticator(
+        config={},
+        parameters={},
+        secret_key=_public_pem(private_key),
+        algorithm=algorithm,
+        token_duration=540,
+    )
+
+    with pytest.raises(AirbyteTracedException) as error:
+        authenticator.token
+
+    assert error.value.failure_type == FailureType.config_error
+    assert f"could not be used with the {algorithm} algorithm" in error.value.message
+    assert "BEGIN and END" in error.value.message
 
 
 @pytest.mark.parametrize(
