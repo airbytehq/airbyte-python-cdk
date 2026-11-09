@@ -251,6 +251,35 @@ def test_undeclared_variables(template_string, expected_error, expected_value):
         assert actual_value == expected_value
 
 
+@pytest.mark.parametrize(
+    "template, undeclared_variables",
+    [
+        ("{{ components_values['x'] }}", ["components_values"]),
+        ("{{ b_var }} {{ a_var }}", ["a_var", "b_var"]),
+    ],
+)
+def test_undeclared_variables_do_not_include_context_values(template, undeclared_variables):
+    messages = []
+
+    for index in (1, 2):
+        config = {"access_token": f"FAKE_SECRET_TOKEN_{index}"}
+        stream_slice = {"cursor": f"FAKE_SLICE_VALUE_{index}"}
+        with pytest.raises(ValueError) as exc_info:
+            interpolation.eval(template, config, stream_slice=stream_slice)
+
+        message = str(exc_info.value)
+        assert f"FAKE_SECRET_TOKEN_{index}" not in message
+        assert f"FAKE_SLICE_VALUE_{index}" not in message
+        messages.append(message)
+
+    expected_message = (
+        f"Jinja macro has undeclared variables: {undeclared_variables}. "
+        f"Template: {template!r}. Available variables: "
+        "['config', 'stream_interval', 'stream_partition', 'stream_slice']."
+    )
+    assert messages == [expected_message, expected_message]
+
+
 @freeze_time("2021-09-01")
 @pytest.mark.parametrize(
     "template_string, expected_value",
