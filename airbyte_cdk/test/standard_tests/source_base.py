@@ -233,8 +233,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         a `StreamStatusWarning`.
 
         The output of `discover` and of `read` must hold no `airbyte_secret` value from the
-        config, records aside (see `_assert_no_secrets_in_output`). That is checked first, since
-        the other checks print raw error traces.
+        config, records and state aside (see `_assert_no_secrets_in_output`). That is checked first,
+        since the other checks print raw error traces.
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:

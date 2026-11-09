@@ -1053,7 +1053,7 @@ class DockerConnectorTestSuite:
         `sourceStats` (opt out with `validate_state_messages: false`). Incomplete stream statuses
         are reported as a `StreamStatusWarning`, not enforced. A config listed only under
         `full_refresh` must return some records. The output of `discover` and of `read` must hold
-        no `airbyte_secret` value from the config, records aside (see
+        no `airbyte_secret` value from the config, records and state aside (see
         `_assert_no_secrets_in_docker_output`).
 
         The test is skipped unless `--read-from-streams` turns it on: the in-process
