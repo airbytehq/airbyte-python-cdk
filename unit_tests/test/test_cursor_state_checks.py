@@ -38,10 +38,12 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
     ConcurrentPerPartitionCursor,
 )
+from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
-from airbyte_cdk.test.entrypoint_wrapper import read
+from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException, read
 from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests import CursorStateWarning, DeclarativeSourceTestSuite
+from airbyte_cdk.test.standard_tests import _cursor_state_checks as checks
 from airbyte_cdk.test.standard_tests._cursor_state_checks import (
     CHECK_ERRORS,
     CHECKPOINTS,
@@ -63,6 +65,7 @@ BASE = "https://api.test"
 START = "2024-01-01T00:00:00Z"
 END = dt.datetime(2024, 1, 31, tzinfo=dt.timezone.utc)
 CONFIG = {"start_date": START}
+FIRST_CREATED = dt.datetime(2024, 1, 1, 1, tzinfo=dt.timezone.utc)
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -90,6 +93,7 @@ def _cursor(
     datetime_format: str = ISO,
     record_formats: list[str] | None = None,
     global_cursor: bool = False,
+    client_side: bool = False,
 ) -> dict[str, Any]:
     cursor: dict[str, Any] = {
         "type": "DatetimeBasedCursor",
@@ -118,6 +122,8 @@ def _cursor(
         cursor["cursor_datetime_formats"] = record_formats
     if global_cursor:
         cursor["global_substream_cursor"] = True
+    if client_side:
+        cursor["is_client_side_incremental"] = True
     return cursor
 
 
@@ -223,6 +229,9 @@ class _Api:
 
     - `late_days`: records created on a day divisible by 3 carry an `updated_at` that many days
       after their creation, so they land past the end of the slice that returns them.
+    - `early_days`: records created on a day divisible by 3 carry an `updated_at` that many days
+      before their creation, so they land before the start of the slice that returns them.
+    - `future_first`: the first record carries an `updated_at` years after the cursor's end.
     - `ignore_until`: the API ignores `until`, so every slice returns everything up to the end.
     - `bad_values`: the first record has no `updated_at` and the second one is not a date.
     - `no_values`: no record has an `updated_at`.
@@ -232,11 +241,15 @@ class _Api:
         self,
         *,
         late_days: int = 0,
+        early_days: int = 0,
+        future_first: bool = False,
         ignore_until: bool = False,
         bad_values: bool = False,
         no_values: bool = False,
     ) -> None:
         self.late_days = late_days
+        self.early_days = early_days
+        self.future_first = future_first
         self.ignore_until = ignore_until
         self.bad_values = bad_values
         self.no_values = no_values
@@ -247,11 +260,13 @@ class _Api:
         until = _parse(query["until"][0]) if "until" in query else None
         upper = END if self.ignore_until or until is None else until
         records = []
-        created = dt.datetime(2024, 1, 1, 1, tzinfo=dt.timezone.utc)
+        created = FIRST_CREATED
         while created <= END:
             if (since is None or created >= since) and created <= upper:
-                late = self.late_days and created.day % 3 == 0
-                updated = created + dt.timedelta(days=self.late_days) if late else created
+                shift = self.late_days - self.early_days if created.day % 3 == 0 else 0
+                updated = created + dt.timedelta(days=shift)
+                if self.future_first and created == FIRST_CREATED:
+                    updated = dt.datetime(2030, 1, 1, tzinfo=dt.timezone.utc)
                 records.append(
                     {"id": id_offset + int(created.timestamp()), "updated_at": _iso(updated)}
                 )
@@ -342,13 +357,15 @@ class _Read:
         reference_source: Callable[[], object] | None = None,
     ) -> dict[CursorStateCheck, list[str]]:
         found = messages if messages is not None else self.messages
-        return find_cursor_state_problems(
-            messages=lambda: iter(found),
-            configured_catalog=self.catalog,
-            recorder=recorder or self.recorder,
-            read_seconds=read_seconds,
-            reference_source=reference_source,
-        )
+        # The checks run after the read, so they must not reach the API.
+        with _no_http():
+            return find_cursor_state_problems(
+                messages=lambda: iter(found),
+                configured_catalog=self.catalog,
+                recorder=recorder or self.recorder,
+                read_seconds=read_seconds,
+                reference_source=reference_source,
+            )
 
     def states(self, stream: str) -> list[AirbyteMessage]:
         return [
@@ -399,6 +416,85 @@ def test_checkpoint_check_flags_records_past_their_slice() -> None:
 
 def test_checkpoint_check_passes_a_correct_api() -> None:
     result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api())
+    assert result.problems() == {}
+
+
+@pytest.mark.parametrize("late_days", [0, 5])
+def test_a_future_dated_record_does_not_silence_the_checkpoint_check(late_days: int) -> None:
+    # The future value moves the state past the cursor's end, so a cursor built from that
+    # state has no slice. A sync resumed from it reads nothing until its end passes the state,
+    # then starts there: it never reads the records emitted after that state.
+    result = _Read(
+        _manifest(_stream("events", "/events", _cursor(step="P1D"))),
+        _Api(late_days=late_days, future_first=True),
+    )
+    problems = result.problems()
+    assert list(problems) == [CHECKPOINTS]
+    assert "stream 'events'" in problems[CHECKPOINTS][0]
+    _assert_no_values(problems)
+
+
+def test_a_resume_past_the_end_starts_a_lookback_window_before_the_state() -> None:
+    # A state past the cursor's end generates no slice; once the end passes it, the resumed
+    # sync starts a lookback window before it and reads the first record again.
+    result = _Read(
+        _manifest(_stream("events", "/events", _cursor(step="P1D", lookback="P7D"))), _Api()
+    )
+    state = result.states("events")[0]
+    record = next(message for message in result.messages if message.type == Type.RECORD)
+    other = copy.deepcopy(record)
+    assert other.record is not None
+    other.record.data = {**other.record.data, "id": -1}
+    messages = [
+        _state(state, "2030-01-01T00:00:00Z"),
+        _record(record, "2029-12-28T00:00:00Z"),
+        _record(other, "2029-12-20T00:00:00Z"),
+    ]
+    assert "'events': 1 record(s)" in result.problems(messages)[CHECKPOINTS][0]
+
+
+def test_records_below_their_slice_start_are_not_flagged() -> None:
+    # The API returns records whose cursor value lies before the window that returned them. A
+    # resumed sync requests those windows again, so it reads them again.
+    result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(early_days=2))
+    assert result.problems() == {}
+
+
+def test_records_below_their_slice_start_are_flagged_under_client_side_incremental() -> None:
+    # The resumed sync drops records below its start by value, whatever window returns them.
+    result = _Read(
+        _manifest(_stream("events", "/events", _cursor(step="P1D", client_side=True))),
+        _Api(early_days=2),
+    )
+    problems = result.problems()
+    assert list(problems) == [CHECKPOINTS]
+    assert "stream 'events'" in problems[CHECKPOINTS][0]
+
+
+def test_records_that_do_not_match_the_read_are_checked_by_their_own_value() -> None:
+    # Messages that are not the read's output cannot be matched to the read's slices, so each
+    # record's own value is where a resume reads it again.
+    result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(early_days=2))
+    record = next(message for message in result.messages if message.type == Type.RECORD)
+    assert list(result.problems([*result.messages, record])) == [CHECKPOINTS]
+
+
+def test_client_side_incremental_comes_from_the_incremental_stream_of_a_state_delegating_stream() -> (
+    None
+):
+    stream = {
+        "type": "StateDelegatingStream",
+        "name": "events",
+        "full_refresh_stream": _stream("events", "/events", _cursor(step="P1D")),
+        "incremental_stream": _stream("events", "/events", _cursor(step="P1D", client_side=True)),
+    }
+    assert list(_Read(_manifest(stream), _Api(early_days=2)).problems()) == [CHECKPOINTS]
+
+
+def test_per_partition_records_below_their_slice_start_are_not_flagged() -> None:
+    result = _Read(
+        _manifest(_children(_cursor(step="P3D"))), _Api(early_days=4), names=["children"]
+    )
     assert result.problems() == {}
 
 
@@ -500,7 +596,7 @@ def test_suites_whose_read_builds_another_source_get_the_concurrent_cursor_part(
 
 def test_unmatched_partitions_skip_the_per_partition_checkpoint_check() -> None:
     result = _Read(_manifest(_children(_cursor(step="P3D"))), _Api(late_days=5), names=["children"])
-    result.recorder.record_partitions["children"].pop()
+    result.recorder.record_slices["children"].pop()
     problems = result.problems()
     assert list(problems) == [CHECK_ERRORS]
     assert problems[CHECK_ERRORS] == [
@@ -596,8 +692,6 @@ def test_a_record_at_the_resume_start_is_not_flagged() -> None:
 def test_bounds_past_the_cap_use_the_bound_of_an_earlier_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import airbyte_cdk.test.standard_tests._cursor_state_checks as checks
-
     result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api())
     state = result.states("events")[0]
     record = next(message for message in result.messages if message.type == Type.RECORD)
@@ -617,8 +711,6 @@ def test_bounds_past_the_cap_use_the_bound_of_an_earlier_state(
 
 
 def test_bounds_past_the_cap_never_flag_more(monkeypatch: pytest.MonkeyPatch) -> None:
-    import airbyte_cdk.test.standard_tests._cursor_state_checks as checks
-
     result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(late_days=5))
     monkeypatch.setattr(checks, "_MAX_BOUNDS_PER_STREAM", 0)
     assert result.problems() == {}
@@ -819,9 +911,16 @@ def test_listed_partition_without_state_fails() -> None:
     _assert_no_values(problems)
 
 
-def test_partition_coverage_is_only_checked_for_a_list_router() -> None:
+def test_partition_coverage_is_only_checked_for_a_list_router(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     result = _Read(_manifest(_children()), _Api(), names=["children"])
     messages = result.with_final_state("children", lambda state: state["states"].pop())
+
+    def _list_parents(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("a substream router lists its partitions by reading its parent")
+
+    monkeypatch.setattr(SubstreamPartitionRouter, "stream_slices", _list_parents)
     assert result.problems(messages) == {}
 
 
@@ -886,8 +985,6 @@ def test_streams_without_a_cursor_are_skipped() -> None:
 def test_a_rebuilt_stream_without_a_concurrent_cursor_keeps_the_read_cursor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import airbyte_cdk.test.standard_tests._cursor_state_checks as checks
-
     class _Stream:
         name = "events"
         cursor = object()
@@ -925,8 +1022,6 @@ def test_other_sources_are_not_checked() -> None:
 def test_a_check_that_crashes_is_reported_as_advisory(
     monkeypatch: pytest.MonkeyPatch, method: str
 ) -> None:
-    import airbyte_cdk.test.standard_tests._cursor_state_checks as checks
-
     def _crash(*_args: Any, **_kwargs: Any) -> None:
         raise ZeroDivisionError
 
@@ -937,6 +1032,29 @@ def test_a_check_that_crashes_is_reported_as_advisory(
     result = _Read(_manifest(_stream("events", "/events", _cursor())), _Api())
     problems = result.problems()
     assert list(problems) == [CHECK_ERRORS]
+    assert "`ZeroDivisionError`" in problems[CHECK_ERRORS][0]
+
+
+@pytest.mark.parametrize("crashing", ["_resume_start", "_add_checkpoint"])
+def test_a_crash_in_the_checkpoint_walk_keeps_the_other_checks(
+    monkeypatch: pytest.MonkeyPatch, crashing: str
+) -> None:
+    result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api())
+    messages = result.with_final_state(
+        "events", lambda state: state.update(updated_at="2024-01-02T00:00:00Z")
+    )
+
+    def _crash(*_args: Any, **_kwargs: Any) -> None:
+        raise ZeroDivisionError
+
+    if crashing == "_resume_start":
+        monkeypatch.setattr(checks, crashing, _crash)
+    else:
+        monkeypatch.setattr(checks._StreamCheck, crashing, _crash)  # noqa: SLF001
+    problems = result.problems(messages)
+    assert set(problems) == {CHECK_ERRORS, FINAL_STATE}
+    # Reported once: the stream's checkpoint check stops at the first crash.
+    assert len(problems[CHECK_ERRORS]) == 1
     assert "`ZeroDivisionError`" in problems[CHECK_ERRORS][0]
 
 
@@ -1006,3 +1124,144 @@ def test_basic_read_leaves_no_hooks_on_the_source(tmp_path: Path) -> None:
         _SameSourceSuite().test_basic_read(_scenario())
     assert "streams" not in source.__dict__
     assert "_handle_item" not in source._concurrent_source.__dict__  # noqa: SLF001
+
+
+def _same_source_suite(suite: DeclarativeSourceTestSuite, source: object) -> Any:
+    class _SameSourceSuite(type(suite)):  # type: ignore[misc]
+        @classmethod
+        def create_connector(cls, scenario: ConnectorTestScenario | None) -> Any:
+            return source
+
+    return _SameSourceSuite()
+
+
+def test_basic_read_removes_its_hooks_when_the_read_fails(tmp_path: Path) -> None:
+    manifest = _manifest(_stream("events", "/events", _cursor(step="P1D")))
+    source = _source(manifest)
+    with requests_mock.Mocker() as mocker:
+        _Api().install(mocker)
+        mocker.get(re.compile(r"https://api\.test/events.*"), status_code=403, json={})
+        with pytest.raises(AirbyteEntrypointException):
+            _same_source_suite(_suite(tmp_path, manifest), source).test_basic_read(_scenario())
+    assert "streams" not in source.__dict__
+    assert "_handle_item" not in source._concurrent_source.__dict__  # noqa: SLF001
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param({"validate_state_messages": False}, id="opted_out"),
+        pytest.param({"sections": ("full_refresh",)}, id="not_a_basic_read_config"),
+    ],
+)
+def test_basic_read_installs_no_hooks_when_it_does_not_check_the_cursor_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fields: dict[str, Any]
+) -> None:
+    installed: list[object] = []
+    install = CursorStateRecorder.install.__func__  # type: ignore[attr-defined]
+
+    def _install(cls: type[CursorStateRecorder], connector: object) -> Any:
+        installed.append(connector)
+        return install(cls, connector)
+
+    monkeypatch.setattr(CursorStateRecorder, "install", classmethod(_install))
+    suite = _suite(tmp_path, _manifest(_stream("events", "/events", _cursor(step="P1D"))))
+    with requests_mock.Mocker() as mocker:
+        _Api(late_days=5).install(mocker)
+        suite.test_basic_read(_scenario(**fields))
+        assert installed == []
+        _Api().install(mocker)
+        suite.test_basic_read(_scenario())
+    assert len(installed) == 1
+
+
+def test_basic_read_bounds_the_lookback_window_by_the_read_duration(tmp_path: Path) -> None:
+    # The final state of a per-partition stream holds the read's duration in whole seconds,
+    # rounded up, so it is at least 1 even for a fast read.
+    manifest = _manifest(_children(_cursor(step="P3D")))
+    source = _source(manifest)
+    with requests_mock.Mocker() as mocker:
+        _Api().install(mocker)
+        _same_source_suite(_suite(tmp_path, manifest), source).test_basic_read(
+            _scenario(empty_streams=[{"name": "parents"}])
+        )
+
+
+class _ReadsAnotherSource(ConcurrentDeclarativeSource):
+    """A source whose `discover` and `read` run on a fresh source, as some Python suites do."""
+
+    edit_state: Callable[[dict[str, Any]], None] | None = None
+    build_fails = False
+
+    def _fresh(self) -> ConcurrentDeclarativeSource:
+        return _source(self._source_config)
+
+    def streams(self, config: Mapping[str, Any]) -> Any:
+        if self.build_fails:
+            raise ZeroDivisionError
+        return super().streams(config)
+
+    def discover(self, logger: Any, config: Mapping[str, Any]) -> Any:
+        return self._fresh().discover(logger, config)
+
+    def read(self, logger: Any, config: Any, catalog: Any, state: Any = None) -> Any:
+        for message in self._fresh().read(logger, config, catalog, state):
+            if self.edit_state is not None and message.type == Type.STATE:
+                assert message.state is not None and message.state.stream is not None
+                state_dict = copy.deepcopy(message.state.stream.stream_state.__dict__)
+                self.edit_state(state_dict)
+                message.state.stream.stream_state = AirbyteStateBlob(**state_dict)
+            yield message
+
+
+def _another_source_suite(
+    tmp_path: Path,
+    manifest: Mapping[str, Any],
+    *,
+    edit_state: Callable[[dict[str, Any]], None] | None = None,
+    build_fails: bool = False,
+) -> Any:
+    suite = _suite(tmp_path, manifest)
+
+    class _AnotherSourceSuite(type(suite)):  # type: ignore[misc]
+        @classmethod
+        def create_connector(cls, scenario: ConnectorTestScenario | None) -> Any:
+            source = _ReadsAnotherSource(
+                source_config=dict(manifest), config=CONFIG, catalog=None, state=None
+            )
+            source.edit_state = edit_state
+            source.build_fails = build_fails
+            return source
+
+    return _AnotherSourceSuite()
+
+
+def test_basic_read_checks_a_suite_whose_read_builds_another_source(tmp_path: Path) -> None:
+    manifest = _manifest(_children(_cursor(global_cursor=True)))
+    scenario = _scenario(empty_streams=[{"name": "parents"}])
+    with requests_mock.Mocker() as mocker:
+        _Api().install(mocker)
+        _another_source_suite(tmp_path, manifest).test_basic_read(scenario)
+        suite = _another_source_suite(
+            tmp_path,
+            manifest,
+            edit_state=lambda state: state.update(use_global_cursor=False)
+            if "use_global_cursor" in state
+            else None,
+        )
+        with pytest.raises(AssertionError, match="`global_substream_cursor`"):
+            suite.test_basic_read(scenario)
+
+
+def test_basic_read_warns_when_the_reference_source_cannot_build(tmp_path: Path) -> None:
+    manifest = _manifest(_stream("events", "/events", _cursor(step="P1D")))
+    suite = _another_source_suite(tmp_path, manifest, build_fails=True)
+    with requests_mock.Mocker() as mocker, warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _Api().install(mocker)
+        suite.test_basic_read(_scenario())
+    messages = [
+        str(warning.message) for warning in caught if warning.category is CursorStateWarning
+    ]
+    assert len(messages) == 1
+    assert "building the source's streams failed with `ZeroDivisionError`" in messages[0]

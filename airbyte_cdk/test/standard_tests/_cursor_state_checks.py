@@ -7,7 +7,9 @@ incremental sync would. These checks inspect that state, together with the recor
 without another read:
 
 - checkpoints: no record emitted after a state message lies below the point a sync resumed from
-  that state would start at, unless a copy of it was emitted before the state message;
+  that state would start at, unless a copy of it was emitted before the state message. A record
+  below the start of the slice that returned it counts from that start, since a resumed sync that
+  requests the slice again reads it again (not under `is_client_side_incremental`);
 - final state: a stream's final `ConcurrentCursor` state is not behind its newest record;
 - cursor values: records carry a cursor value that the cursor can parse (advisory);
 - per-partition state shape, parent state and partition coverage;
@@ -149,16 +151,57 @@ def _cursor_with_state(template: ConcurrentCursor, state: Mapping[str, Any]) -> 
     return cursor
 
 
+def _start_field(cursor: ConcurrentCursor) -> str:
+    """The key of the slice start in the cursor's slices."""
+    return cursor._slice_boundary_fields_wrapper[cursor._START_BOUNDARY]  # type: ignore[no-any-return]  # noqa: SLF001
+
+
 def _resume_start(cursor: ConcurrentCursor) -> Any:
-    """The start of the first slice a cursor generates, parsed, or `None` without a slice."""
+    """Where a sync that resumes with this cursor starts reading, parsed, or `None` if unknown."""
     first_slice = next(iter(cursor.stream_slices()), None)
     if first_slice is None:
-        return None
-    start_field = cursor._slice_boundary_fields_wrapper[cursor._START_BOUNDARY]  # noqa: SLF001
-    value = first_slice.cursor_slice.get(start_field)
+        return _start_past_end(cursor)
+    value = first_slice.cursor_slice.get(_start_field(cursor))
     if value is None:
         return None
     return cursor._connector_state_converter.parse_value(value)  # noqa: SLF001
+
+
+def _start_past_end(cursor: ConcurrentCursor) -> Any:
+    """Where a cursor with no slice resumes once its end passes its state.
+
+    A record dated in the future moves the state past the cursor's end (`observe` has no upper
+    bound). A cursor built from that state generates no slice until the end catches up, and its
+    next slice then starts at the end of its last state slice, less the lookback window, as in
+    `ConcurrentCursor.stream_slices`. That slice can start later (it is raised to the configured
+    start and clamped up), so this bound is at most the real one and never flags more.
+    """
+    slices = cursor._concurrent_state.get("slices") or []  # noqa: SLF001
+    if not slices:
+        return None
+    return cursor._calculate_lower_boundary_of_last_slice(  # noqa: SLF001
+        slices[-1][cursor._connector_state_converter.END_KEY]  # noqa: SLF001
+    )
+
+
+def _client_side_incremental_streams(source: ConcurrentDeclarativeSource) -> set[str]:
+    """Names of the static streams whose resumed sync drops records by cursor value."""
+    try:
+        stream_configs = source._stream_configs(source._source_config)  # noqa: SLF001
+    except Exception:  # noqa: BLE001  # Without static streams there is nothing to exempt.
+        return set()
+    names: set[str] = set()
+    for stream_config in stream_configs:
+        # A resumed `StateDelegatingStream` reads with its `incremental_stream`.
+        definition = stream_config.get("incremental_stream") or stream_config
+        incremental_sync = (
+            definition.get("incremental_sync") if isinstance(definition, Mapping) else None
+        )
+        if isinstance(incremental_sync, Mapping) and incremental_sync.get(
+            "is_client_side_incremental"
+        ):
+            names.add(str(stream_config.get("name")))
+    return names
 
 
 def _incremental_parents(router: Any) -> list[str]:
@@ -219,8 +262,9 @@ class CursorStateRecorder:
     - `streams` is wrapped to keep the streams the read builds. For a per-partition stream whose
       cursor has a `step`, the state message throttle is lifted within a budget, so the read
       emits state at more partition closes (production can emit at any of them).
-    - `_concurrent_source._handle_item` is wrapped to record the partition of each record of
-      those streams, on the main thread, in the order the RECORD messages are emitted.
+    - `_concurrent_source._handle_item` is wrapped to record the slice of each record of those
+      streams and of the streams with a `ConcurrentCursor` (its partition and its start), on the
+      main thread, in the order the RECORD messages are emitted.
 
     `uninstall` removes both wrappers.
     """
@@ -237,7 +281,10 @@ class CursorStateRecorder:
         self.streams: dict[str, Any] = {}
         self.global_cursor_at_start: dict[str, bool] = {}
         self.lifted_streams: set[str] = set()
-        self.record_partitions: dict[str, list[str | None]] = {}
+        self.record_slices: dict[str, list[tuple[str | None, Any]]] = {}
+        """Per stream, the partition key and the raw slice start of each record, in order."""
+        self._start_fields: dict[str, str] = {}
+        self._last_slices: dict[str, tuple[Any, tuple[str | None, Any]]] = {}
         self._build_streams: Callable[..., Any] | None = None
         self._handle_item: Callable[..., Any] | None = None
         self._concurrent_source: Any = None
@@ -275,15 +322,23 @@ class CursorStateRecorder:
         for stream in built:
             cursor = getattr(stream, "cursor", None)
             self.streams[stream.name] = stream
-            if isinstance(cursor, ConcurrentPerPartitionCursor):
+            if type(cursor) is ConcurrentCursor:
+                self._record_slices(stream.name, cursor)
+            elif isinstance(cursor, ConcurrentPerPartitionCursor):
                 self.global_cursor_at_start[stream.name] = cursor._use_global_cursor  # noqa: SLF001
-                if _has_step(_sub_cursor(cursor, {})):
+                sub_cursor = _sub_cursor(cursor, {})
+                if _has_step(sub_cursor):
+                    self._record_slices(stream.name, sub_cursor)
                     self._lift_throttle(stream.name, cursor)
         return built
 
+    def _record_slices(self, stream_name: str, cursor: ConcurrentCursor) -> None:
+        self.record_slices[stream_name] = []
+        self._start_fields[stream_name] = _start_field(cursor)
+        self._last_slices.pop(stream_name, None)
+
     def _lift_throttle(self, stream_name: str, cursor: ConcurrentPerPartitionCursor) -> None:
         self.lifted_streams.add(stream_name)
-        self.record_partitions[stream_name] = []
         close_partition = cursor.close_partition
         default_interval = cursor.STATE_EMIT_INTERVAL_SECONDS
         lock = threading.Lock()
@@ -310,16 +365,26 @@ class CursorStateRecorder:
 
     def _handle(self, queue_item: Any, *args: Any, **kwargs: Any) -> Any:
         if isinstance(queue_item, Record) and isinstance(queue_item.data, Mapping):
-            partitions = self.record_partitions.get(queue_item.stream_name)
-            if partitions is not None:
-                associated_slice = queue_item.associated_slice
-                partitions.append(
-                    _partition_key(associated_slice.partition)
-                    if associated_slice is not None
-                    else None
-                )
+            slices = self.record_slices.get(queue_item.stream_name)
+            if slices is not None:
+                slices.append(self._slice_of(queue_item.stream_name, queue_item.associated_slice))
         assert self._handle_item is not None
         return self._handle_item(queue_item, *args, **kwargs)
+
+    def _slice_of(self, stream_name: str, associated_slice: Any) -> tuple[str | None, Any]:
+        """The partition key and raw start of a record's slice, shared by the slice's records."""
+        last = self._last_slices.get(stream_name)
+        if last is not None and last[0] is associated_slice:
+            return last[1]
+        if associated_slice is None:
+            entry: tuple[str | None, Any] = (None, None)
+        else:
+            entry = (
+                _partition_key(associated_slice.partition),
+                associated_slice.cursor_slice.get(self._start_fields[stream_name]),
+            )
+        self._last_slices[stream_name] = (associated_slice, entry)
+        return entry
 
 
 @dataclass
@@ -340,7 +405,10 @@ class _StreamCheck:
     template: ConcurrentCursor | ConcurrentPerPartitionCursor
     primary_key: list[list[str]]
     check_checkpoints: bool
-    partitions: list[str | None] | None = None
+    slices: list[tuple[str | None, Any]] | None = None
+    """The partition key and raw slice start of each record, when the hooks saw the read."""
+    client_side: bool = False
+    """Whether a resumed sync drops records by cursor value (`is_client_side_incremental`)."""
     records: int = 0
     missing_values: int = 0
     unparseable_values: int = 0
@@ -350,6 +418,7 @@ class _StreamCheck:
     checkpoints: dict[str | None, list[_Checkpoint]] = field(default_factory=dict)
     copies: dict[int, list[tuple[int, Any]]] = field(default_factory=dict)
     bounds: dict[str, Any] = field(default_factory=dict)
+    slice_starts: dict[Any, Any] = field(default_factory=dict)
     skipped_records: int = 0
     flagged_records: int = 0
     flagged_partitions: set[str | None] = field(default_factory=set)
@@ -415,6 +484,8 @@ class _StreamCheck:
 
     def add_state(self, position: int, state: Mapping[str, Any]) -> None:
         self.final_state = dict(state)
+        if not self.check_checkpoints:
+            return
         if self.partitioned:
             for entry in state.get("states") or []:
                 if not isinstance(entry, Mapping):
@@ -456,23 +527,41 @@ class _StreamCheck:
             return
 
         partition: str | None = None
-        if self.partitioned:
-            partitions = self.partitions or []
-            if record_number >= len(partitions):
-                return
-            partition = partitions[record_number]
+        # A resumed sync reads a record again if it requests the record's slice again, whatever
+        # the record's value: the API filters on the request window, not on the cursor value.
+        reread_from = value
+        if self.slices is not None:
+            slice_partition, raw_start = self.slices[record_number]
+            if self.partitioned:
+                partition = slice_partition
+            slice_start = self.slice_start(raw_start)
+            if slice_start is not None and not self.client_side and slice_start > value:
+                reread_from = slice_start
         copy_key = self.copy_key(data)
-        self._check_record(partition, position, value, copy_key)
+        self._check_record(partition, position, value, reread_from, copy_key)
         self.copies.setdefault(copy_key, []).append((position, value))
 
+    def slice_start(self, raw_start: Any) -> Any:
+        if raw_start is None:
+            return None
+        # The cursor formatted the slice start, so it parses it.
+        if raw_start not in self.slice_starts:
+            self.slice_starts[raw_start] = self.parse(raw_start)
+        return self.slice_starts[raw_start]
+
     def _check_record(
-        self, partition: str | None, position: int, value: Any, copy_key: int
+        self, partition: str | None, position: int, value: Any, reread_from: Any, copy_key: int
     ) -> None:
+        """Flag a record that a sync resumed from a checkpoint before it would never read.
+
+        `reread_from` is the lowest resume start at which the resumed sync reads the record
+        again: its cursor value, or the start of its slice when that is higher.
+        """
         checkpoints = self.checkpoints.get(partition)
         if not checkpoints:
             return
         last = self.bound(checkpoints[-1], checkpoints, len(checkpoints) - 1)
-        if last is None or not value < last:
+        if last is None or not reread_from < last:
             return
         # The earliest checkpoint whose resume would skip the record has the fewest copies
         # before it. Bounds grow along the checkpoints, so search for it.
@@ -480,7 +569,7 @@ class _StreamCheck:
         while low < high:
             middle = (low + high) // 2
             bound = self.bound(checkpoints[middle], checkpoints, middle)
-            if bound is not None and value < bound:
+            if bound is not None and reread_from < bound:
                 high = middle
             else:
                 low = middle + 1
@@ -610,10 +699,16 @@ def find_cursor_state_problems(
         for configured_stream in configured_catalog.streams
     }
     final_states: dict[str, dict[str, Any]] = {}
+    record_counts: dict[str, int] = {}
     for message in messages():
+        if message.type == Type.RECORD and message.record is not None:
+            record_counts[message.record.stream] = record_counts.get(message.record.stream, 0) + 1
+            continue
         parsed = _state_blob(message)
         if parsed is not None and parsed[0] in configured:
             final_states[parsed[0]] = parsed[1]
+
+    client_side = _client_side_incremental_streams(source)
 
     checked: dict[str, _StreamCheck] = {}
     for name, configured_stream in configured.items():
@@ -641,10 +736,25 @@ def find_cursor_state_problems(
             template=cursor,
             primary_key=primary_key,
             check_checkpoints=check_checkpoints,
-            partitions=recorder.record_partitions.get(name) if hooked else None,
+            slices=recorder.record_slices.get(name) if hooked else None,
+            client_side=name in client_side,
         )
+        stream_check = checked[name]
+        if stream_check.slices is not None and len(stream_check.slices) != record_counts.get(
+            name, 0
+        ):
+            # Without slices, a record's own value is where a resume reads it again. That can
+            # only flag more, so a stream without partitions still gets its checkpoints checked.
+            # A stream with partitions cannot tell which partition's checkpoints apply.
+            stream_check.slices = None
+            if stream_check.partitioned and check_checkpoints:
+                _add(
+                    CHECK_ERRORS,
+                    f"- stream {name!r}: its records could not be matched to their partitions, "
+                    "so its checkpoints were not checked.",
+                )
     if not checked:
-        return {}
+        return problems
 
     rebuilt, build_errors = _rebuild(
         source, {name: final_states[name] for name in checked if name in final_states}
@@ -662,6 +772,15 @@ def find_cursor_state_problems(
             # builds its `incremental_stream`, so its cursor sets the resume start.
             stream_check.template = resumed
 
+    def _stop_checkpoints(stream_check: _StreamCheck, what: str, error: Exception) -> None:
+        # Only the checkpoint check walks the read; the other checks keep their data.
+        stream_check.check_checkpoints = False
+        _add(
+            CHECK_ERRORS,
+            f"- stream {stream_check.name!r}: checking {what} failed with "
+            f"`{type(error).__name__}`, so its later checkpoints were not checked.",
+        )
+
     for position, message in enumerate(messages()):
         if message.type == Type.RECORD and message.record is not None:
             record_check = checked.get(message.record.stream)
@@ -669,12 +788,7 @@ def find_cursor_state_problems(
                 try:
                     record_check.add_record(position, message.record.data)
                 except Exception as error:  # noqa: BLE001
-                    _add(
-                        CHECK_ERRORS,
-                        f"- stream {record_check.name!r}: checking a record failed with "
-                        f"`{type(error).__name__}`.",
-                    )
-                    del checked[record_check.name]
+                    _stop_checkpoints(record_check, "a record", error)
         elif message.type == Type.STATE:
             parsed = _state_blob(message)
             state_check = checked.get(parsed[0]) if parsed is not None else None
@@ -682,12 +796,7 @@ def find_cursor_state_problems(
                 try:
                     state_check.add_state(position, parsed[1])
                 except Exception as error:  # noqa: BLE001
-                    _add(
-                        CHECK_ERRORS,
-                        f"- stream {state_check.name!r}: checking a state message failed with "
-                        f"`{type(error).__name__}`.",
-                    )
-                    del checked[state_check.name]
+                    _stop_checkpoints(state_check, "a state message", error)
 
     lookback_limit = math.ceil(read_seconds)
     for name in sorted(checked):
@@ -718,17 +827,6 @@ def _report_checkpoints(
     stream_check: _StreamCheck, add: Callable[[CursorStateCheck, str], None]
 ) -> None:
     name = stream_check.name
-    if (
-        stream_check.partitioned
-        and stream_check.check_checkpoints
-        and len(stream_check.partitions or ()) != stream_check.records
-    ):
-        add(
-            CHECK_ERRORS,
-            f"- stream {name!r}: its records could not be matched to their partitions, so its "
-            "checkpoints were not checked.",
-        )
-        return
     if not stream_check.flagged_records:
         return
     where = (
@@ -744,7 +842,8 @@ def _report_checkpoints(
         "value at least as high) was emitted before. A sync that fails after such a state "
         "message and resumes from it never reads these records. This happens when records "
         "carry a cursor value past the end of the slice that returned them (the API filters on "
-        "another field, or reads the window in another timezone).",
+        "another field, or reads the window in another timezone), or when a record dated in "
+        "the future moves the state past the cursor's end.",
     )
 
 

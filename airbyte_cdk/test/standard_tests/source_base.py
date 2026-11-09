@@ -246,7 +246,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         `ConcurrentCursor` is not behind its newest record, per-partition state is well formed
         and keeps the state of incremental parents and every listed partition, and the source
         builds from its final state. Records with no cursor value the cursor can parse are
-        reported as a `CursorStateWarning`. Opt out with `validate_state_messages: false`.
+        reported as a `CursorStateWarning`. Opt out with `validate_state_messages: false`, which
+        also skips the state message check above.
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:
@@ -284,7 +285,13 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         )
         read_scenario = scenario.with_default_success()
         connector = self.create_connector(scenario)
-        recorder = CursorStateRecorder.install(connector)
+        # The hooks lift the state throttle of the read, so only a read whose cursor state is
+        # checked gets them.
+        recorder = (
+            CursorStateRecorder.install(connector)
+            if scenario.is_basic_read_config and scenario.validate_state_messages
+            else None
+        )
         read_started = time.monotonic()
         try:
             result = run_test_job(
