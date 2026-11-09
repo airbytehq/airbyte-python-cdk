@@ -472,6 +472,48 @@ def test_pytest_report_masks_searched_secrets(pytester: pytest.Pytester, secret:
     assert "printed secret values from its config" in printed
 
 
+def test_pytest_report_masks_a_secret_in_a_skip_reason(pytester: pytest.Pytester) -> None:
+    """A skip reason is masked, and the report keeps the tuple the terminal summary unpacks."""
+    pytester.makepyfile(
+        test_skips=textwrap.dedent(
+            f"""
+            import json
+
+            import pytest
+
+            from airbyte_cdk.models import ConnectorSpecification
+            from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
+            from airbyte_cdk.test.standard_tests._spec_lint import assert_no_secrets_in_output
+
+            SECRET = {_PRINTED_SECRET!r}
+            SPEC = ConnectorSpecification(
+                connectionSpecification={{
+                    "type": "object",
+                    "properties": {{"api_key": {{"type": "string", "airbyte_secret": True}}}},
+                }}
+            )
+
+
+            def test_skips_after_a_clean_check():
+                assert_no_secrets_in_output(
+                    EntrypointOutput(messages=[]), spec=SPEC, config={{"api_key": SECRET}},
+                    verb="read", connector_name="source-test",
+                )
+                pytest.skip("no data for account " + SECRET)
+            """
+        )
+    )
+    result = pytester.runpytest_inprocess(
+        "-p", "airbyte_cdk.test.standard_tests.pytest_hooks", "-p", "no:cacheprovider", "-rA"
+    )
+
+    result.assert_outcomes(skipped=1)
+    printed = result.stdout.str()
+    assert "INTERNALERROR" not in printed
+    assert _PRINTED_SECRET not in printed
+    assert "no data for account ****" in printed
+
+
 def test_mask_searched_secrets_masks_a_secret_that_contains_another_whole(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
