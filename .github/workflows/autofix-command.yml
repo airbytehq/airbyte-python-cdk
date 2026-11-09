@@ -20,7 +20,7 @@ jobs:
     # Don't run on forks. Run on pushes to main, and on PRs that are not from forks.
     strategy:
       matrix:
-        python-version: ["3.10"]
+        python-version: ["3.11"]
         os: [Ubuntu]
       fail-fast: false
 

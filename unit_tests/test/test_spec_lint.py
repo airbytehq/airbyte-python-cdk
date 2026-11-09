@@ -19,6 +19,7 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     ConnectorSpecification,
     Status,
+    Type,
 )
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException, EntrypointOutput
@@ -391,6 +392,28 @@ def test_find_leaked_secrets_ignores_control_messages() -> None:
         },
     }
     assert find_leaked_secrets(_output(control_message), [("/api_key", SECRET)]) == []
+
+
+def test_find_leaked_secrets_skips_the_message_types_it_is_given() -> None:
+    state_message = {
+        "type": "STATE",
+        "state": {
+            "type": "STREAM",
+            "stream": {
+                "stream_descriptor": {"name": "calls"},
+                "stream_state": {"account": SECRET},
+            },
+        },
+    }
+    output = _output(state_message, _log(f"401 for {SECRET}"))
+
+    assert find_leaked_secrets(output, [("/api_key", SECRET)], skip_message_types=[Type.STATE]) == [
+        "`/api_key` in message #2 (LOG)"
+    ]
+    assert find_leaked_secrets(output, [("/api_key", SECRET)]) == [
+        "`/api_key` in message #1 (STATE, stream `calls`)",
+        "`/api_key` in message #2 (LOG)",
+    ]
 
 
 @pytest.mark.parametrize(

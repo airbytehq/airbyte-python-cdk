@@ -249,8 +249,9 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             # Failed outside the `except` block, so pytest does not print the error twice.
             pytest.fail(config_error, pytrace=False)
 
-        if not scenarios and not bypasses:
+        if not scenarios and not any(bypass.explains_no_scenarios for bypass in bypasses):
             # Parametrizing with an empty list would skip every scenario test and exit 0.
+            # An `incremental` bypass skips only the future-state read, so it is not enough.
             describe = getattr(test_class, "describe_empty_scenarios", None)
             pytest.fail(
                 describe()
@@ -377,11 +378,25 @@ def _scenario_test_ids(scenarios: list[ConnectorTestScenario]) -> list[str]:
     failed. Note this only affects the displayed test ID, not `ConnectorTestScenario.id`,
     which scenario selection (`--read-scenarios`) matches against.
     """
-    labels = [str(scenario) for scenario in scenarios]
+    # A future-state read has the id of its config, which the config's other scenario also has,
+    # so it is named after its state file.
+    labels = [
+        f"{scenario} future state {scenario.future_state.future_state_path.stem}"
+        if scenario.future_state and scenario.future_state.future_state_path
+        else str(scenario)
+        for scenario in scenarios
+    ]
     duplicated = {label for label in labels if labels.count(label) > 1}
-    return [
+    ids = [
         f"{scenario.config_path.parent.name}/{label}"
         if label in duplicated and scenario.config_path is not None
         else label
         for scenario, label in zip(scenarios, labels)
     ]
+    duplicated = {test_id for test_id in ids if ids.count(test_id) > 1}
+    seen: dict[str, int] = {}
+    unique: list[str] = []
+    for test_id in ids:
+        seen[test_id] = seen.get(test_id, 0) + 1
+        unique.append(f"{test_id} ({seen[test_id]})" if test_id in duplicated else test_id)
+    return unique

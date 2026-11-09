@@ -303,7 +303,7 @@ class AsyncJobOrchestrator:
         )
         # Even though we're not sure this will break the stream, we will emit here for simplicity's sake. If we wanted to be more accurate,
         # we would keep the exceptions in-memory until we know that we have reached the max attempt.
-        self._message_repository.emit_message(traced_exception.as_airbyte_message())
+        self._message_repository.emit_message(traced_exception.as_sanitized_airbyte_message())
         job = self._create_failed_job(_slice)
         self._job_tracker.add_job(intent, job.api_job_id())
         return job

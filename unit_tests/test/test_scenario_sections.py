@@ -2,8 +2,9 @@
 """Each config in `acceptance-test-config.yml` runs the command of the section that lists it.
 
 `spec` validates the config against the spec, `connection` runs `check`, `discovery` runs
-`discover`, and `basic_read` and `full_refresh` run a full-refresh `read`. The `incremental`
-section is not collected. A config listed under several sections runs the union of their commands.
+`discover`, and `basic_read` and `full_refresh` run a full-refresh `read`. An `incremental` entry
+with a `future_state.future_state_path` is a scenario of its own that reads from that state. A config
+listed under several of the other sections runs the union of their commands.
 """
 
 from __future__ import annotations
@@ -149,9 +150,10 @@ def test_every_section_maps_to_the_command_cat_ran_it_with() -> None:
         "discovery": {"discover"},
         "basic_read": {"read"},
         "full_refresh": {"read"},
+        "incremental": {"read_from_future_state"},
     }
     assert SCENARIO_SECTIONS == tuple(SECTION_COMMANDS)
-    assert ALL_COMMANDS == {"spec", "check", "discover", "read"}
+    assert ALL_COMMANDS == {"spec", "check", "discover", "read", "read_from_future_state"}
 
 
 def test_get_scenarios_collects_every_section(tmp_path: Path) -> None:
@@ -162,11 +164,12 @@ def test_get_scenarios_collects_every_section(tmp_path: Path) -> None:
         "integration_tests/invalid_config.json",
         "secrets/config.json",
         "secrets/config_full_refresh.json",
+        "secrets/config_incremental.json",
         "secrets/config_old.json",
         "secrets/config_read_only.json",
     ], (
-        "iam_role configs, entries without config_path and the `incremental` section are "
-        "skipped; the rest are deduplicated"
+        "iam_role configs, entries without config_path and `incremental` entries without a "
+        "future state are skipped; the rest are deduplicated"
     )
 
     full = scenarios["secrets/config.json"]
@@ -182,8 +185,17 @@ def test_get_scenarios_collects_every_section(tmp_path: Path) -> None:
     assert invalid.status == "failed"
 
     read_only = scenarios["secrets/config_read_only.json"]
-    assert read_only.sections == ("basic_read",), "its `incremental` entry is ignored"
+    assert read_only.sections == ("basic_read",), "its `incremental` entry has no future state"
     assert read_only.commands == {"read"}
+
+    incremental = scenarios["secrets/config_incremental.json"]
+    assert incremental.sections == ("incremental",)
+    assert incremental.commands == {"read_from_future_state"}
+    assert incremental.configured_catalog_path == Path("integration_tests/incremental_catalog.json")
+    assert incremental.future_state is not None
+    assert incremental.future_state.future_state_path == Path(
+        "integration_tests/abnormal_state.json"
+    )
 
     for config_path, section, command in [
         ("secrets/config_old.json", "discovery", "discover"),
@@ -272,6 +284,7 @@ def test_dedup_scenarios_merges_the_read_catalogs(
         pytest.param(("discovery",), {"discover"}, id="discovery"),
         pytest.param(("basic_read",), {"read"}, id="basic_read"),
         pytest.param(("full_refresh",), {"read"}, id="full_refresh"),
+        pytest.param(("incremental",), {"read_from_future_state"}, id="incremental"),
         pytest.param(("discovery", "basic_read"), {"discover", "read"}, id="mixed"),
         pytest.param(SCENARIO_SECTIONS, ALL_COMMANDS, id="every_section"),
     ],
@@ -293,7 +306,7 @@ def test_commands_property(sections: tuple[str, ...], expected: set[ScenarioComm
         assert derived.commands == expected
 
 
-@pytest.mark.parametrize("section", ["sequential_reads", "incremental"])
+@pytest.mark.parametrize("section", ["sequential_reads", "future_state"])
 def test_unknown_section_is_rejected(section: str) -> None:
     with pytest.raises(ValidationError, match="Unknown `acceptance-test-config.yml` section"):
         _scenario(section)
@@ -339,7 +352,26 @@ SUITE_TEST_COMMANDS: dict[str, frozenset[ScenarioCommand]] = {
     "test_discover": frozenset({"discover"}),
     "test_basic_read": frozenset({"read"}),
     "test_fail_read_with_bad_catalog": frozenset({"read"}),
+    "test_read_from_future_state": frozenset({"read_from_future_state"}),
 }
+
+FUTURE_STATE_PATH = Path("integration_tests/abnormal_state.json")
+
+
+def _gated_scenario(suite: Any, test_name: str, *sections: str) -> ConnectorTestScenario:
+    """A scenario listed under `sections`, with a future state file for the future-state tests.
+
+    Without one, the future-state tests skip for every section, which would hide their gating.
+    """
+    if "future_state" not in test_name:
+        return _scenario(*sections)
+    state_path = suite.get_connector_root_dir() / FUTURE_STATE_PATH
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps([json.loads(_state_message("users"))["state"]]))
+    return _scenario(
+        *sections,
+        future_state=ConnectorTestScenario.FutureState(future_state_path=FUTURE_STATE_PATH),
+    )
 
 
 @pytest.mark.parametrize("section", SCENARIO_SECTIONS)
@@ -350,7 +382,7 @@ def test_source_suite_runs_each_test_for_its_sections(
     tmp_path: Path, test_name: str, commands: frozenset[ScenarioCommand], section: str
 ) -> None:
     suite = _suite_class(tmp_path, ALL_SECTIONS_CONFIG, base=SourceTestSuiteBase)()
-    scenario = _scenario(section)
+    scenario = _gated_scenario(suite, test_name, section)
 
     if SECTION_COMMANDS[section] & commands:
         with pytest.raises(_Reached):
@@ -366,7 +398,7 @@ def test_source_suite_runs_every_test_for_hand_built_scenarios(
 ) -> None:
     suite = _suite_class(tmp_path, ALL_SECTIONS_CONFIG, base=SourceTestSuiteBase)()
     with pytest.raises(_Reached):
-        _run_without_skip(getattr(suite, test_name), _scenario())
+        _run_without_skip(getattr(suite, test_name), _gated_scenario(suite, test_name))
 
 
 @pytest.mark.parametrize("test_name", ["test_check", "test_config_matches_spec"])
@@ -383,6 +415,7 @@ DOCKER_TEST_COMMANDS: dict[str, frozenset[ScenarioCommand]] = {
     "test_docker_image_build_and_config_matches_spec": frozenset({"spec"}),
     "test_docker_image_build_and_discover": frozenset({"discover"}),
     "test_docker_image_build_and_read": frozenset({"read"}),
+    "test_docker_image_build_and_read_from_future_state": frozenset({"read_from_future_state"}),
 }
 
 
@@ -391,7 +424,7 @@ def _docker_kwargs(test_name: str) -> dict[str, Any]:
         "connector_image_override": IMAGE,  # skips the image build
         "connector_base_image_override": None,
     }
-    if test_name == "test_docker_image_build_and_read":
+    if test_name.startswith("test_docker_image_build_and_read"):
         kwargs |= {"read_from_streams": "default", "read_scenarios": "all"}
     return kwargs
 
@@ -413,8 +446,16 @@ def test_docker_suite_runs_each_test_for_its_sections(
     monkeypatch.setattr(
         "airbyte_cdk.test.standard_tests.docker_base.run_docker_airbyte_command", _reached
     )
+    # The future-state test gets the spec before its first command, and skips when `spec` fails.
+    # A stub keeps it from reading a spec another test left in the session-wide cache.
+    monkeypatch.setattr(
+        "airbyte_cdk.test.standard_tests.docker_base._run_docker_spec",
+        lambda connector_image, *, connector_name: ConnectorSpecification(
+            connectionSpecification={}
+        ),
+    )
     suite = _suite_class(tmp_path, ALL_SECTIONS_CONFIG, base=DockerConnectorTestSuite)()
-    scenario = _scenario(section)
+    scenario = _gated_scenario(suite, test_name, section)
 
     if SECTION_COMMANDS[section] & commands:
         with pytest.raises(_Reached):

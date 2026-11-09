@@ -50,6 +50,7 @@ from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partitio
 from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _STREAM_NAME = "stream"
@@ -1717,3 +1718,67 @@ def test_collect_parent_stream_names_unwraps_union_partition_router(wrapper):
 
     parent_names = handler._collect_all_parent_stream_names("child")
     assert parent_names == {"parent_a", "parent_b"}
+
+
+_A_SECRET = "s3cr3t-app-value"
+
+
+@pytest.fixture
+def registered_secret():
+    update_secrets([_A_SECRET])
+    yield _A_SECRET
+    update_secrets([])
+
+
+@pytest.mark.parametrize(
+    "stream_exception, fields_quoting_the_secret",
+    [
+        pytest.param(
+            AirbyteTracedException(
+                message=f"Request to oauth2/advertiser/get/?secret={_A_SECRET} was forbidden",
+                internal_message=f"403 Client Error for url: https://api.example.com/oauth2/advertiser/get/?secret={_A_SECRET}&app_id=1",
+                failure_type=FailureType.config_error,
+            ),
+            ["message", "internal_message", "stack_trace"],
+            id="airbyte_traced_exception",
+        ),
+        pytest.param(
+            ValueError(
+                f"403 Client Error for url: https://api.example.com/oauth2/advertiser/get/?secret={_A_SECRET}&app_id=1"
+            ),
+            ["internal_message", "stack_trace"],
+            id="unhandled_exception",
+        ),
+    ],
+)
+def test_on_exception_masks_config_secrets_in_trace_message(
+    registered_secret, stream_exception, fields_quoting_the_secret
+):
+    stream = Mock(spec=AbstractStream)
+    stream.name = _STREAM_NAME
+    handler = ConcurrentReadProcessor(
+        [stream],
+        Mock(spec=PartitionEnqueuer),
+        Mock(spec=ThreadPoolManager),
+        Mock(spec=logging.Logger),
+        Mock(spec=SliceLogger),
+        Mock(spec=MessageRepository),
+        Mock(spec=PartitionReader),
+    )
+
+    messages = list(handler.on_exception(StreamThreadException(stream_exception, _STREAM_NAME)))
+
+    assert len(messages) == 1
+    trace_error = messages[0].trace.error
+    assert trace_error.stream_descriptor == StreamDescriptor(name=_STREAM_NAME)
+    for field in ("message", "internal_message", "stack_trace"):
+        assert registered_secret not in getattr(trace_error, field)
+    for field in fields_quoting_the_secret:
+        assert "****" in getattr(trace_error, field)
+    if isinstance(stream_exception, AirbyteTracedException):
+        assert trace_error.message == "Request to oauth2/advertiser/get/?secret=**** was forbidden"
+    else:
+        assert (
+            trace_error.message
+            == f"An unexpected error occurred in stream {_STREAM_NAME}: ValueError"
+        )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -578,6 +578,8 @@ def _is_config_validation_status(message: AirbyteMessage) -> bool:
 def find_leaked_secrets(
     output: EntrypointOutput,
     secrets: Iterable[tuple[str, Any]],
+    *,
+    skip_message_types: Collection[Type] = (),
 ) -> list[str]:
     """Return one line per place in `output` that contains a secret from `secrets`.
 
@@ -599,6 +601,8 @@ def find_leaked_secrets(
     may also return a value that equals a secret in the config, such as an app ID marked
     `airbyte_secret` that a stream lists, which would fail a correct connector. And a read can
     emit many records, which would make the search the slowest part of the test.
+
+    Messages of `skip_message_types` are skipped as well.
     """
     secrets = list(secrets)
     variants_by_pointer: dict[str, set[str]] = {}
@@ -621,7 +625,7 @@ def find_leaked_secrets(
 
     leaks: list[str] = []
     for number, message in enumerate(output.get_message_iterator(), start=1):
-        if message.type in (Type.CONTROL, Type.RECORD):
+        if message.type in (Type.CONTROL, Type.RECORD) or message.type in skip_message_types:
             continue
         serialized_message = AirbyteMessageSerializer.dump(message)
         pointers = [
@@ -654,6 +658,7 @@ def assert_no_secrets_in_output(
     config: Mapping[str, Any],
     verb: str,
     connector_name: str,
+    skip_message_types: Collection[Type] = (),
 ) -> None:
     """Assert that no `airbyte_secret` value from `config` appears in the connector's output.
 
@@ -662,14 +667,14 @@ def assert_no_secrets_in_output(
     `print()` to stdout is not captured: only the messages the connector yields and the records
     of the root logger are searched.
 
-    Run this before any other assertion on `output`, since those print raw messages. The forms
-    of the secrets searched for are kept for `mask_searched_secrets`, which masks what pytest
-    prints of the test.
+    Run this before any other assertion on `output`, since those print raw messages. Messages
+    of `skip_message_types` are not searched. The forms of the secrets searched for are kept
+    for `mask_searched_secrets`, which masks what pytest prints of the test.
     """
     secrets = find_config_secrets(spec.connectionSpecification, config)
     for _, secret in secrets:
         _searched_secret_variants.update(_secret_variants(secret))
-    leaks = find_leaked_secrets(output, secrets)
+    leaks = find_leaked_secrets(output, secrets, skip_message_types=skip_message_types)
     hint = ""
     if any(_CONFIG_VALIDATION_LABEL in leak for leak in leaks):
         hint = (
