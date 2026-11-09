@@ -22,6 +22,7 @@ from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobReposit
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 _ANY_STREAM_SLICE = Mock()
 _A_STREAM_SLICE = Mock()
@@ -325,6 +326,28 @@ class AsyncJobOrchestratorTest(TestCase):
         assert len(partitions) == 1  # only _job_for_another_slice has succeeded
         assert self._message_repository.emit_message.call_count == 3  # one for each traced message
         assert exception.failure_type == FailureType.system_error  # type: ignore  # exception should be of type AirbyteTracedException
+
+    @mock.patch(sleep_mock_target)
+    def test_given_exception_when_start_job_then_emitted_trace_masks_config_secrets(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        a_secret = "s3cr3t-app-value"
+        update_secrets([a_secret])
+        self.addCleanup(update_secrets, [])
+        self._job_repository.start.side_effect = ValueError(
+            f"403 Client Error for url: https://api.example.com/jobs?secret={a_secret}"
+        )
+        orchestrator = self._orchestrator([_A_STREAM_SLICE])
+
+        self._accumulate_create_and_get_completed_partitions(orchestrator)
+
+        assert self._message_repository.emit_message.call_count >= 1
+        for emitted in self._message_repository.emit_message.call_args_list:
+            trace_error = emitted.args[0].trace.error
+            assert a_secret not in trace_error.internal_message
+            assert a_secret not in trace_error.stack_trace
+            assert "****" in trace_error.internal_message
+            assert "****" in trace_error.stack_trace
 
     @mock.patch(sleep_mock_target)
     def test_given_jobs_failed_more_than_max_attempts_when_create_and_get_completed_partitions_then_free_job_budget(
