@@ -13,8 +13,9 @@ pytest_plugins = [
 ```
 """
 
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import pytest
 
@@ -23,6 +24,7 @@ from airbyte_cdk.test.standard_tests._acceptance_test_config import (
     AcceptanceTestConfigError,
     ScenarioBypass,
 )
+from airbyte_cdk.test.standard_tests._spec_lint import mask_searched_secrets
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
 
 
@@ -292,6 +294,37 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             parametrized_scenarios + bypass_params,
             ids=_scenario_test_ids(scenarios) + [group.test_id for group in bypass_groups],
         )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, Any, None]:
+    """Mask config secrets in what pytest prints of a test.
+
+    pytest prints the log records, stdout and stderr it captured from a failed test (and from a
+    passed one with `-rA`), and the failure text. Its log capture formats records without the
+    CDK's secret filter, so an HTTP log line that quotes a request URL with a secret in it is
+    printed as is. The secrets are those the secret leak check searched for.
+
+    Only what pytest captured is masked. With `--capture=no`, which the connector monorepo's
+    `pytest.ini` sets, stdout and stderr are printed live and never reach the report; nor does
+    live logging (`log_cli`).
+    """
+    outcome = yield
+    report: pytest.TestReport = outcome.get_result()
+    report.sections = [
+        (title, mask_searched_secrets(content)) for title, content in report.sections
+    ]
+    if isinstance(report.longrepr, tuple):
+        # A skip keeps its `(path, lineno, reason)` tuple: the terminal summary unpacks it.
+        path, lineno, reason = report.longrepr
+        report.longrepr = (path, lineno, mask_searched_secrets(reason))
+    elif report.longrepr is not None:
+        longrepr = str(report.longrepr)
+        masked = mask_searched_secrets(longrepr)
+        if masked != longrepr:
+            report.longrepr = masked
 
 
 _BYPASS_REPORT_KEY = pytest.StashKey[dict[str, str]]()

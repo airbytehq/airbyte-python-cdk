@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -510,6 +510,23 @@ def _secret_variants(secret: Any) -> set[str]:
     return variants
 
 
+_searched_secret_variants: set[str] = set()
+"""Every secret form the leak check has searched for in this process, for `mask_searched_secrets`."""
+
+
+def mask_searched_secrets(text: str) -> str:
+    """Replace every secret form the leak check has searched for in `text` with `****`.
+
+    The leak check fails a test before its assertions print the connector's messages, but pytest
+    still prints what it captured from the test: the log records, stdout and stderr, and the
+    failure text. The standard tests' pytest plugin masks those with this function. The longest
+    forms go first, so a secret that contains another one is masked whole.
+    """
+    for variant in sorted(_searched_secret_variants, key=len, reverse=True):
+        text = text.replace(variant, "****")
+    return text
+
+
 def _stream_name(message: Mapping[str, Any]) -> str | None:
     """Return the name of the stream a serialized message is about, if any."""
     record = message.get("record")
@@ -558,11 +575,13 @@ def _is_config_validation_status(message: AirbyteMessage) -> bool:
     )
 
 
+_UNSEARCHED_MESSAGE_TYPES = frozenset({Type.CONTROL, Type.RECORD, Type.STATE})
+"""The message types the secret leak check does not search (see `find_leaked_secrets`)."""
+
+
 def find_leaked_secrets(
     output: EntrypointOutput,
     secrets: Iterable[tuple[str, Any]],
-    *,
-    skip_message_types: Collection[Type] = (),
 ) -> list[str]:
     """Return one line per place in `output` that contains a secret from `secrets`.
 
@@ -577,7 +596,15 @@ def find_leaked_secrets(
     secrets in that message, or a scenario config that passes the spec.
 
     CONTROL messages are skipped: a connector config update carries the full config,
-    including its secrets, by design. Messages of `skip_message_types` are skipped too.
+    including its secrets, by design.
+
+    RECORD and STATE messages are skipped too. A record is data the connector was asked to
+    emit, and a state message holds the position the platform stores in its state store: the
+    platform never logs either, and the standard-test assertions never print their values. Both
+    can legitimately hold a value that equals a secret in the config, which would fail a correct
+    connector: an API can return an app ID marked `airbyte_secret` that a stream lists, and a
+    stream can partition by it (source-twilio partitions by its `account_sid`). And a read can
+    emit many records, which would make the search the slowest part of the test.
     """
     secrets = list(secrets)
     variants_by_pointer: dict[str, set[str]] = {}
@@ -600,7 +627,7 @@ def find_leaked_secrets(
 
     leaks: list[str] = []
     for number, message in enumerate(output.get_message_iterator(), start=1):
-        if message.type == Type.CONTROL or message.type in skip_message_types:
+        if message.type in _UNSEARCHED_MESSAGE_TYPES:
             continue
         serialized_message = AirbyteMessageSerializer.dump(message)
         pointers = [
@@ -633,19 +660,22 @@ def assert_no_secrets_in_output(
     config: Mapping[str, Any],
     verb: str,
     connector_name: str,
-    skip_message_types: Collection[Type] = (),
 ) -> None:
     """Assert that no `airbyte_secret` value from `config` appears in the connector's output.
 
-    This searches every message the connector emitted and, on the Docker path, its raw
-    stdout and stderr. In-process, a `print()` to stdout is not captured: only the messages
-    the connector yields and the records of the root logger are searched.
+    This searches every message the connector emitted except control, record and state
+    messages (see `find_leaked_secrets`) and, on the Docker path, its raw stdout and stderr. In-process, a
+    `print()` to stdout is not captured: only the messages the connector yields and the records
+    of the root logger are searched.
 
-    Run this before any other assertion on `output`, since those print raw messages. Messages
-    of `skip_message_types` are not searched.
+    Run this before any other assertion on `output`, since those print raw messages. The forms
+    of the secrets searched for are kept for `mask_searched_secrets`, which masks what pytest
+    prints of the test.
     """
     secrets = find_config_secrets(spec.connectionSpecification, config)
-    leaks = find_leaked_secrets(output, secrets, skip_message_types=skip_message_types)
+    for _, secret in secrets:
+        _searched_secret_variants.update(_secret_variants(secret))
+    leaks = find_leaked_secrets(output, secrets)
     hint = ""
     if any(_CONFIG_VALIDATION_LABEL in leak for leak in leaks):
         hint = (

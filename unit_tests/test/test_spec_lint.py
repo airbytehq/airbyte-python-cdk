@@ -58,6 +58,27 @@ def _log(message: str) -> dict[str, Any]:
     return {"type": "LOG", "log": {"level": "INFO", "message": message}}
 
 
+def _stream_state(stream: str, stream_state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "STATE",
+        "state": {
+            "type": "STREAM",
+            "stream": {"stream_descriptor": {"name": stream}, "stream_state": stream_state},
+        },
+    }
+
+
+def _stream_error(stream: str, message: str) -> dict[str, Any]:
+    return {
+        "type": "TRACE",
+        "trace": {
+            "type": "ERROR",
+            "emitted_at": 0,
+            "error": {"message": message, "stream_descriptor": {"name": stream}},
+        },
+    }
+
+
 def _spec_message(properties: dict[str, Any]) -> dict[str, Any]:
     return {"type": "SPEC", "spec": {"connectionSpecification": _spec(properties)}}
 
@@ -311,14 +332,6 @@ def test_get_single_spec_returns_the_spec() -> None:
         ),
         pytest.param(
             {
-                "type": "RECORD",
-                "record": {"stream": "users", "data": {"token": SECRET}, "emitted_at": 0},
-            },
-            "message #1 (RECORD, stream `users`)",
-            id="record_names_the_stream",
-        ),
-        pytest.param(
-            {
                 "type": "TRACE",
                 "trace": {
                     "type": "ERROR",
@@ -333,11 +346,8 @@ def test_get_single_spec_returns_the_spec() -> None:
             id="trace_names_the_stream",
         ),
         pytest.param(
-            {
-                "type": "RECORD",
-                "record": {"stream": f"users_{SECRET}", "data": {}, "emitted_at": 0},
-            },
-            "message #1 (RECORD)",
+            _stream_error(f"users_{SECRET}", "Request failed"),
+            "message #1 (TRACE)",
             id="stream_name_holding_a_secret_is_left_out",
         ),
     ],
@@ -368,6 +378,16 @@ def test_find_leaked_secrets_searches_stderr() -> None:
     assert find_leaked_secrets(output, [("/api_key", SECRET)]) == ["`/api_key` in stderr line 2"]
 
 
+def test_find_leaked_secrets_ignores_records() -> None:
+    """A record is data the connector was asked to emit; an API may return a secret's value."""
+    record = {
+        "type": "RECORD",
+        "record": {"stream": "apps", "data": {"app_secret": SECRET}, "emitted_at": 0},
+    }
+    output = _output(record, _log(f"Read app {SECRET}"))
+    assert find_leaked_secrets(output, [("/api_key", SECRET)]) == ["`/api_key` in message #2 (LOG)"]
+
+
 def test_find_leaked_secrets_ignores_control_messages() -> None:
     control_message = {
         "type": "CONTROL",
@@ -380,26 +400,16 @@ def test_find_leaked_secrets_ignores_control_messages() -> None:
     assert find_leaked_secrets(_output(control_message), [("/api_key", SECRET)]) == []
 
 
-def test_find_leaked_secrets_skips_the_message_types_it_is_given() -> None:
-    state_message = {
-        "type": "STATE",
-        "state": {
-            "type": "STREAM",
-            "stream": {
-                "stream_descriptor": {"name": "calls"},
-                "stream_state": {"account": SECRET},
-            },
-        },
-    }
-    output = _output(state_message, _log(f"401 for {SECRET}"))
+def test_find_leaked_secrets_ignores_state_messages() -> None:
+    """A state message is stored, never logged: a partition may hold a secret-marked ID.
 
-    assert find_leaked_secrets(output, [("/api_key", SECRET)], skip_message_types=[Type.STATE]) == [
-        "`/api_key` in message #2 (LOG)"
-    ]
-    assert find_leaked_secrets(output, [("/api_key", SECRET)]) == [
-        "`/api_key` in message #1 (STATE, stream `calls`)",
-        "`/api_key` in message #2 (LOG)",
-    ]
+    source-twilio partitions by its `account_sid`, which its spec marks `airbyte_secret`.
+    """
+    output = _output(
+        _stream_state("calls", {"states": [{"partition": {"account_sid": SECRET}}]}),
+        _log(f"401 for {SECRET}"),
+    )
+    assert find_leaked_secrets(output, [("/api_key", SECRET)]) == ["`/api_key` in message #2 (LOG)"]
 
 
 @pytest.mark.parametrize(
@@ -1139,12 +1149,16 @@ def test_marking_lint_agrees_with_the_runtime_secret_filter(
 
 
 def test_find_leaked_secrets_finds_a_numeric_secret_emitted_as_a_json_number() -> None:
-    record = {
-        "type": "RECORD",
-        "record": {"stream": "pins", "data": {"pin": 12345678}, "emitted_at": 0},
+    estimate = {
+        "type": "TRACE",
+        "trace": {
+            "type": "ESTIMATE",
+            "emitted_at": 0,
+            "estimate": {"name": "pins", "type": "STREAM", "row_estimate": 12345678},
+        },
     }
-    leaks = find_leaked_secrets(_output(record), [("/pin", 12345678)])
-    assert leaks == ["`/pin` in message #1 (RECORD, stream `pins`)"]
+    leaks = find_leaked_secrets(_output(estimate), [("/pin", 12345678)])
+    assert leaks == ["`/pin` in message #1 (TRACE)"]
 
 
 @pytest.mark.parametrize(
@@ -1168,12 +1182,9 @@ def test_find_leaked_secrets_finds_each_encoded_form(secret: str, printed_text: 
 
 
 def test_find_leaked_secrets_shows_the_stream_despite_a_short_unrelated_secret() -> None:
-    record = {
-        "type": "RECORD",
-        "record": {"stream": "users", "data": {"t": SECRET}, "emitted_at": 0},
-    }
-    leaks = find_leaked_secrets(_output(record), [("/api_key", SECRET), ("/pin", "s")])
-    assert leaks == ["`/api_key` in message #1 (RECORD, stream `users`)"]
+    error = _stream_error("users", f"401 for {SECRET}")
+    leaks = find_leaked_secrets(_output(error), [("/api_key", SECRET), ("/pin", "s")])
+    assert leaks == ["`/api_key` in message #1 (TRACE, stream `users`)"]
 
 
 def test_leak_in_a_cdk_config_validation_status_is_labeled() -> None:

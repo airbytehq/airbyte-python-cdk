@@ -31,7 +31,6 @@ from airbyte_cdk.test.standard_tests._catalog_checks import (
     format_catalog_problems,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
-    FUTURE_STATE_READ_UNSCANNED_MESSAGES,
     CursorFormatWarning,
     assert_future_state_covers_streams,
     assert_future_state_read,
@@ -115,9 +114,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
-            inspect_output=lambda output: self._assert_no_secrets_in_output(
-                scenario, output, verb="check"
-            ),
+            inspect_output=self._secret_leak_check(scenario, "check"),
         )
         if scenario.expected_outcome.expect_uncaught_error():
             # An uncaught error is the expected outcome; no CONNECTION_STATUS is required.
@@ -138,7 +135,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         Runs for configs listed under `discovery` in `acceptance-test-config.yml`. Assert
         that the connector emits exactly one catalog and that the catalog passes the checks in
         `CATALOG_CHECKS`. Problems found by checks that are not enforced yet are reported as a
-        `DiscoveredCatalogWarning` instead of failing the test.
+        `DiscoveredCatalogWarning` instead of failing the test. Before any of that, the output
+        must hold no `airbyte_secret` value from the config (see `_assert_no_secrets_in_output`).
         """
         skip_unless_runs(scenario, "discover")
         if scenario.expected_outcome.expect_exception():
@@ -154,6 +152,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "discover",
             connector_root=connector_root,
             test_scenario=scenario.with_default_success(),
+            inspect_output=self._secret_leak_check(scenario, "discover"),
         )
         if result.errors and not scenario.expected_outcome.expect_success():
             # The scenario allows `discover` to fail, so there is no catalog to check.
@@ -232,6 +231,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         Every stream it reads should also report `STARTED`, then only `RUNNING`, then
         `COMPLETE` stream statuses. That check is not enforced yet: its problems are reported as
         a `StreamStatusWarning`.
+
+        The output of `discover` and of `read` must hold no `airbyte_secret` value from the
+        config, records and state aside (see `_assert_no_secrets_in_output`). That is checked first,
+        since the other checks print raw error traces.
         """
         skip_unless_runs(scenario, "read")
         if scenario.is_basic_read_config:
@@ -245,6 +248,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "discover",
             connector_root=connector_root,
             test_scenario=scenario.without_expected_outcome(),
+            inspect_output=self._secret_leak_check(scenario, "discover"),
         )
         if scenario.expected_outcome.expect_exception() and discover_result.errors:
             # Failed as expected; we're done.
@@ -274,6 +278,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=read_scenario,
             connector_root=connector_root,
             catalog=configured_catalog,
+            inspect_output=self._secret_leak_check(scenario, "read"),
         )
 
         if read_scenario.expected_outcome.expect_exception():
@@ -326,8 +331,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
           the state it was built with (use `DeclarativeSourceTestSuite`, or override
           `create_connector`);
         - a stream it reads has no state in the file;
-        - `discover` or `read` outputs an `airbyte_secret` value from the config, outside the
-          read's state messages (see `FUTURE_STATE_READ_UNSCANNED_MESSAGES`);
+        - `discover` or `read` outputs an `airbyte_secret` value from the config, outside its
+          records and state messages (see `_assert_no_secrets_in_output`);
         - the read fails, for example because the connector cannot parse the state;
         - a stream returns any record, or emits no state message;
         - for a declarative stream, the state file or the read's emitted state holds a cursor
@@ -359,9 +364,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "discover",
             connector_root=connector_root,
             test_scenario=scenario.without_expected_outcome(),
-            inspect_output=lambda output: self._assert_no_secrets_in_output(
-                scenario, output, verb="discover"
-            ),
+            inspect_output=self._secret_leak_check(scenario, "discover"),
         )
         if discover_result.errors:
             raise discover_result.as_exception()
@@ -383,12 +386,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             connector_root=connector_root,
             catalog=catalog,
             state=state,
-            inspect_output=lambda output: self._assert_no_secrets_in_output(
-                scenario,
-                output,
-                verb="read",
-                skip_message_types=FUTURE_STATE_READ_UNSCANNED_MESSAGES,
-            ),
+            inspect_output=self._secret_leak_check(scenario, "read"),
         )
         cursor_formats = check_cursor_formats(
             self._create_connector_with_state(
@@ -425,7 +423,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         `acceptance-test-config.yml`. The read must fail and emit a well-formed `ERROR` trace
         message (see `assert_error_trace_messages`). This is CAT's
         `TestBasicRead.test_airbyte_trace_message_on_failure`, and as in CAT it is skipped for a
-        config whose `basic_read` entry sets `expect_trace_message_on_failure: false`.
+        config whose `basic_read` entry sets `expect_trace_message_on_failure: false`. The output
+        must hold no `airbyte_secret` value from the config (see `_assert_no_secrets_in_output`).
         """
         skip_unless_runs(scenario, "read")
         if not scenario.expect_trace_message_on_failure:
@@ -458,6 +457,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             connector_root=self.get_connector_root_dir(),
             test_scenario=scenario.with_expecting_failure(),  # Expect failure due to bad catalog
             catalog=asdict(invalid_configured_catalog),
+            inspect_output=self._secret_leak_check(scenario, "read"),
         )
         assert result.errors, "Expected errors but got none."
         assert_error_trace_messages(result.get_message_iterator())

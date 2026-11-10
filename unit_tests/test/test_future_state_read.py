@@ -26,6 +26,7 @@ import yaml
 from airbyte_cdk.models import (
     AirbyteCatalog,
     AirbyteConnectionStatus,
+    AirbyteErrorTraceMessage,
     AirbyteMessage,
     AirbyteRecordMessage,
     AirbyteStateBlob,
@@ -34,11 +35,13 @@ from airbyte_cdk.models import (
     AirbyteStateType,
     AirbyteStream,
     AirbyteStreamState,
+    AirbyteTraceMessage,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
     Status,
     StreamDescriptor,
     SyncMode,
+    TraceType,
     Type,
 )
 from airbyte_cdk.sources import Source
@@ -688,7 +691,8 @@ LEAKED_KEY = "leaked-api-key-0123456789"
 class _LeakingSource(_StateSource):
     """Honours its state, and prints its secret `api_key` in the output of `leaking_command`.
 
-    The entrypoint masks secrets in log messages, so it goes in a stream description or a record.
+    The entrypoint masks secrets in log messages, so it goes in a stream description or the
+    internal message of an error trace. A record is not searched: it is data, not output.
     """
 
     def __init__(self, leaking_command: str) -> None:
@@ -719,9 +723,14 @@ class _LeakingSource(_StateSource):
     ) -> Iterable[AirbyteMessage]:
         if self._leaking_command == "read":
             yield AirbyteMessage(
-                type=Type.RECORD,
-                record=AirbyteRecordMessage(
-                    stream="users", data={"key": config["api_key"]}, emitted_at=0
+                type=Type.TRACE,
+                trace=AirbyteTraceMessage(
+                    type=TraceType.ERROR,
+                    emitted_at=0,
+                    error=AirbyteErrorTraceMessage(
+                        message="Request failed",
+                        internal_message=f"403 for /users?key={config['api_key']}",
+                    ),
                 ),
             )
         if self._leaking_command == "state":

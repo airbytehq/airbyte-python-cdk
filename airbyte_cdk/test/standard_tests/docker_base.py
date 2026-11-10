@@ -43,7 +43,6 @@ from airbyte_cdk.test.standard_tests._assertions import (
     assert_config_matches_spec,
 )
 from airbyte_cdk.test.standard_tests._future_state import (
-    FUTURE_STATE_READ_UNSCANNED_MESSAGES,
     assert_future_state_covers_streams,
     assert_future_state_read,
     build_future_state_catalog,
@@ -401,7 +400,7 @@ def _run_docker_spec(connector_image: str, *, connector_name: str) -> ConnectorS
 
 _SPEC_FAILED_SKIP_REASON = (
     "`spec` failed, so the secret leak check cannot tell which config values are secret, and "
-    "the check outcome is not asserted without it. The spec tests report the `spec` failure."
+    "the outcome is not asserted without it. The spec tests report the `spec` failure."
 )
 _SPEC_FAILED_FUTURE_STATE_SKIP_REASON = (
     "`spec` failed, so the secret leak check cannot tell which config values are secret, and "
@@ -838,6 +837,35 @@ class DockerConnectorTestSuite:
             return []
         return disabled_for_version(acceptance_test_config)
 
+    def _assert_no_secrets_in_docker_output(
+        self,
+        scenario: ConnectorTestScenario,
+        output: EntrypointOutput,
+        *,
+        connector_image: str,
+        verb: str,
+    ) -> None:
+        """Assert that no `airbyte_secret` value from the scenario's config is in `output`.
+
+        Run the command with `raise_if_errors=False` and call this before raising or asserting
+        anything on `output`: those print the raw error traces and messages. The image's spec
+        is run once per test session (see `_run_docker_spec`). If `spec` fails, the test is
+        skipped: the spec tests report that failure.
+        """
+        connector_root = self.get_connector_root_dir()
+        connector_name = connector_root.absolute().name
+        try:
+            spec = _run_docker_spec(connector_image, connector_name=connector_name)
+        except Exception:
+            pytest.skip(_SPEC_FAILED_SKIP_REASON)
+        assert_no_secrets_in_output(
+            output,
+            spec=spec,
+            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
+            verb=verb,
+            connector_name=connector_name,
+        )
+
     @pytest.mark.skipif(
         shutil.which("docker") is None,
         reason="docker CLI not found in PATH, skipping docker image tests",
@@ -882,17 +910,8 @@ class DockerConnectorTestSuite:
 
         # The leak check runs first, whatever the outcome: the assertions below print the raw
         # CONNECTION_STATUS and error messages, which are the likeliest to carry a secret.
-        connector_name = connector_root.absolute().name
-        try:
-            spec = _run_docker_spec(connector_image, connector_name=connector_name)
-        except Exception:
-            pytest.skip(_SPEC_FAILED_SKIP_REASON)
-        assert_no_secrets_in_output(
-            check_result,
-            spec=spec,
-            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
-            verb="check",
-            connector_name=connector_name,
+        self._assert_no_secrets_in_docker_output(
+            scenario, check_result, connector_image=connector_image, verb="check"
         )
         # For expected-failure scenarios, a non-zero exit or trace error is an acceptable way
         # for `check` to fail, so only the other scenarios raise on errors.
@@ -906,7 +925,7 @@ class DockerConnectorTestSuite:
         assert_check_outcome(
             check_result=check_result,
             expected_outcome=scenario.expected_outcome,
-            connector_name=connector_name,
+            connector_name=connector_root.absolute().name,
         )
 
     @pytest.mark.skipif(
@@ -961,7 +980,8 @@ class DockerConnectorTestSuite:
     ) -> None:
         """Run `discover` inside the connector image and require a non-empty catalog.
 
-        Runs for configs listed under `discovery` in `acceptance-test-config.yml`.
+        Runs for configs listed under `discovery` in `acceptance-test-config.yml`. The output must
+        hold no `airbyte_secret` value from the config (see `_assert_no_secrets_in_docker_output`).
         """
         if self.is_destination_connector():
             pytest.skip("Skipping discover test for destination connector.")
@@ -993,9 +1013,14 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                raise_if_errors=False,
             )
 
+        # The leak check runs before `raise_if_errors`, which prints the raw error traces.
+        self._assert_no_secrets_in_docker_output(
+            scenario, discover_result, connector_image=connector_image, verb="discover"
+        )
+        discover_result.raise_if_errors()
         get_discovered_streams(discover_result, connector_root.absolute().name)
 
     @pytest.mark.skipif(
@@ -1027,7 +1052,9 @@ class DockerConnectorTestSuite:
         `validate_primary_keys_data_type: false`); and every stream must emit state with
         `sourceStats` (opt out with `validate_state_messages: false`). Incomplete stream statuses
         are reported as a `StreamStatusWarning`, not enforced. A config listed only under
-        `full_refresh` must return some records.
+        `full_refresh` must return some records. The output of `discover` and of `read` must hold
+        no `airbyte_secret` value from the config, records and state aside (see
+        `_assert_no_secrets_in_docker_output`).
 
         The test is skipped unless `--read-from-streams` turns it on: the in-process
         `test_basic_read` already reads every connector whose in-process tests run, and this read
@@ -1113,8 +1140,12 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                raise_if_errors=False,
             )
+            self._assert_no_secrets_in_docker_output(
+                scenario, discover_result, connector_image=connector_image, verb="discover"
+            )
+            discover_result.raise_if_errors()
 
             discovered_streams = get_discovered_streams(discover_result, connector_name)
             if isinstance(read_from_streams, list):
@@ -1163,8 +1194,12 @@ class DockerConnectorTestSuite:
                     "--catalog",
                     container_catalog_path,
                 ],
-                raise_if_errors=True,
+                raise_if_errors=False,
             )
+            self._assert_no_secrets_in_docker_output(
+                scenario, read_result, connector_image=connector_image, verb="read"
+            )
+            read_result.raise_if_errors()
 
         if scenario.is_basic_read_config:
             status_problems = find_stream_status_problems(
@@ -1344,7 +1379,6 @@ class DockerConnectorTestSuite:
             config=config,
             verb="read",
             connector_name=connector_name,
-            skip_message_types=FUTURE_STATE_READ_UNSCANNED_MESSAGES,
         )
         read_result.raise_if_errors()
         assert_future_state_read(
