@@ -63,6 +63,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     ListPartitionRouter,
     SubstreamPartitionRouter,
 )
+from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
     PerPartitionKeySerializer,
 )
@@ -76,6 +77,12 @@ _MAX_BOUNDS_PER_STREAM = 2_000
 
 Bounds grow with the state, so past the cap a state uses the bound of the newest state below it
 that has one. That bound is lower, so the cap can only hide problems, never invent them.
+"""
+
+_MAX_REBUILDS_PER_STREAM = 200
+"""How many states of a `StateDelegatingStream` to build the stream from, to bound its resumes.
+
+Past the cap, a state uses the bound of an earlier state, as past `_MAX_BOUNDS_PER_STREAM`.
 """
 
 
@@ -184,14 +191,26 @@ def _start_past_end(cursor: ConcurrentCursor) -> Any:
     )
 
 
+def _static_stream_configs(source: ConcurrentDeclarativeSource) -> list[Mapping[str, Any]]:
+    try:
+        return list(source._stream_configs(source._source_config))  # noqa: SLF001
+    except Exception:  # noqa: BLE001  # Without static streams there is nothing to look up.
+        return []
+
+
+def _state_delegating_streams(source: ConcurrentDeclarativeSource) -> set[str]:
+    """Names of the static `StateDelegatingStream`s, which pick their stream from the state."""
+    return {
+        str(stream_config.get("name"))
+        for stream_config in _static_stream_configs(source)
+        if stream_config.get("type") == "StateDelegatingStream"
+    }
+
+
 def _client_side_incremental_streams(source: ConcurrentDeclarativeSource) -> set[str]:
     """Names of the static streams whose resumed sync drops records by cursor value."""
-    try:
-        stream_configs = source._stream_configs(source._source_config)  # noqa: SLF001
-    except Exception:  # noqa: BLE001  # Without static streams there is nothing to exempt.
-        return set()
     names: set[str] = set()
-    for stream_config in stream_configs:
+    for stream_config in _static_stream_configs(source):
         # A resumed `StateDelegatingStream` reads with its `incremental_stream`.
         definition = stream_config.get("incremental_stream") or stream_config
         incremental_sync = (
@@ -202,6 +221,34 @@ def _client_side_incremental_streams(source: ConcurrentDeclarativeSource) -> set
         ):
             names.add(str(stream_config.get("name")))
     return names
+
+
+def _partition_fields(router: Any) -> set[str]:
+    """The `partition_field` of each parent of a `SubstreamPartitionRouter`."""
+    if isinstance(router, GroupingPartitionRouter):
+        return _partition_fields(router.underlying_partition_router)
+    if not isinstance(router, SubstreamPartitionRouter):
+        return set()
+    return {
+        str(parent.partition_field.eval(router.config))  # type: ignore[union-attr]  # Cast to an interpolated string on init.
+        for parent in router.parent_stream_configs
+    }
+
+
+def _mixed_partition_keys(key_sets: set[tuple[str, ...]], fields: set[str]) -> bool:
+    """Whether the `states` entries use partition keys that one router cannot produce together.
+
+    A router with several parents names each parent's partitions with that parent's
+    `partition_field`, so each field may come with its own keys. Entries that carry the same
+    field, or none of the router's fields, must use the same keys.
+    """
+    groups: dict[str | None, set[tuple[str, ...]]] = {}
+    for keys in key_sets:
+        owners = fields.intersection(keys)
+        groups.setdefault(owners.pop() if len(owners) == 1 else None, set()).add(keys)
+    if any(len(group) > 1 for group in groups.values()):
+        return True
+    return None in groups and len(groups) > 1
 
 
 def _incremental_parents(router: Any) -> list[str]:
@@ -394,6 +441,8 @@ class _Checkpoint:
     value: Any
     bound: Any = None
     has_bound: bool = False
+    stream_state: Mapping[str, Any] | None = None
+    """The whole state message of the stream, kept when a resume builds the stream from it."""
 
 
 @dataclass
@@ -402,13 +451,18 @@ class _StreamCheck:
 
     name: str
     cursor: ConcurrentCursor | ConcurrentPerPartitionCursor
-    template: ConcurrentCursor | ConcurrentPerPartitionCursor
     primary_key: list[list[str]]
     check_checkpoints: bool
     slices: list[tuple[str | None, Any]] | None = None
     """The partition key and raw slice start of each record, when the hooks saw the read."""
     client_side: bool = False
     """Whether a resumed sync drops records by cursor value (`is_client_side_incremental`)."""
+    resume_build: Callable[[Mapping[str, Any]], tuple[Any, bool]] | None = None
+    """For a `StateDelegatingStream`, which picks its stream from the state: build the stream's
+    cursor as a sync resumed from a state message would, and tell whether that build cleared the
+    state (`api_retention_period`)."""
+    resumed_cursors: dict[int, tuple[Any, bool]] = field(default_factory=dict)
+    resumed_bounds: int = 0
     records: int = 0
     missing_values: int = 0
     unparseable_values: int = 0
@@ -467,37 +521,76 @@ class _StreamCheck:
         """The resume start of a checkpoint, or the bound of an earlier one past the cap."""
         if checkpoint.has_bound:
             return checkpoint.bound
-        state_key = json.dumps(checkpoint.state, sort_keys=True, default=str)
-        if state_key not in self.bounds and len(self.bounds) < _MAX_BOUNDS_PER_STREAM:
-            if isinstance(self.template, ConcurrentPerPartitionCursor):
-                resumed = _sub_cursor(self.template, checkpoint.state)
-            else:
-                resumed = _cursor_with_state(self.template, checkpoint.state)
-            self.bounds[state_key] = _resume_start(resumed)
-        if state_key in self.bounds:
-            checkpoint.bound, checkpoint.has_bound = self.bounds[state_key], True
-            return checkpoint.bound
+        if self.resume_build is not None:
+            # The stream a resume builds depends on the whole state message, so equal
+            # checkpoint states can resume differently: each checkpoint keeps its own bound.
+            if self.resumed_bounds < _MAX_BOUNDS_PER_STREAM:
+                known, resume_start = self._resume_start(checkpoint)
+                if known:
+                    self.resumed_bounds += 1
+                    checkpoint.bound, checkpoint.has_bound = resume_start, True
+                    return resume_start
+        else:
+            state_key = json.dumps(checkpoint.state, sort_keys=True, default=str)
+            if state_key not in self.bounds and len(self.bounds) < _MAX_BOUNDS_PER_STREAM:
+                self.bounds[state_key] = self._resume_start(checkpoint)[1]
+            if state_key in self.bounds:
+                checkpoint.bound, checkpoint.has_bound = self.bounds[state_key], True
+                return checkpoint.bound
         for earlier in reversed(checkpoints[:index]):
             if earlier.has_bound and earlier.bound is not None:
                 return earlier.bound
         return None
 
+    def _resume_start(self, checkpoint: _Checkpoint) -> tuple[bool, Any]:
+        """Return whether the resume start of a checkpoint is known, and the start.
+
+        `None` means a resume from the checkpoint reads the stream (or the partition) in full.
+        """
+        if self.resume_build is None:
+            if isinstance(self.cursor, ConcurrentPerPartitionCursor):
+                return True, _resume_start(_sub_cursor(self.cursor, checkpoint.state))
+            return True, _resume_start(_cursor_with_state(self.cursor, checkpoint.state))
+        if checkpoint.position not in self.resumed_cursors:
+            if len(self.resumed_cursors) >= _MAX_REBUILDS_PER_STREAM:
+                return False, None
+            assert checkpoint.stream_state is not None
+            self.resumed_cursors[checkpoint.position] = self.resume_build(checkpoint.stream_state)
+        resumed, cleared = self.resumed_cursors[checkpoint.position]
+        if cleared:
+            # The state is past `api_retention_period`: the resume reruns `full_refresh_stream`
+            # without state.
+            return True, None
+        if isinstance(resumed, ConcurrentPerPartitionCursor):
+            return True, _resume_start(_sub_cursor(resumed, checkpoint.state))
+        if type(resumed) is ConcurrentCursor:
+            return True, _resume_start(resumed)
+        # A stream without a concurrent cursor reads in full.
+        return True, None
+
     def add_state(self, position: int, state: Mapping[str, Any]) -> None:
         self.final_state = dict(state)
         if not self.check_checkpoints:
             return
+        stream_state = self.final_state if self.resume_build is not None else None
         if self.partitioned:
             for entry in state.get("states") or []:
                 if not isinstance(entry, Mapping):
                     continue
                 partition, cursor_state = entry.get("partition"), entry.get("cursor")
                 if isinstance(partition, Mapping) and isinstance(cursor_state, Mapping):
-                    self._add_checkpoint(_partition_key(partition), position, cursor_state)
+                    self._add_checkpoint(
+                        _partition_key(partition), position, cursor_state, stream_state
+                    )
         else:
-            self._add_checkpoint(None, position, state)
+            self._add_checkpoint(None, position, state, stream_state)
 
     def _add_checkpoint(
-        self, partition: str | None, position: int, state: Mapping[str, Any]
+        self,
+        partition: str | None,
+        position: int,
+        state: Mapping[str, Any],
+        stream_state: Mapping[str, Any] | None = None,
     ) -> None:
         if self.cursor_key not in state:
             return
@@ -509,7 +602,7 @@ class _StreamCheck:
         # Bounds grow with the state, so only a checkpoint that moves the state forward can
         # raise the bound; the earliest checkpoint at a value is the one that matters.
         if not checkpoints or value > checkpoints[-1].value:
-            checkpoints.append(_Checkpoint(position, dict(state), value))
+            checkpoints.append(_Checkpoint(position, dict(state), value, stream_state=stream_state))
 
     def add_record(self, position: int, data: Mapping[str, Any]) -> None:
         record_number = self.records
@@ -592,12 +685,16 @@ def _stream_list(names: Iterable[str]) -> str:
 
 
 def _build_with_states(
-    source: ConcurrentDeclarativeSource, states: Mapping[str, Mapping[str, Any]]
+    source: ConcurrentDeclarativeSource,
+    states: Mapping[str, Mapping[str, Any]],
+    cleared: set[str] | None = None,
 ) -> dict[str, Any]:
     """Build the named static streams of a source from the given states, without HTTP.
 
     Return the streams by name. A stream the source cannot build alone (a dynamic stream, or a
     source that overrides `streams()`) is missing from the result. Raise what the build raises.
+    Add to `cleared` the streams whose build cleared their state, as a `StateDelegatingStream`
+    does past its `api_retention_period`. The state messages the build emits are dropped.
     """
     constructor = source._constructor  # noqa: SLF001
     try:
@@ -611,31 +708,54 @@ def _build_with_states(
     if not names:
         return {}
     previous = constructor._connector_state_manager  # noqa: SLF001
-    constructor._connector_state_manager = ConnectorStateManager(  # noqa: SLF001
+    previous_repository = constructor._message_repository  # noqa: SLF001
+    state_manager = ConnectorStateManager(
         state=[_state_message(name, states[name]) for name in names]
     )
+    constructor._connector_state_manager = state_manager  # noqa: SLF001
+    constructor._message_repository = InMemoryMessageRepository()  # noqa: SLF001
     try:
         with _no_http():
             built = source._streams_by_name(names)  # noqa: SLF001
     finally:
         constructor._connector_state_manager = previous  # noqa: SLF001
+        constructor._message_repository = previous_repository  # noqa: SLF001
+    if cleared is not None:
+        cleared.update(
+            name
+            for name in names
+            if states[name] and not state_manager.get_stream_state(name, None)
+        )
     return {stream.name: stream for stream in built or []}
+
+
+def _resumed_cursor(
+    source: ConcurrentDeclarativeSource, name: str, state: Mapping[str, Any]
+) -> tuple[Any, bool]:
+    """The cursor of a stream built from a state, and whether the build cleared the state."""
+    cleared: set[str] = set()
+    stream = _build_with_states(source, {name: state}, cleared).get(name)
+    return getattr(stream, "cursor", None), name in cleared
 
 
 def _rebuild(
     source: ConcurrentDeclarativeSource,
     states: Mapping[str, Mapping[str, Any]],
+    cleared: set[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
-    """Rebuild streams from their final states; return the streams and each build error."""
+    """Rebuild streams from their final states; return the streams and each build error.
+
+    Add to `cleared` the streams whose build cleared their state.
+    """
     errors: dict[str, str] = {}
     try:
-        return _build_with_states(source, states), errors
+        return _build_with_states(source, states, cleared), errors
     except Exception:  # noqa: BLE001  # Build the streams one by one to tell which one fails.
         pass
     rebuilt: dict[str, Any] = {}
     for name, state in states.items():
         try:
-            rebuilt.update(_build_with_states(source, {name: state}))
+            rebuilt.update(_build_with_states(source, {name: state}, cleared))
         except _HttpRequestDuringBuild:
             errors[name] = "it sent an HTTP request"
         except Exception as error:  # noqa: BLE001  # Reported by type only: no values.
@@ -661,7 +781,7 @@ def find_cursor_state_problems(
         read_seconds: How long the read took, which bounds the per-partition `lookback_window`.
         reference_source: Creates the source again, for suites whose `read` builds another
             source than the hooked one. Its streams give the cursors; the checks that need the
-            hooks (per-partition checkpoints) are skipped.
+            hooks (checkpoints) are skipped.
     """
     if recorder is None:
         return {}
@@ -709,6 +829,7 @@ def find_cursor_state_problems(
             final_states[parsed[0]] = parsed[1]
 
     client_side = _client_side_incremental_streams(source)
+    state_delegating = _state_delegating_streams(source)
 
     checked: dict[str, _StreamCheck] = {}
     for name, configured_stream in configured.items():
@@ -733,44 +854,54 @@ def find_cursor_state_problems(
         checked[name] = _StreamCheck(
             name=name,
             cursor=cursor,
-            template=cursor,
             primary_key=primary_key,
             check_checkpoints=check_checkpoints,
             slices=recorder.record_slices.get(name) if hooked else None,
             client_side=name in client_side,
         )
         stream_check = checked[name]
-        if stream_check.slices is not None and len(stream_check.slices) != record_counts.get(
-            name, 0
-        ):
-            # Without slices, a record's own value is where a resume reads it again. That can
-            # only flag more, so a stream without partitions still gets its checkpoints checked.
-            # A stream with partitions cannot tell which partition's checkpoints apply.
+        if name in state_delegating:
+            stream_check.resume_build = (
+                lambda state, name=name: _resumed_cursor(source, name, state)  # type: ignore[misc]
+            )
+        # Without its slice, a record's own value is the lowest point a resume reads it again
+        # from, which only flags more: a record below its slice start is read again. So the
+        # checkpoints of a stream are not checked without the slices of all its records.
+        unmatched = stream_check.slices is not None and len(
+            stream_check.slices
+        ) != record_counts.get(name, 0)
+        if check_checkpoints and (unmatched or stream_check.slices is None):
+            stream_check.check_checkpoints = False
             stream_check.slices = None
-            if stream_check.partitioned and check_checkpoints:
+            if unmatched:
                 _add(
                     CHECK_ERRORS,
-                    f"- stream {name!r}: its records could not be matched to their partitions, "
+                    f"- stream {name!r}: its records could not be matched to the read's slices, "
                     "so its checkpoints were not checked.",
+                )
+            elif _has_step(cursor):  # type: ignore[arg-type]
+                _add(
+                    CHECK_ERRORS,
+                    f"- stream {name!r}: the read ran on another instance of the source, so its "
+                    "slices were not recorded and its checkpoints were not checked.",
                 )
     if not checked:
         return problems
 
+    cleared: set[str] = set()
     rebuilt, build_errors = _rebuild(
-        source, {name: final_states[name] for name in checked if name in final_states}
+        source, {name: final_states[name] for name in checked if name in final_states}, cleared
     )
+    for name in cleared:
+        # Past `api_retention_period`, a `StateDelegatingStream` drops the state and reruns
+        # `full_refresh_stream`: the rebuilt stream holds none of the state to compare with.
+        rebuilt.pop(name, None)
     for name, reason in sorted(build_errors.items()):
         _add(
             ROUND_TRIP,
             f"- stream {name!r}: building the source from the read's final state failed: "
             f"{reason}. A sync that resumes from this state would fail the same way.",
         )
-    for name, stream_check in checked.items():
-        resumed = getattr(rebuilt.get(name), "cursor", None)
-        if isinstance(resumed, (ConcurrentCursor, ConcurrentPerPartitionCursor)):
-            # A resumed sync builds the stream from its state: a `StateDelegatingStream` then
-            # builds its `incremental_stream`, so its cursor sets the resume start.
-            stream_check.template = resumed
 
     def _stop_checkpoints(stream_check: _StreamCheck, what: str, error: Exception) -> None:
         # Only the checkpoint check walks the read; the other checks keep their data.
@@ -950,7 +1081,7 @@ def _report_partition_state(
             for entry in entries
             if isinstance(entry, Mapping) and isinstance(entry.get("partition"), Mapping)
         }
-        if len(key_sets) > 1:
+        if _mixed_partition_keys(key_sets, _partition_fields(cursor.partition_router)):
             shown = "; ".join(", ".join(keys) for keys in sorted(key_sets)[:5])
             shape.append(f"`states` entries use different partition keys ({shown})")
     elif stream_check.has_newest_value:

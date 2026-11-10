@@ -12,6 +12,7 @@ import copy
 import datetime as dt
 import re
 import warnings
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -43,7 +44,6 @@ from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException, read
 from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests import CursorStateWarning, DeclarativeSourceTestSuite
-from airbyte_cdk.test.standard_tests import _cursor_state_checks as checks
 from airbyte_cdk.test.standard_tests._cursor_state_checks import (
     CHECK_ERRORS,
     CHECKPOINTS,
@@ -56,10 +56,13 @@ from airbyte_cdk.test.standard_tests._cursor_state_checks import (
     CursorStateCheck,
     CursorStateRecorder,
     _no_http,
+    _StreamCheck,
     find_cursor_state_problems,
     format_cursor_state_problems,
 )
 from airbyte_cdk.utils.connector_paths import ACCEPTANCE_TEST_CONFIG
+
+CHECKS_MODULE = "airbyte_cdk.test.standard_tests._cursor_state_checks"
 
 BASE = "https://api.test"
 START = "2024-01-01T00:00:00Z"
@@ -367,6 +370,20 @@ class _Read:
                 reference_source=reference_source,
             )
 
+    def edited_problems(self, messages: list[AirbyteMessage]) -> dict[CursorStateCheck, list[str]]:
+        """Run the checks on edited messages. Their records come from no slice of the read, so
+        each one counts from its own value."""
+        counts = Counter(
+            message.record.stream
+            for message in messages
+            if message.type == Type.RECORD and message.record is not None
+        )
+        recorder = copy.copy(self.recorder)
+        recorder.record_slices = {
+            name: [(None, None)] * counts[name] for name in self.recorder.record_slices
+        }
+        return self.problems(messages, recorder=recorder)
+
     def states(self, stream: str) -> list[AirbyteMessage]:
         return [
             message
@@ -450,7 +467,7 @@ def test_a_resume_past_the_end_starts_a_lookback_window_before_the_state() -> No
         _record(record, "2029-12-28T00:00:00Z"),
         _record(other, "2029-12-20T00:00:00Z"),
     ]
-    assert "'events': 1 record(s)" in result.problems(messages)[CHECKPOINTS][0]
+    assert "'events': 1 record(s)" in result.edited_problems(messages)[CHECKPOINTS][0]
 
 
 def test_records_below_their_slice_start_are_not_flagged() -> None:
@@ -471,12 +488,19 @@ def test_records_below_their_slice_start_are_flagged_under_client_side_increment
     assert "stream 'events'" in problems[CHECKPOINTS][0]
 
 
-def test_records_that_do_not_match_the_read_are_checked_by_their_own_value() -> None:
-    # Messages that are not the read's output cannot be matched to the read's slices, so each
-    # record's own value is where a resume reads it again.
+def test_records_that_do_not_match_the_read_skip_the_checkpoint_check() -> None:
+    # Messages that are not the read's output cannot be matched to the read's slices. Checking
+    # each record from its own value would flag the records below their slice start, which a
+    # resume reads again.
     result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(early_days=2))
     record = next(message for message in result.messages if message.type == Type.RECORD)
-    assert list(result.problems([*result.messages, record])) == [CHECKPOINTS]
+    problems = result.problems([*result.messages, record])
+    assert problems == {
+        CHECK_ERRORS: [
+            "- stream 'events': its records could not be matched to the read's slices, so its "
+            "checkpoints were not checked."
+        ]
+    }
 
 
 def test_client_side_incremental_comes_from_the_incremental_stream_of_a_state_delegating_stream() -> (
@@ -580,7 +604,7 @@ def _record_ids(result: _Read) -> list[Any]:
     )
 
 
-def test_suites_whose_read_builds_another_source_get_the_concurrent_cursor_part() -> None:
+def test_suites_whose_read_builds_another_source_skip_the_checkpoint_check() -> None:
     manifest = _manifest(
         _stream("events", "/events", _cursor(step="P1D")), _children(_cursor(step="P3D"))
     )
@@ -589,9 +613,18 @@ def test_suites_whose_read_builds_another_source_get_the_concurrent_cursor_part(
     idle = CursorStateRecorder.install(_source(manifest))
     assert idle is not None
     problems = result.problems(recorder=idle, reference_source=lambda: _source(manifest))
-    assert list(problems) == [CHECKPOINTS]
-    assert len(problems[CHECKPOINTS]) == 1
-    assert "stream 'events'" in problems[CHECKPOINTS][0]
+    assert problems == {
+        CHECK_ERRORS: [
+            "- stream 'events': the read ran on another instance of the source, so its slices "
+            "were not recorded and its checkpoints were not checked."
+        ]
+    }
+    # The other checks still run on the reference source's cursors.
+    messages = result.with_final_state(
+        "events", lambda state: state.update(updated_at="2024-01-02T00:00:00Z")
+    )
+    edited = result.problems(messages, recorder=idle, reference_source=lambda: _source(manifest))
+    assert set(edited) == {CHECK_ERRORS, FINAL_STATE}
 
 
 def test_unmatched_partitions_skip_the_per_partition_checkpoint_check() -> None:
@@ -600,7 +633,7 @@ def test_unmatched_partitions_skip_the_per_partition_checkpoint_check() -> None:
     problems = result.problems()
     assert list(problems) == [CHECK_ERRORS]
     assert problems[CHECK_ERRORS] == [
-        "- stream 'children': its records could not be matched to their partitions, so its "
+        "- stream 'children': its records could not be matched to the read's slices, so its "
         "checkpoints were not checked."
     ]
     assert not CHECK_ERRORS.enforced
@@ -635,6 +668,112 @@ def test_checkpoint_bound_of_a_state_delegating_stream_comes_from_its_incrementa
     assert list(_Read(_manifest(stream), _Api(late_days=5)).problems()) == [CHECKPOINTS]
 
 
+def _delegating(definition: dict[str, Any], retention: str | None) -> dict[str, Any]:
+    stream = {
+        "type": "StateDelegatingStream",
+        "name": definition["name"],
+        "full_refresh_stream": definition,
+        "incremental_stream": copy.deepcopy(definition),
+    }
+    if retention:
+        stream["api_retention_period"] = retention
+    return stream
+
+
+@pytest.mark.parametrize(
+    "definition, names",
+    [
+        pytest.param(_stream("events", "/events", _cursor(step="P1D")), None, id="concurrent"),
+        pytest.param(_children(_cursor(step="P3D")), ["children"], id="per_partition"),
+    ],
+)
+@pytest.mark.parametrize(
+    "retention, expected",
+    [
+        # The read's states are older than the period, so a resume from any of them reruns
+        # `full_refresh_stream` without state and reads the late records again. The final
+        # state is past the period too, so the source rebuilt from it holds no state.
+        pytest.param("P30D", [], id="states_past_retention"),
+        # A resume reads from the state with `incremental_stream` and skips the late records.
+        pytest.param(None, [CHECKPOINTS], id="no_retention"),
+    ],
+)
+def test_checkpoint_bound_of_a_state_delegating_stream_follows_its_retention_period(
+    definition: dict[str, Any],
+    names: list[str] | None,
+    retention: str,
+    expected: list[CursorStateCheck],
+) -> None:
+    result = _Read(_manifest(_delegating(definition, retention)), _Api(late_days=5), names=names)
+    assert list(result.problems()) == expected
+
+
+def test_states_within_the_retention_period_resume_incrementally() -> None:
+    stream = _delegating(_stream("events", "/events", _cursor(step="P1D")), "P100000D")
+    assert list(_Read(_manifest(stream), _Api(late_days=5)).problems()) == [CHECKPOINTS]
+
+
+def test_rebuilding_a_state_delegating_stream_emits_nothing_on_the_read_queue() -> None:
+    # Past the retention period, each build emits a cleared state. Nothing drains the read's
+    # bounded queue after the read.
+    stream = _delegating(_stream("events", "/events", _cursor(step="P1D")), "P30D")
+    result = _Read(_manifest(stream), _Api(late_days=5))
+    queue = result.recorder.source._constructor._message_repository._queue  # type: ignore[attr-defined]  # noqa: SLF001
+    queued = queue.qsize()
+    assert result.problems() == {}
+    assert queue.qsize() == queued
+
+
+def test_a_resume_without_a_concurrent_cursor_reads_in_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A stream without a concurrent cursor ignores the state and reads everything.
+    stream = _delegating(_stream("events", "/events", _cursor(step="P1D")), None)
+    result = _Read(_manifest(stream), _Api(late_days=5))
+    assert list(result.problems()) == [CHECKPOINTS]
+    monkeypatch.setattr(
+        f"{CHECKS_MODULE}._resumed_cursor", lambda source, name, state: (object(), False)
+    )
+    assert result.problems() == {}
+
+
+def test_equal_partition_states_in_different_state_messages_resume_apart() -> None:
+    # Two partitions hold the same cursor state, in state messages that select different
+    # streams: past the retention period the first one resumes in full, the second does not.
+    result = _Read(
+        _manifest(_delegating(_children(_cursor(step="P3D")), None)),
+        _Api(),
+        names=["children"],
+    )
+    cursor = result.recorder.streams["children"].cursor
+    stream_check = _StreamCheck(
+        name="children",
+        cursor=cursor,
+        primary_key=[["id"]],
+        check_checkpoints=True,
+        resume_build=lambda state: (cursor, bool(state.get("past_retention"))),
+    )
+    partition_state = {"updated_at": "2024-01-10T00:00:00Z"}
+    for position, (parent_id, past_retention) in enumerate([(1, True), (2, False)]):
+        entry = {
+            "partition": {"parent_id": parent_id, "parent_slice": {}},
+            "cursor": partition_state,
+        }
+        stream_check.add_state(position, {"states": [entry], "past_retention": past_retention})
+    first, second = (checkpoints[0] for checkpoints in stream_check.checkpoints.values())
+    assert stream_check.bound(first, [first], 0) is None
+    assert stream_check.bound(second, [second], 0) is not None
+
+
+def test_rebuilds_of_a_state_delegating_stream_past_the_cap_never_flag_more(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream = _delegating(_stream("events", "/events", _cursor(step="P1D")), "P100000D")
+    result = _Read(_manifest(stream), _Api(late_days=5))
+    monkeypatch.setattr(f"{CHECKS_MODULE}._MAX_REBUILDS_PER_STREAM", 0)
+    assert result.problems() == {}
+
+
 def _state(message: AirbyteMessage, updated_at: str) -> AirbyteMessage:
     edited = copy.deepcopy(message)
     assert edited.state is not None and edited.state.stream is not None
@@ -661,7 +800,7 @@ def test_a_state_that_moves_back_does_not_lower_the_bound() -> None:
         _state(state, "2024-01-05T00:00:00Z"),
         _record(record, "2024-01-10T00:00:00Z"),
     ]
-    problems = result.problems(messages)
+    problems = result.edited_problems(messages)
     assert "'events': 2 record(s)" in problems[CHECKPOINTS][0]
 
 
@@ -677,7 +816,7 @@ def test_a_copy_after_the_first_skipping_state_does_not_exempt_a_record() -> Non
         _state(state, "2024-01-25T00:00:00Z"),
         _record(record, "2024-01-10T00:00:00Z"),
     ]
-    assert "'events': 2 record(s)" in result.problems(messages)[CHECKPOINTS][0]
+    assert "'events': 2 record(s)" in result.edited_problems(messages)[CHECKPOINTS][0]
 
 
 def test_a_record_at_the_resume_start_is_not_flagged() -> None:
@@ -686,7 +825,9 @@ def test_a_record_at_the_resume_start_is_not_flagged() -> None:
     state = result.states("events")[0]
     record = next(message for message in result.messages if message.type == Type.RECORD)
     messages = [_state(state, "2024-01-20T00:00:00Z"), _record(record, "2024-01-20T00:00:00Z")]
-    assert result.problems(messages) == {}
+    assert result.edited_problems(messages) == {}
+    messages = [_state(state, "2024-01-20T00:00:00Z"), _record(record, "2024-01-19T23:59:59Z")]
+    assert list(result.edited_problems(messages)) == [CHECKPOINTS]
 
 
 def test_bounds_past_the_cap_use_the_bound_of_an_earlier_state(
@@ -704,15 +845,21 @@ def test_bounds_past_the_cap_use_the_bound_of_an_earlier_state(
         _state(state, "2024-01-25T00:00:00Z"),
         _record(other, "2024-01-10T00:00:00Z"),
     ]
-    monkeypatch.setattr(checks, "_MAX_BOUNDS_PER_STREAM", 1)
+    monkeypatch.setattr(f"{CHECKS_MODULE}._MAX_BOUNDS_PER_STREAM", 1)
     # The second state gets no bound of its own; the bound of the first one still flags the
     # second record.
-    assert "'events': 2 record(s)" in result.problems(messages)[CHECKPOINTS][0]
+    assert "'events': 2 record(s)" in result.edited_problems(messages)[CHECKPOINTS][0]
 
 
-def test_bounds_past_the_cap_never_flag_more(monkeypatch: pytest.MonkeyPatch) -> None:
-    result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(late_days=5))
-    monkeypatch.setattr(checks, "_MAX_BOUNDS_PER_STREAM", 0)
+@pytest.mark.parametrize("retention", [None, "P100000D"], ids=["plain", "state_delegating"])
+def test_bounds_past_the_cap_never_flag_more(
+    monkeypatch: pytest.MonkeyPatch, retention: str | None
+) -> None:
+    stream = _stream("events", "/events", _cursor(step="P1D"))
+    if retention:
+        stream = _delegating(stream, retention)
+    result = _Read(_manifest(stream), _Api(late_days=5))
+    monkeypatch.setattr(f"{CHECKS_MODULE}._MAX_BOUNDS_PER_STREAM", 0)
     assert result.problems() == {}
 
 
@@ -827,6 +974,55 @@ def test_malformed_per_partition_state_fails(
     assert PARTITION_STATE_SHAPE in problems
     assert expected in problems[PARTITION_STATE_SHAPE][0]
     _assert_no_values({PARTITION_STATE_SHAPE: problems[PARTITION_STATE_SHAPE]})
+
+
+def _two_parent_children() -> dict[str, Any]:
+    children = _children()
+    router = children["retriever"]["partition_router"]
+    second = copy.deepcopy(router["parent_stream_configs"][0])
+    second["partition_field"] = "other_id"
+    router["parent_stream_configs"].append(second)
+    for parent in router["parent_stream_configs"]:
+        parent["incremental_dependency"] = False
+    children["retriever"]["requester"]["path"] = (
+        "/parents/{{ stream_partition.parent_id or stream_partition.other_id }}/children"
+    )
+    return children
+
+
+def _drop_first_parent_slice(state: dict[str, Any]) -> None:
+    state["states"][0]["partition"].pop("parent_slice")
+
+
+@pytest.mark.parametrize(
+    "edit, expected",
+    [
+        # Each parent names its partitions with its own `partition_field`.
+        pytest.param(None, None, id="one_key_set_per_parent"),
+        pytest.param(
+            _drop_first_parent_slice,
+            "use different partition keys",
+            id="different_keys_for_one_parent",
+        ),
+        pytest.param(
+            _rename_first_partition_key, "use different partition keys", id="no_parent_field"
+        ),
+    ],
+)
+def test_partition_keys_are_compared_per_parent(
+    edit: Callable[[dict[str, Any]], None] | None, expected: str | None
+) -> None:
+    result = _Read(_manifest(_two_parent_children()), _Api(), names=["children"])
+    final = result.states("children")[-1].state.stream.stream_state.__dict__  # type: ignore[union-attr]
+    assert {tuple(sorted(entry["partition"])) for entry in final["states"]} == {
+        ("other_id", "parent_slice"),
+        ("parent_id", "parent_slice"),
+    }
+    problems = result.problems(result.with_final_state("children", edit) if edit else None)
+    if expected is None:
+        assert problems == {}
+    else:
+        assert expected in problems[PARTITION_STATE_SHAPE][0]
 
 
 def test_a_single_empty_partition_is_well_formed() -> None:
@@ -982,18 +1178,6 @@ def test_streams_without_a_cursor_are_skipped() -> None:
     assert result.problems(messages) == {}
 
 
-def test_a_rebuilt_stream_without_a_concurrent_cursor_keeps_the_read_cursor(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _Stream:
-        name = "events"
-        cursor = object()
-
-    monkeypatch.setattr(checks, "_rebuild", lambda source, states: ({"events": _Stream()}, {}))
-    result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(late_days=5))
-    assert list(result.problems()) == [CHECKPOINTS]
-
-
 def test_custom_cursor_subclasses_are_skipped() -> None:
     result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(late_days=5))
     assert list(result.problems()) == [CHECKPOINTS]
@@ -1026,9 +1210,9 @@ def test_a_check_that_crashes_is_reported_as_advisory(
         raise ZeroDivisionError
 
     if method == "add_checkpoint_report":
-        monkeypatch.setattr(checks, "_report_checkpoints", _crash)
+        monkeypatch.setattr(f"{CHECKS_MODULE}._report_checkpoints", _crash)
     else:
-        monkeypatch.setattr(checks._StreamCheck, method, _crash)  # noqa: SLF001
+        monkeypatch.setattr(_StreamCheck, method, _crash)
     result = _Read(_manifest(_stream("events", "/events", _cursor())), _Api())
     problems = result.problems()
     assert list(problems) == [CHECK_ERRORS]
@@ -1048,9 +1232,9 @@ def test_a_crash_in_the_checkpoint_walk_keeps_the_other_checks(
         raise ZeroDivisionError
 
     if crashing == "_resume_start":
-        monkeypatch.setattr(checks, crashing, _crash)
+        monkeypatch.setattr(f"{CHECKS_MODULE}.{crashing}", _crash)
     else:
-        monkeypatch.setattr(checks._StreamCheck, crashing, _crash)  # noqa: SLF001
+        monkeypatch.setattr(_StreamCheck, crashing, _crash)
     problems = result.problems(messages)
     assert set(problems) == {CHECK_ERRORS, FINAL_STATE}
     # Reported once: the stream's checkpoint check stops at the first crash.
