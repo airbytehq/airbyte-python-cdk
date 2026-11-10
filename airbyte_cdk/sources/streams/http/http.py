@@ -64,6 +64,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             use_cache=self.use_cache,
             backoff_strategy=self.get_backoff_strategy(),
             message_repository=InMemoryMessageRepository(),
+            request_timeout=self.request_timeout,
+            use_tcp_keepalive=self.use_tcp_keepalive,
         )
 
         # There are three conditions that dictate if RFR should automatically be applied to a stream
@@ -104,6 +106,22 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         Note that if the environment variable REQUEST_CACHE_PATH is not set, the cache will be in-memory only.
         """
         return False
+
+    @property
+    def use_tcp_keepalive(self) -> bool:
+        """
+        Override if needed. If True, the stream's HTTP session enables TCP keepalive (60 s idle, 10 s interval,
+        6 probes), so a dropped connection fails in about two minutes instead of blocking a read forever.
+        """
+        return False
+
+    @property
+    def request_timeout(self) -> Optional[Union[float, Tuple[Optional[float], Optional[float]]]]:
+        """
+        Override if needed. Timeout in seconds for every request this stream sends, as a number or a
+        (connect, read) pair. A "timeout" returned by request_kwargs() takes precedence. None means no timeout.
+        """
+        return None
 
     @property
     @abstractmethod
