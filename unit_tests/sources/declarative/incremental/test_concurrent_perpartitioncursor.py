@@ -1,10 +1,11 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import copy
+import re
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Callable, List, Mapping, MutableMapping, Optional, Union
 from unittest.mock import MagicMock, patch
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
 from orjson import orjson
@@ -4664,3 +4665,526 @@ def test_given_failed_slice_generation_after_records_when_ensure_state_emitted_t
 
     assert cursor._message_repository.emit_message.call_count == expected_emitted_messages
     assert cursor.state.get("state") == expected_global_state
+
+
+def _dated_substream_manifest(
+    global_substream_cursor: bool = True, middle_parent_cursor: bool = False
+) -> MutableMapping[str, Any]:
+    manifest = deepcopy(SUBSTREAM_MANIFEST)
+    manifest["definitions"]["posts_stream"]["incremental_sync"] = {
+        "type": "DatetimeBasedCursor",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_field": "updated_at",
+        "cursor_granularity": "PT1S",
+        "start_datetime": {"datetime": "{{ config['start_date'] }}"},
+        "end_datetime": {"datetime": "2024-01-03T23:59:59Z"},
+        "step": "P1D",
+        "start_time_option": {
+            "type": "RequestOption",
+            "field_name": "start_time",
+            "inject_into": "request_parameter",
+        },
+        "end_time_option": {
+            "type": "RequestOption",
+            "field_name": "end_time",
+            "inject_into": "request_parameter",
+        },
+    }
+    manifest["definitions"]["posts_stream"]["retriever"]["requester"]["error_handler"] = {
+        "type": "DefaultErrorHandler",
+        "max_retries": 0,
+    }
+    manifest["definitions"]["post_comments_stream"]["incremental_sync"][
+        "global_substream_cursor"
+    ] = global_substream_cursor
+    manifest["definitions"]["post_comments_stream"]["retriever"]["requester"]["error_handler"] = {
+        "type": "DefaultErrorHandler",
+        "max_retries": 0,
+    }
+    if middle_parent_cursor:
+        manifest["definitions"]["post_comments_stream"]["incremental_sync"] = {
+            "type": "DatetimeBasedCursor",
+            "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+            "cursor_field": "updated_at",
+            "cursor_granularity": "PT1S",
+            "start_datetime": {"datetime": "{{ config['start_date'] }}"},
+            "end_datetime": {"datetime": "2024-01-03T23:59:59Z"},
+            "step": "P1D",
+            "start_time_option": {
+                "type": "RequestOption",
+                "field_name": "start_time",
+                "inject_into": "request_parameter",
+            },
+            "end_time_option": {
+                "type": "RequestOption",
+                "field_name": "end_time",
+                "inject_into": "request_parameter",
+            },
+            "global_substream_cursor": global_substream_cursor,
+        }
+    return manifest
+
+
+def _posts_response(
+    posts: List[Mapping[str, Any]],
+    failed_days: tuple[str, ...] = (),
+    request_windows: Optional[List[tuple[str, str]]] = None,
+) -> Callable[[Any, Any], Mapping[str, Any]]:
+    def response(request: Any, context: Any) -> Mapping[str, Any]:
+        query = parse_qs(urlparse(request.url).query)
+        start_time = query["start_time"][0]
+        end_time = query["end_time"][0]
+        if request_windows is not None:
+            request_windows.append((start_time, end_time))
+        if start_time[:10] in failed_days:
+            context.status_code = 500
+            return {"error": {"message": "parent slice failed"}}
+        matching_posts = [post for post in posts if start_time <= post["updated_at"] <= end_time]
+        return {"posts": sorted(matching_posts, key=lambda post: post["updated_at"], reverse=True)}
+
+    return response
+
+
+def _state_message(stream_name: str, stream_state: Mapping[str, Any]) -> AirbyteStateMessage:
+    return AirbyteStateMessage(
+        type=AirbyteStateType.STREAM,
+        stream=AirbyteStreamState(
+            stream_descriptor=StreamDescriptor(name=stream_name, namespace=None),
+            stream_state=AirbyteStateBlob(stream_state),
+        ),
+    )
+
+
+def _last_state(output: EntrypointOutput) -> Optional[AirbyteStateBlob]:
+    return output.state_messages[-1].state.stream.stream_state if output.state_messages else None
+
+
+def test_given_nested_parents_and_failed_middle_parent_request_when_resume_then_no_regression() -> (
+    None
+):
+    """The failed day-two window leaves the middle cursor at its input value, so resume rereads day one."""
+    manifest = _dated_substream_manifest(middle_parent_cursor=True)
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    posts = [{"id": 1, "updated_at": "2024-01-01T10:00:00Z"}]
+    comments = [
+        {"id": 12, "post_id": 1, "updated_at": "2024-01-01T23:00:00Z"},
+        {"id": 11, "post_id": 1, "updated_at": "2024-01-01T10:00:00Z"},
+        {"id": 13, "post_id": 1, "updated_at": "2024-01-02T10:00:00Z"},
+    ]
+    vote_requests = []
+    comment_request_windows = []
+    catalog = (
+        CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name("post_comment_votes"))
+        .build()
+    )
+
+    def run(
+        state: Optional[List[AirbyteStateMessage]],
+        fail_post_one_day_two: bool,
+        expecting_exception: bool,
+    ) -> EntrypointOutput:
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=state
+        )
+
+        def comments_response(request: Any, context: Any) -> Mapping[str, Any]:
+            post_id = request.path.split("/")[-2]
+            query = parse_qs(urlparse(request.url).query)
+            window = (
+                query.get("start_time", [None])[0],
+                query.get("end_time", [None])[0],
+            )
+            comment_request_windows.append((post_id, *window))
+            if (
+                fail_post_one_day_two
+                and post_id == "1"
+                and window[0] is not None
+                and window[0][:10] == "2024-01-02"
+            ):
+                context.status_code = 500
+                return {"error": {"message": "comments request failed"}}
+            start_time, end_time = window
+            matching_comments = comments if post_id == "1" else []
+            if start_time is not None and end_time is not None:
+                matching_comments = [
+                    comment
+                    for comment in matching_comments
+                    if start_time <= comment["updated_at"] <= end_time
+                ]
+            return {
+                "comments": sorted(
+                    matching_comments,
+                    key=lambda comment: comment["updated_at"],
+                    reverse=True,
+                )
+            }
+
+        def votes_response(request: Any, context: Any) -> Mapping[str, Any]:
+            vote_requests.append(request.path.split("/")[-2])
+            return {"votes": []}
+
+        with requests_mock.Mocker() as mocker:
+            mocker.get(
+                re.compile(r"https://api\.example\.com/community/posts.*"),
+                json=_posts_response(posts),
+            )
+            mocker.get(
+                re.compile(r"https://api\.example\.com/community/posts/.*/comments.*"),
+                json=comments_response,
+            )
+            mocker.get(
+                re.compile(r"https://api\.example\.com/community/posts/.*/comments/.*/votes.*"),
+                json=votes_response,
+            )
+            return read(
+                source,
+                config,
+                catalog,
+                state=state,
+                expecting_exception=expecting_exception,
+            )
+
+    initial_state = [
+        _state_message(
+            "post_comment_votes",
+            {
+                "use_global_cursor": True,
+                "lookback_window": 0,
+                "parent_state": {
+                    "post_comments": {
+                        "use_global_cursor": True,
+                        "lookback_window": 0,
+                        "state": {"updated_at": "2024-01-01T00:00:00Z"},
+                        "parent_state": {"posts": {"updated_at": "2024-01-01T00:00:00Z"}},
+                    }
+                },
+            },
+        )
+    ]
+    before_a = len(vote_requests)
+    attempt_a = run(initial_state, fail_post_one_day_two=True, expecting_exception=True)
+    requests_a = vote_requests[before_a:]
+    state_a = _last_state(attempt_a)
+    resume_state = _resume_state(attempt_a, initial_state)
+    windows_a = list(comment_request_windows)
+    before_b = len(vote_requests)
+    run(resume_state, fail_post_one_day_two=False, expecting_exception=False)
+    requests_b = vote_requests[before_b:]
+    windows_b = comment_request_windows[len(windows_a) :]
+    assert state_a is not None
+    post_comments_state = (state_a.parent_state or {}).get("post_comments", {})
+    persisted_comments_cursor = post_comments_state.get("state", {}).get("updated_at")
+    expected_comments_start = persisted_comments_cursor or config["start_date"]
+    first_comments_window_b = windows_b[0]
+
+    assert persisted_comments_cursor == "2024-01-01T00:00:00Z"
+    assert [window[1] for window in windows_a] == [
+        "2024-01-01T00:00:00Z",
+        "2024-01-02T00:00:00Z",
+    ]
+    assert "11" not in requests_a
+    assert {"11", "12"}.issubset(set(requests_a) | set(requests_b))
+    assert first_comments_window_b[0] == "1"
+    assert first_comments_window_b[1] == expected_comments_start
+    assert first_comments_window_b[2] == "2024-01-01T23:59:59Z"
+
+
+def _read_with_requests(
+    manifest: MutableMapping[str, Any],
+    stream_name: str,
+    posts: List[Mapping[str, Any]],
+    comments_by_post: Mapping[str, List[Mapping[str, Any]]],
+    config: Mapping[str, Any],
+    state: Optional[List[AirbyteStateMessage]] = None,
+    failed_parent_days: tuple[str, ...] = (),
+    expecting_exception: bool = False,
+) -> tuple[EntrypointOutput, dict[str, List[Any]]]:
+    requests = {"post_windows": [], "comments": [], "comment_windows": [], "votes": []}
+    catalog = (
+        CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name))
+        .build()
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=config, catalog=None, state=state
+    )
+
+    def comments_response(request: Any, context: Any) -> Mapping[str, Any]:
+        post_id = request.path.split("/")[-2]
+        query = parse_qs(urlparse(request.url).query)
+        window = (
+            query.get("start_time", [None])[0],
+            query.get("end_time", [None])[0],
+        )
+        requests["comments"].append(post_id)
+        requests["comment_windows"].append((post_id, *window))
+        matching_comments = comments_by_post.get(post_id, [])
+        if window[0] is not None and window[1] is not None:
+            matching_comments = [
+                comment
+                for comment in matching_comments
+                if window[0] <= comment["updated_at"] <= window[1]
+            ]
+        return {
+            "comments": sorted(
+                matching_comments,
+                key=lambda comment: comment["updated_at"],
+                reverse=True,
+            )
+        }
+
+    def votes_response(request: Any, context: Any) -> Mapping[str, Any]:
+        requests["votes"].append(request.path.split("/")[-2])
+        return {"votes": []}
+
+    with requests_mock.Mocker() as mocker:
+        mocker.get(
+            re.compile(r"https://api\.example\.com/community/posts.*"),
+            json=_posts_response(
+                posts,
+                failed_days=failed_parent_days,
+                request_windows=requests["post_windows"],
+            ),
+        )
+        mocker.get(
+            re.compile(r"https://api\.example\.com/community/posts/.*/comments.*"),
+            json=comments_response,
+        )
+        mocker.get(
+            re.compile(r"https://api\.example\.com/community/posts/.*/comments/.*/votes.*"),
+            json=votes_response,
+        )
+        output = read(
+            source,
+            config,
+            catalog,
+            state=state,
+            expecting_exception=expecting_exception,
+        )
+    return output, requests
+
+
+def _resume_state(
+    output: EntrypointOutput, input_state: Optional[List[AirbyteStateMessage]]
+) -> Optional[List[AirbyteStateMessage]]:
+    return [output.state_messages[-1].state] if output.state_messages else input_state
+
+
+def _posts_parent_cursor(output: EntrypointOutput) -> Optional[str]:
+    state = _last_state(output)
+    if state is None:
+        return None
+    parent_state = state.parent_state or {}
+    return parent_state.get("posts", {}).get("updated_at")
+
+
+def _initial_state(global_substream_cursor: bool) -> List[AirbyteStateMessage]:
+    stream_state = {
+        "use_global_cursor": global_substream_cursor,
+        "state": {"updated_at": "2024-01-01T00:00:00Z"},
+        "parent_state": {"posts": {"updated_at": "2024-01-01T00:00:00Z"}},
+    }
+    if not global_substream_cursor:
+        stream_state["states"] = []
+    return [_state_message("post_comments", stream_state)]
+
+
+@pytest.mark.parametrize("global_substream_cursor", [True, False])
+def test_given_failed_next_parent_request_when_resume_then_last_child_of_previous_parent_slice_is_read(
+    global_substream_cursor: bool,
+) -> None:
+    manifest = _dated_substream_manifest(global_substream_cursor=global_substream_cursor)
+    manifest["streams"] = [
+        {"$ref": "#/definitions/posts_stream"},
+        {"$ref": "#/definitions/post_comments_stream"},
+    ]
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    posts = [
+        {"id": 101, "updated_at": "2024-01-01T10:00:00Z"},
+        {"id": 102, "updated_at": "2024-01-01T23:00:00Z"},
+    ]
+    comments = {
+        "101": [{"id": 1001, "post_id": 101, "updated_at": "2024-01-01T10:30:00Z"}],
+        "102": [{"id": 1002, "post_id": 102, "updated_at": "2024-01-01T23:30:00Z"}],
+    }
+    input_state = _initial_state(global_substream_cursor)
+    attempt_a, requests_a = _read_with_requests(
+        manifest,
+        "post_comments",
+        posts,
+        comments,
+        config,
+        state=input_state,
+        failed_parent_days=("2024-01-02",),
+        expecting_exception=True,
+    )
+    resume_state = _resume_state(attempt_a, input_state)
+    attempt_b, requests_b = _read_with_requests(
+        manifest,
+        "post_comments",
+        posts,
+        comments,
+        config,
+        state=resume_state,
+    )
+
+    assert "101" not in requests_a["comments"]
+    assert "101" in set(requests_a["comments"]) | set(requests_b["comments"])
+    assert requests_b["post_windows"][0][0] == _posts_parent_cursor(attempt_a)
+    assert (
+        _posts_parent_cursor(attempt_a) is None
+        or _posts_parent_cursor(attempt_a) < "2024-01-01T23:00:00Z"
+    )
+
+
+def test_given_empty_parent_window_and_failed_next_parent_request_when_resume_then_child_is_read() -> (
+    None
+):
+    manifest = _dated_substream_manifest()
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    posts = [
+        {"id": 201, "updated_at": "2024-01-02T10:00:00Z"},
+        {"id": 202, "updated_at": "2024-01-02T23:00:00Z"},
+    ]
+    comments = {
+        "201": [{"id": 2001, "post_id": 201, "updated_at": "2024-01-02T10:30:00Z"}],
+        "202": [{"id": 2002, "post_id": 202, "updated_at": "2024-01-02T23:30:00Z"}],
+    }
+    input_state = _initial_state(True)
+    attempt_a, requests_a = _read_with_requests(
+        manifest,
+        "post_comments",
+        posts,
+        comments,
+        config,
+        state=input_state,
+        failed_parent_days=("2024-01-03",),
+        expecting_exception=True,
+    )
+    resume_state = _resume_state(attempt_a, input_state)
+    attempt_b, requests_b = _read_with_requests(
+        manifest, "post_comments", posts, comments, config, state=resume_state
+    )
+
+    assert "201" in set(requests_a["comments"]) | set(requests_b["comments"])
+    assert (
+        _posts_parent_cursor(attempt_a) is None
+        or _posts_parent_cursor(attempt_a) < "2024-01-02T10:00:00Z"
+    )
+
+
+def test_given_empty_parent_window_when_sync_succeeds_then_parent_state_is_newest_record() -> None:
+    manifest = _dated_substream_manifest()
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    posts = [
+        {"id": 201, "updated_at": "2024-01-02T10:00:00Z"},
+        {"id": 202, "updated_at": "2024-01-02T23:00:00Z"},
+        {"id": 301, "updated_at": "2024-01-03T12:00:00Z"},
+    ]
+    comments = {
+        str(post["id"]): [
+            {
+                "id": post["id"] + 1000,
+                "post_id": post["id"],
+                "updated_at": post["updated_at"],
+            }
+        ]
+        for post in posts
+    }
+    output, requests = _read_with_requests(manifest, "post_comments", posts, comments, config)
+
+    assert not output.errors
+    assert set(requests["comments"]) == {"201", "202", "301"}
+    assert _posts_parent_cursor(output) == "2024-01-03T12:00:00Z"
+
+
+def test_given_no_state_and_failed_next_parent_request_when_resume_then_child_is_read() -> None:
+    manifest = _dated_substream_manifest()
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    posts = [
+        {"id": 101, "updated_at": "2024-01-01T10:00:00Z"},
+        {"id": 102, "updated_at": "2024-01-01T23:00:00Z"},
+    ]
+    comments = {
+        "101": [{"id": 1001, "post_id": 101, "updated_at": "2024-01-01T10:30:00Z"}],
+        "102": [{"id": 1002, "post_id": 102, "updated_at": "2024-01-01T23:30:00Z"}],
+    }
+    input_state = None
+    attempt_a, requests_a = _read_with_requests(
+        manifest,
+        "post_comments",
+        posts,
+        comments,
+        config,
+        failed_parent_days=("2024-01-02",),
+        expecting_exception=True,
+    )
+    state_a = _last_state(attempt_a)
+    resume_state = _resume_state(attempt_a, input_state)
+    attempt_b, requests_b = _read_with_requests(
+        manifest, "post_comments", posts, comments, config, state=resume_state
+    )
+
+    if state_a is not None:
+        parent_cursor = _posts_parent_cursor(attempt_a)
+        assert parent_cursor is not None
+        assert parent_cursor < "2024-01-01T10:00:00Z"
+    assert "101" in set(requests_a["comments"]) | set(requests_b["comments"])
+
+
+@pytest.mark.parametrize("global_substream_cursor", [True, False])
+def test_given_successful_sync_when_read_then_parent_and_child_state_advance_to_newest_record(
+    global_substream_cursor: bool,
+) -> None:
+    manifest = _dated_substream_manifest(global_substream_cursor=global_substream_cursor)
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    posts = [
+        {"id": 101, "updated_at": "2024-01-01T10:00:00Z"},
+        {"id": 201, "updated_at": "2024-01-02T10:00:00Z"},
+        {"id": 301, "updated_at": "2024-01-03T10:00:00Z"},
+    ]
+    comments = {
+        str(post["id"]): [
+            {
+                "id": post["id"] + 1000,
+                "post_id": post["id"],
+                "updated_at": post["updated_at"],
+            }
+        ]
+        for post in posts
+    }
+    output, requests = _read_with_requests(manifest, "post_comments", posts, comments, config)
+    state = _last_state(output)
+
+    assert not output.errors
+    assert state.use_global_cursor is global_substream_cursor
+    assert _posts_parent_cursor(output) == "2024-01-03T10:00:00Z"
+    assert set(requests["comments"]) == {"101", "201", "301"}
+    assert len(requests["comments"]) == 3
+    if global_substream_cursor:
+        assert state.state["updated_at"] == "2024-01-03T10:00:00Z"
+    else:
+        assert state.states
+        assert state.state["updated_at"] == "2024-01-03T10:00:00Z"
+
+
+def test_given_global_cursor_and_failed_first_parent_request_when_read_then_no_state_emitted() -> (
+    None
+):
+    """Main emitted a STATE with no progress here; this PR stops emitting it."""
+    manifest = _dated_substream_manifest(global_substream_cursor=True)
+    config = {**CONFIG, "start_date": "2024-01-01T00:00:00Z"}
+    output, _ = _read_with_requests(
+        manifest,
+        "post_comments",
+        posts=[],
+        comments_by_post={},
+        config=config,
+        failed_parent_days=("2024-01-01",),
+        expecting_exception=True,
+    )
+
+    assert not output.state_messages

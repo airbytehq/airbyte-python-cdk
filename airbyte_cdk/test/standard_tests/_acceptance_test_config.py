@@ -62,6 +62,15 @@ class ScenarioBypass:
     sections: tuple[str, ...] = ()
     """The collected sections it bypasses; empty for a connector-wide bypass."""
 
+    @property
+    def explains_no_scenarios(self) -> bool:
+        """Whether it explains a connector with no runnable scenario.
+
+        An `incremental` bypass does not: it skips only the future-state read, and every
+        connector that runs nothing else still has to say why.
+        """
+        return self.sections != ("incremental",)
+
 
 @dataclass
 class CollectedScenarios:
@@ -75,8 +84,19 @@ class CollectedScenarios:
     """Why each section or entry that is not a runnable config or a bypass produced nothing."""
 
     def describe_empty(self, connector_name: str) -> str:
-        """The collection error for a connector with no runnable scenario and no bypass."""
-        found = self.notes or ["(no sections)"]
+        """The collection error for a connector with no runnable scenario and no bypass.
+
+        `incremental` bypasses are listed among the findings: they do not explain the
+        missing configs (`ScenarioBypass.explains_no_scenarios`).
+        """
+        found = [
+            *self.notes,
+            *(
+                f"`{bypass.location}`: bypasses only the future-state read, not the other tests."
+                for bypass in self.bypasses
+                if not bypass.explains_no_scenarios
+            ),
+        ] or ["(no sections)"]
         return "\n".join(
             [
                 f"No test scenarios for connector '{connector_name}': {self.config_path} lists "
@@ -183,8 +203,10 @@ def collect_scenarios(config: Mapping[str, Any], config_path: Path) -> Collected
     Every section of `SCENARIO_SECTIONS` is read, in that order, in the current layout
     (`section: {tests: [...]}`) and the legacy list layout (`section: [...]`). An entry with a
     `config_path` is a runnable scenario, except an IAM-role config, which the standard tests do
-    not support. An entry without `config_path` contributes its `bypass_reason`, if it has one.
-    A section `bypass_reason` counts only when the section lists no runnable config.
+    not support, and an `incremental` entry without a `future_state.future_state_path` (one with
+    a `future_state.bypass_reason` is a bypass). An entry without `config_path` contributes its
+    `bypass_reason`, if it has one. A section `bypass_reason` counts only when the section lists
+    no runnable config.
 
     Raises:
         AcceptanceTestConfigError: An entry sets a key the standard tests do not read (see
@@ -347,7 +369,38 @@ def _collect_entry(
             for detail in error.errors(include_input=False, include_url=False)
         )
         return False
+    if scenario.is_future_state_read and not _has_future_state(
+        collected, location, scenario.future_state
+    ):
+        return False
     collected.scenarios.append(scenario)
+    return True
+
+
+def _has_future_state(
+    collected: CollectedScenarios,
+    location: str,
+    future_state: ConnectorTestScenario.FutureState | None,
+) -> bool:
+    """Whether an `incremental` entry has a future state to read from.
+
+    Its `future_state.bypass_reason` is a declared bypass, as in CAT, even next to a
+    `future_state_path`; an entry with neither has nothing to run.
+    """
+    if future_state is not None and _is_reason(future_state.bypass_reason):
+        collected.bypasses.append(
+            ScenarioBypass(
+                reason=future_state.bypass_reason,
+                location=f"{location}.future_state.bypass_reason",
+                sections=("incremental",),
+            )
+        )
+        return False
+    if future_state is None or future_state.future_state_path is None:
+        collected.notes.append(
+            f"`{location}`: no `future_state.future_state_path`, so there is no state to read from."
+        )
+        return False
     return True
 
 

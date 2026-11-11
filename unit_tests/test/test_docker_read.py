@@ -239,7 +239,7 @@ def test_docker_read_fails_on_an_unknown_config_name(
     for read_scenarios in (["confg"], ["config", "check_only"]):
         with pytest.raises(
             pytest.fail.Exception,
-            match=r"names configs that are not listed under `basic_read` or `full_refresh`.*"
+            match=r"names configs that are not listed under `basic_read`, `full_refresh`, or `incremental`.*"
             r"The read configs are: 'config'\.",
         ):
             _read(suite, scenario("basic_read"), read_scenarios=read_scenarios)

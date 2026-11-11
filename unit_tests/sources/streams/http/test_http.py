@@ -33,6 +33,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 )
 from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
@@ -1611,3 +1612,61 @@ def test_get_cursor(cursor_field, is_substream, expected_cursor):
     actual_cursor = stream.get_cursor()
 
     assert actual_cursor == expected_cursor
+
+
+class _MinimalHttpStream(HttpStream):
+    url_base = "https://test_base_url.com"
+    primary_key = ""
+
+    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+        return None
+
+    def path(self, **kwargs) -> str:
+        return ""
+
+    def parse_response(self, response: requests.Response, **kwargs) -> Iterable[Mapping]:
+        yield response.json()
+
+
+class _KeepaliveHttpStream(_MinimalHttpStream):
+    @property
+    def use_tcp_keepalive(self) -> bool:
+        return True
+
+    @property
+    def request_timeout(self) -> Tuple[float, float]:
+        return (30, 180)
+
+
+def test_http_stream_mounts_plain_adapter_and_sends_no_timeout_by_default():
+    stream = _MinimalHttpStream()
+
+    assert type(stream._http_client._session.adapters["https://"]) is requests.adapters.HTTPAdapter
+    assert stream._http_client._request_timeout is None
+
+
+def test_http_stream_opted_in_mounts_tcp_keepalive_adapter():
+    stream = _KeepaliveHttpStream()
+
+    assert isinstance(stream._http_client._session.adapters["https://"], TcpKeepaliveHTTPAdapter)
+
+
+def test_http_stream_opted_in_sends_request_timeout(requests_mock):
+    requests_mock.get("https://test_base_url.com/", json={"id": 1})
+
+    records = list(_KeepaliveHttpStream().read_records(sync_mode=SyncMode.full_refresh))
+
+    assert len(records) == 1
+    assert requests_mock.last_request.timeout == (30, 180)
+
+
+def test_http_stream_request_kwargs_timeout_takes_precedence(requests_mock):
+    class _OwnTimeoutHttpStream(_KeepaliveHttpStream):
+        def request_kwargs(self, *args, **kwargs) -> Mapping[str, Any]:
+            return {"timeout": 5}
+
+    requests_mock.get("https://test_base_url.com/", json={"id": 1})
+
+    list(_OwnTimeoutHttpStream().read_records(sync_mode=SyncMode.full_refresh))
+
+    assert requests_mock.last_request.timeout == 5
