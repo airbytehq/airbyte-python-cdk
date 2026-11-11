@@ -377,7 +377,7 @@ class HttpClient:
             if is_rate_limited:
                 raise AirbyteTracedException(
                     internal_message=f"Rate limit retry budget exhausted. Last exception: {e}",
-                    message="API rate limit exceeded.",
+                    message=f"API rate limit exceeded for stream '{self._name}' after all retries were exhausted.",
                     failure_type=FailureType.transient_error,
                     exception=e,
                     stream_descriptor=StreamDescriptor(name=self._name),

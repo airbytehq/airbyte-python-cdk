@@ -644,6 +644,30 @@ def test_backoff_strategy_max_retries():
 
 
 @pytest.mark.usefixtures("mock_sleep")
+def test_rate_limit_exhaustion_message_includes_stream_name():
+    stream_name = "job extract_url - my_stream"
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_response = requests.Response()
+    mocked_response.status_code = 429
+    mocked_session.send.return_value = mocked_response
+    http_client = HttpClient(
+        name=stream_name,
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(logger=MagicMock(), max_retries=1),
+        session=mocked_session,
+    )
+    prepared_request = requests.Request("GET", "https://test_base_url.com/endpoint").prepare()
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client._send_with_retry(prepared_request, request_kwargs={})
+
+    assert (
+        exc_info.value.message
+        == f"API rate limit exceeded for stream '{stream_name}' after all retries were exhausted."
+    )
+
+
+@pytest.mark.usefixtures("mock_sleep")
 def test_backoff_strategy_max_time():
     error_handler = HttpStatusErrorHandler(
         logger=MagicMock(),
