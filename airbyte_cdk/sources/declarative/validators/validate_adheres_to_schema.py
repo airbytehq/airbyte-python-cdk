@@ -30,8 +30,9 @@ class ValidateAdheresToSchema(ValidationStrategy):
         if isinstance(value, str):
             try:
                 value = json.loads(value)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON string: {value}") from e
+            except json.JSONDecodeError:
+                # Not a JSON document (eg a hostname), so validate the raw string itself.
+                pass
 
         try:
             jsonschema.validate(instance=value, schema=self.schema)
