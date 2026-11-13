@@ -21,6 +21,7 @@ from airbyte_cdk.sources.file_based.config.unstructured_format import (
 )
 from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_types import UnstructuredParser
+from airbyte_cdk.sources.file_based.file_types.unstructured_parser import SEMANTIC_SEARCH_ANNOTATION
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -96,6 +97,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             "content": {
                 "type": "string",
                 "description": "Content of the file as markdown. Might be null if the file could not be parsed",
+                "x-airbyte-semantic-search": SEMANTIC_SEARCH_ANNOTATION,
             },
             "document_key": {
                 "type": "string",
