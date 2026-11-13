@@ -5,12 +5,14 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import importlib
 import inspect
 import json
 import logging
 import math
 import re
+from enum import Enum
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -21,6 +23,7 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    Sequence,
     Tuple,
     Type,
     Union,
@@ -37,6 +40,7 @@ if TYPE_CHECKING:
 
 from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
+from jinja2.exceptions import UndefinedError
 from pydantic.v1 import BaseModel
 from requests import Response
 
@@ -69,6 +73,7 @@ from airbyte_cdk.sources.declarative.auth.oauth import (
 )
 from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
     RateLimitedMultipleTokenAuthenticator,
+    RotatingCredential,
     TokenQuota,
 )
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
@@ -208,6 +213,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CredentialSet as CredentialSetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CsvDecoder as CsvDecoderModel,
@@ -776,6 +784,7 @@ class ModelToComponentFactory:
             Dict[str, RateLimitedMultipleTokenAuthenticator]
         ] = None,
         custom_components_trusted: bool = True,
+        rate_limited_credential_identities: Optional[Dict[str, bool]] = None,
     ):
         self._init_mappings()
         self._custom_components_trusted = custom_components_trusted
@@ -795,6 +804,13 @@ class ModelToComponentFactory:
         # Shared instances so all streams see the same token quota counters (like api_budget)
         self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = (
             rate_limited_authenticators if rate_limited_authenticators is not None else {}
+        )
+        # Credentials already built into an instance, mapped to whether a second instance for them
+        # was reported. Shared with substream factories, like `_rate_limited_authenticators`.
+        self._rate_limited_credential_identities: Dict[str, bool] = (
+            rate_limited_credential_identities
+            if rate_limited_credential_identities is not None
+            else {}
         )
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
@@ -5375,6 +5391,7 @@ class ModelToComponentFactory:
             # Share the authenticator registry so parent and child streams draw from the
             # same token quota counters
             rate_limited_authenticators=self._rate_limited_authenticators,
+            rate_limited_credential_identities=self._rate_limited_credential_identities,
         )
 
         return substream_factory.create_parent_stream_config(
@@ -5773,7 +5790,24 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RateLimitedMultipleTokenAuthenticator:
-        if isinstance(model.tokens, str):
+        if (model.tokens is None) == (model.credentials is None):
+            raise ValueError(
+                "RateLimitedMultipleTokenAuthenticator requires exactly one of `tokens` or `credentials`"
+            )
+        credential_entries: List[Tuple[str, Config]] = []
+        credentials_error: Optional[str] = None
+        credentials_error_detail: Optional[str] = None
+        credentials_cache_key: Optional[Dict[str, Any]] = None
+        if model.credentials is not None:
+            self._validate_credential_set_definition(model)
+            tokens: List[str] = []
+            (
+                credential_entries,
+                credentials_error,
+                credentials_error_detail,
+                credentials_cache_key,
+            ) = self._resolve_credential_set(model.credentials, config)
+        elif isinstance(model.tokens, str):
             tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
             delimiter = model.token_delimiter or ","
             tokens = [
@@ -5782,7 +5816,7 @@ class ModelToComponentFactory:
         else:
             tokens = [
                 token_value
-                for token in model.tokens
+                for token in model.tokens or []
                 if (
                     token_value := str(
                         InterpolatedString.create(token, parameters={}).eval(config)
@@ -5859,24 +5893,42 @@ class ModelToComponentFactory:
         # from the resolved constructor arguments rather than the raw model so that
         # stream-specific `$parameters` propagated onto the model (and its nested components)
         # cannot break instance sharing.
-        cache_key = json.dumps(
-            {
-                "tokens": tokens,
-                "quotas": quota_specs,
-                "quota_status_url": quota_status_url,
-                "quota_status_http_method": quota_status_http_method,
-                "quota_status_headers": quota_status_headers,
-                "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
-                "auth_method": auth_method,
-                "header": header,
-                "max_wait_time": max_wait_time.total_seconds(),
-                "budget_reserve_fraction": budget_reserve_fraction,
-                "budget_min_reserve": budget_min_reserve,
-            },
-            sort_keys=True,
-        )
+        cache_key_fields: Dict[str, Any] = {
+            "tokens": tokens,
+            "quotas": quota_specs,
+            "quota_status_url": quota_status_url,
+            "quota_status_http_method": quota_status_http_method,
+            "quota_status_headers": quota_status_headers,
+            "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
+            "auth_method": auth_method,
+            "header": header,
+            "max_wait_time": max_wait_time.total_seconds(),
+            "budget_reserve_fraction": budget_reserve_fraction,
+            "budget_min_reserve": budget_min_reserve,
+        }
+        if credentials_cache_key is not None:
+            # Only added for `credentials`, so a `tokens` definition keys exactly as before.
+            cache_key_fields["credentials"] = credentials_cache_key
+        cache_key = json.dumps(cache_key_fields, sort_keys=True)
         if cache_key in self._rate_limited_authenticators:
             return self._rate_limited_authenticators[cache_key]
+        if credentials_cache_key is not None:
+            self._warn_if_credentials_are_split(quota_specs, credentials_cache_key)
+
+        credentials: Optional[List[RotatingCredential]] = None
+        if model.credentials is not None:
+            credential_authenticator_model = model.credentials.authenticator
+            credentials = [
+                RotatingCredential(
+                    key=key,
+                    authenticator=self._create_component_from_model(
+                        model=credential_authenticator_model,
+                        config=credential_config,
+                        name=f"{kwargs.get('name') or 'rate_limited'}_credential_{index}",
+                    ),
+                )
+                for index, (key, credential_config) in enumerate(credential_entries)
+            ]
 
         quotas = [
             TokenQuota(
@@ -5908,9 +5960,236 @@ class ModelToComponentFactory:
             max_wait_time=max_wait_time,
             budget_reserve_fraction=budget_reserve_fraction,
             budget_min_reserve=budget_min_reserve,
+            credentials=credentials,
+            credentials_error=credentials_error,
+            credentials_error_detail=credentials_error_detail,
         )
         self._rate_limited_authenticators[cache_key] = authenticator
         return authenticator
+
+    # Interpolation name under which each credential's item is visible to its authenticator.
+    _CREDENTIAL_CONFIG_KEY = "credential"
+
+    @staticmethod
+    def _validate_credential_set_definition(
+        model: RateLimitedMultipleTokenAuthenticatorModel,
+    ) -> None:
+        """Reject manifest-author mistakes in a `credentials` definition, without any network call."""
+        assert model.credentials is not None
+        # Compared with the defaults rather than `__fields_set__`, which also lists defaults when a
+        # model has been round-tripped through `.dict()`.
+        defaults = {"auth_method": "Bearer", "header": "Authorization", "token_delimiter": ","}
+        ignored = sorted(
+            field
+            for field, default in defaults.items()
+            if getattr(model, field) not in (None, default)
+        )
+        if ignored:
+            raise ValueError(
+                f"RateLimitedMultipleTokenAuthenticator does not use {', '.join(ignored)} with "
+                "`credentials`: each credential's authenticator decides how its token is injected"
+            )
+        authenticator = model.credentials.authenticator
+        if not authenticator.expiration_duration:
+            # Without it the session token is fetched for every request, so each request carries
+            # a new header value and responses can no longer be traced back to their credential.
+            raise ValueError(
+                "The `CredentialSet` authenticator needs an `expiration_duration`, so that each "
+                "credential keeps its session token between requests"
+            )
+        request_authentication = authenticator.request_authentication
+        if request_authentication.type == "ApiKey":
+            inject_into = request_authentication.inject_into.inject_into
+            if getattr(inject_into, "value", inject_into) != "header":
+                raise ValueError(
+                    "The `CredentialSet` authenticator must inject its token into a request header; "
+                    f"got `{getattr(inject_into, 'value', inject_into)}`"
+                )
+
+    def _resolve_credential_set(
+        self, model: CredentialSetModel, config: Config
+    ) -> Tuple[List[Tuple[str, Config]], Optional[str], Optional[str], Dict[str, Any]]:
+        """Evaluate a `CredentialSet` into (key, per-credential config) pairs without building anything.
+
+        Problems with the user-provided list are returned as an error message rather than raised,
+        so the authenticator can report them at first use: a `SelectiveAuthenticator` builds every
+        branch up front, including the ones the config does not select. An expression that could
+        not be evaluated is also returned as a detail for the internal message, since it may be a
+        mistake in the manifest rather than in the config.
+
+        The returned cache-key fragment identifies the credentials by key and by a hash of each
+        item, never by the item itself, which usually holds secrets.
+        """
+        error: Optional[str] = None
+        error_detail: Optional[str] = None
+        items_value: Any = model.items
+        if isinstance(items_value, str):
+            try:
+                items_value = InterpolatedString.create(items_value, parameters={}).eval(config)
+            except UndefinedError as exception:
+                # `config['credentials']['accounts']` with no `credentials` object in the config.
+                items_value = None
+                error_detail = f"`items` {model.items!r} could not be evaluated: {exception}"
+
+        items: List[Mapping[str, Any]] = []
+        if items_value in (None, ""):
+            items = []
+        elif isinstance(items_value, list) and all(
+            isinstance(item, Mapping) for item in items_value
+        ):
+            items = items_value
+        else:
+            error = "The credentials must be a list of objects."
+
+        entries: List[Tuple[str, Config]] = []
+        for index, item in enumerate(items):
+            credential_config = {**config, self._CREDENTIAL_CONFIG_KEY: item}
+            if model.key:
+                # `valid_types=(str,)` keeps an id such as "1_000" or "1e3" from being read as a
+                # number, which would make distinct ids collide.
+                try:
+                    key_value = InterpolatedString.create(model.key, parameters={}).eval(
+                        credential_config, valid_types=(str,)
+                    )
+                except UndefinedError as exception:
+                    # A nested path such as `config['credential']['meta']['id']` on an item
+                    # without `meta`: reported below as a credential with no identifier.
+                    key_value = None
+                    if error_detail is None:
+                        error_detail = (
+                            f"`key` {model.key!r} could not be evaluated for the credential "
+                            f"at position {index + 1}: {exception}"
+                        )
+                key = "" if key_value is None else str(key_value).strip()
+            else:
+                key = str(index)
+            if not key and error is None:
+                error = f"The credential at position {index + 1} has no identifier."
+            entries.append((key, credential_config))
+
+        cache_key = {
+            "items": [
+                {
+                    "key": key,
+                    "item_sha256": hashlib.sha256(
+                        json.dumps(
+                            credential_config[self._CREDENTIAL_CONFIG_KEY],
+                            sort_keys=True,
+                            default=str,
+                        ).encode()
+                    ).hexdigest(),
+                }
+                for key, credential_config in entries
+            ],
+            "authenticator": self._credential_authenticator_cache_key(model.authenticator),
+            # The login also interpolates config outside the credential's item (`api_url`, a
+            # tenant). Every stream of a source gets the same config, so this keeps sharing.
+            "config_sha256": hashlib.sha256(
+                json.dumps(config, sort_keys=True, default=str).encode()
+            ).hexdigest(),
+            "error": error,
+        }
+        return entries, error, error_detail, cache_key
+
+    def _warn_if_credentials_are_split(
+        self, quota_specs: Sequence[Mapping[str, Any]], credentials_cache_key: Mapping[str, Any]
+    ) -> None:
+        """Warn once when the same credentials get a second instance, with its own quota counters.
+
+        That happens when the authenticator's definition differs between streams: its login
+        interpolates `parameters` or contains a custom component, or a stream's `$parameters`
+        fill its quota-status request. Each instance then logs in separately and spends the same
+        server-side budget without seeing the others' requests. The credentials are identified by
+        their keys, items, config and quota pools, whatever else differs.
+        """
+        if not credentials_cache_key["items"] or credentials_cache_key["error"] is not None:
+            # An unusable credential list, e.g. a `SelectiveAuthenticator` branch the config does
+            # not select: there is nothing to log in with, so nothing is split.
+            return
+        identity = json.dumps(
+            {
+                "quotas": quota_specs,
+                "credentials": {
+                    name: value
+                    for name, value in credentials_cache_key.items()
+                    if name != "authenticator"
+                },
+            },
+            sort_keys=True,
+        )
+        warned = self._rate_limited_credential_identities.get(identity)
+        if warned is None:
+            self._rate_limited_credential_identities[identity] = False
+            return
+        if warned:
+            return
+        self._rate_limited_credential_identities[identity] = True
+        keys = [item["key"] for item in credentials_cache_key["items"]]
+        LOGGER.warning(
+            "The credentials %s of a RateLimitedMultipleTokenAuthenticator are used by more than "
+            "one instance, because the authenticator differs between streams: for example its "
+            "login interpolates `parameters` or contains a custom component, or a stream's "
+            "`$parameters` fill its quota-status request. Each instance keeps its own quota "
+            "counters and logs in separately.",
+            keys,
+        )
+
+    # A Jinja expression that reads `parameters`, e.g. `{{ parameters['path'] }}`.
+    _PARAMETERS_REFERENCE = re.compile(r"\{[{%][^}]*\bparameters\b")
+
+    @classmethod
+    def _credential_authenticator_cache_key(cls, model: BaseModel) -> Any:
+        """The credential authenticator's definition, minus what differs per stream without effect.
+
+        `$parameters` propagation copies each stream's `$parameters` onto every nested component
+        as the component's own `$parameters`. Under `CredentialSet.authenticator` it fills no
+        fields with them (`STREAM_INDEPENDENT_FIELDS`), so a stream's `url` or `primary_key` does
+        not end up in the login. The key keeps only declared fields without `$parameters`, and
+        streams with the same definition share one instance. Two things do depend on the
+        parameters, and are keyed with them:
+        - a definition that interpolates `parameters`: each set of parameters gets its own instance;
+        - a custom component (`class_name`), which receives its `$parameters` and every extra its
+          class accepts. It is keyed with all of them, since which ones it reads is only known
+          from its class, and importing that is left to `create_custom_component`. A login with a
+          custom component therefore gets an instance per stream rather than a shared one.
+        """
+        declared = cls._declared_fields(model, keep_parameters=False)
+        if cls._PARAMETERS_REFERENCE.search(json.dumps(declared, sort_keys=True, default=str)):
+            return cls._declared_fields(model, keep_parameters=True)
+        return declared
+
+    @classmethod
+    def _declared_fields(cls, value: Any, keep_parameters: bool) -> Any:
+        """A JSON-able view of a model tree that holds only the fields its models declare.
+
+        A custom component is the exception: it is kept whole, extras and `$parameters` included.
+        """
+        if isinstance(value, BaseModel):
+            is_custom = "class_name" in value.__fields__
+            keep_own_parameters = keep_parameters or is_custom
+            fields = {}
+            for field_name, field in value.__fields__.items():
+                field_value = getattr(value, field_name)
+                if field_value is None:
+                    continue
+                if field_name == "parameters" and not keep_own_parameters:
+                    continue
+                fields[field.alias] = cls._declared_fields(field_value, keep_own_parameters)
+            if is_custom:
+                for extra_name, extra_value in value.__dict__.items():
+                    if extra_name in value.__fields__ or extra_name.startswith("_"):
+                        continue
+                    fields[extra_name] = cls._declared_fields(extra_value, keep_own_parameters)
+            return fields
+        if isinstance(value, Mapping):
+            return {
+                str(key): cls._declared_fields(item, keep_parameters) for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [cls._declared_fields(item, keep_parameters) for item in value]
+        if isinstance(value, Enum):
+            return value.value
+        return value
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
