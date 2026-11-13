@@ -405,7 +405,8 @@ class _Read:
         state = copy.deepcopy(edited.state.stream.stream_state.__dict__)
         edit(state)
         edited.state.stream.stream_state = AirbyteStateBlob(**state)
-        messages[messages.index(final)] = edited
+        # Equal state messages can repeat; the final one is the last of them.
+        messages[len(messages) - 1 - messages[::-1].index(final)] = edited
         return messages
 
 
@@ -418,6 +419,17 @@ def _assert_no_values(problems: Mapping[CursorStateCheck, list[str]]) -> None:
     text = _text(problems)
     assert "2024" not in text
     assert not re.search(r"\d{9,}", text), "a record id leaked into the problems"
+
+
+def test_with_final_state_edits_the_last_state_message() -> None:
+    result = _Read(_manifest(_stream("events", "/events", _cursor(step="P1D"))), _Api(late_days=5))
+    final = result.states("events")[-1]
+    # Concurrent reads can emit equal state messages; repeat the final one.
+    result.messages.insert(result.messages.index(final), copy.deepcopy(final))
+    messages = result.with_final_state(
+        "events", lambda state: state.update(updated_at="2024-01-02T00:00:00Z")
+    )
+    assert FINAL_STATE in result.problems(messages)
 
 
 # --- Checkpoint check -------------------------------------------------------------------------
@@ -711,6 +723,13 @@ def test_checkpoint_bound_of_a_state_delegating_stream_follows_its_retention_per
 def test_states_within_the_retention_period_resume_incrementally() -> None:
     stream = _delegating(_stream("events", "/events", _cursor(step="P1D")), "P100000D")
     assert list(_Read(_manifest(stream), _Api(late_days=5)).problems()) == [CHECKPOINTS]
+
+
+def test_per_partition_state_delegating_bound_comes_from_its_incremental_stream() -> None:
+    # A resumed sync builds `incremental_stream`, whose lookback window reads the late records again.
+    stream = _delegating(_children(_cursor(step="P3D")), None)
+    stream["incremental_stream"] = _children(_cursor(step="P3D", lookback="P7D"))
+    assert _Read(_manifest(stream), _Api(late_days=5), names=["children"]).problems() == {}
 
 
 def test_rebuilding_a_state_delegating_stream_emits_nothing_on_the_read_queue() -> None:
@@ -1025,6 +1044,14 @@ def test_partition_keys_are_compared_per_parent(
         assert expected in problems[PARTITION_STATE_SHAPE][0]
 
 
+def test_partition_entry_whose_cursor_lacks_the_cursor_field_fails() -> None:
+    result = _Read(_manifest(_children()), _Api(), names=["children"])
+    messages = result.with_final_state(
+        "children", lambda state: state["states"][0].update(cursor={"other": 1})
+    )
+    assert "have no `cursor.updated_at`" in result.problems(messages)[PARTITION_STATE_SHAPE][0]
+
+
 def test_a_single_empty_partition_is_well_formed() -> None:
     # A router can yield one empty partition (for example source-jira's
     # `SubstreamOrSinglePartitionRouter` without projects); the CDK stores it as `{}`.
@@ -1092,6 +1119,14 @@ def test_parent_state_is_not_required_without_incremental_dependency() -> None:
     result = _Read(_manifest(_children(incremental_dependency=False)), _Api(), names=["children"])
     messages = result.with_final_state("children", lambda state: state.pop("parent_state", None))
     assert result.problems(messages) == {}
+
+
+def test_parent_state_without_the_incremental_parent_fails() -> None:
+    result = _Read(_manifest(_children()), _Api(), names=["children"])
+    messages = result.with_final_state(
+        "children", lambda state: state.update(parent_state={"unrelated": {}})
+    )
+    assert list(result.problems(messages)) == [PARENT_STATE]
 
 
 # --- Partition coverage -----------------------------------------------------------------------
