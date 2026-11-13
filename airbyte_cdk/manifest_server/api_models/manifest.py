@@ -18,6 +18,8 @@ class RequestContext(BaseModel):
 
     workspace_id: Optional[str] = None
     project_id: Optional[str] = None
+    request_id: Optional[str] = None
+    connector_name: Optional[str] = None
 
 
 class StreamTestReadRequest(BaseModel):
