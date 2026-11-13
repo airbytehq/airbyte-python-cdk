@@ -527,13 +527,22 @@ components:
         request_id:
           anyOf:
           - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._:/-]+$
           - type: 'null'
           title: Request Id
+          description: Request identifier included in server logs and Datadog span
+            tags.
         connector_name:
           anyOf:
           - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._:/-]+$
           - type: 'null'
           title: Connector Name
+          description: Connector name included in server logs and Datadog span tags.
       type: object
       title: RequestContext
       description: Optional context information for tracing and observability.

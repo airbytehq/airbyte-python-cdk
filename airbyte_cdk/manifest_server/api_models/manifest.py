@@ -18,8 +18,20 @@ class RequestContext(BaseModel):
 
     workspace_id: Optional[str] = None
     project_id: Optional[str] = None
-    request_id: Optional[str] = None
-    connector_name: Optional[str] = None
+    request_id: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:/-]+$",
+        description="Request identifier included in server logs and Datadog span tags.",
+    )
+    connector_name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:/-]+$",
+        description="Connector name included in server logs and Datadog span tags.",
+    )
 
 
 class StreamTestReadRequest(BaseModel):

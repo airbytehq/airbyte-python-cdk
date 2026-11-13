@@ -15,19 +15,30 @@ from ..api_models import (
 
 logger = logging.getLogger(__name__)
 _log_context: ContextVar[str] = ContextVar("manifest_server_log_context", default="")
-_original_record_factory = logging.getLogRecordFactory()
 
 
-def _record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
-    record = _original_record_factory(*args, **kwargs)
-    context = _log_context.get()
-    if context:
-        record.msg = f"[{context}] {record.getMessage()}"
-        record.args = ()
-    return record
+def _install_record_factory() -> None:
+    previous_factory = logging.getLogRecordFactory()
+    if getattr(previous_factory, "_manifest_server_log_context", False):
+        return
+
+    def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+        record = previous_factory(*args, **kwargs)
+        context = _log_context.get()
+        if context:
+            try:
+                message = record.getMessage()
+            except Exception:
+                return record
+            record.msg = f"[{context}] {message}"
+            record.args = ()
+        return record
+
+    setattr(record_factory, "_manifest_server_log_context", True)
+    logging.setLogRecordFactory(record_factory)
 
 
-logging.setLogRecordFactory(_record_factory)
+_install_record_factory()
 
 RequestT = TypeVar(
     "RequestT",
@@ -41,6 +52,11 @@ ResponseT = TypeVar("ResponseT")
 def with_request_context(
     endpoint: Callable[[RequestT], ResponseT],
 ) -> Callable[[RequestT], ResponseT]:
+    """Scope logs for sync endpoints with a single body parameter named `request`.
+
+    Drives a process-wide LogRecord factory that prefixes records only in this context.
+    """
+
     @wraps(endpoint)
     def wrapped(request: RequestT) -> ResponseT:
         context = request.context
@@ -77,11 +93,6 @@ def apply_trace_tags_from_context(
         log_parts.append(f"workspace_id={workspace_id}")
     if project_id:
         log_parts.append(f"project_id={project_id}")
-    if request_id is not None:
-        log_parts.append(f"request_id={request_id}")
-    if connector_name is not None:
-        log_parts.append(f"connector_name={connector_name}")
-
     if log_parts:
         logger.info(f"Processing request with trace tags: {', '.join(log_parts)}")
 
