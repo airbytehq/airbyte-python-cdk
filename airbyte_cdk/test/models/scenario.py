@@ -291,7 +291,8 @@ class ConnectorTestScenario(BaseModel):
     validate_schema: bool = True
     # CAT's `basic_read` opt-out from checking the primary key of every record.
     validate_primary_keys_data_type: bool = True
-    # CAT's `basic_read` opt-out from checking that every stream emits per-stream state.
+    # CAT's `basic_read` opt-out from checking that every stream emits per-stream state. It also
+    # skips the cursor state checks of a declarative source's read (`_cursor_state_checks`).
     validate_state_messages: bool = True
     # CAT's `basic_read` opt-out from requiring a well-formed error trace from a failing read.
     expect_trace_message_on_failure: bool = True
