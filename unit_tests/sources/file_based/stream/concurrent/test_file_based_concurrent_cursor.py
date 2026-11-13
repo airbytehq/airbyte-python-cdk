@@ -587,3 +587,62 @@ def test_compute_start_time(input_history, is_history_full, expected_start_time,
     cursor._file_to_datetime_history = input_history
     cursor._is_history_full = MagicMock(return_value=is_history_full)
     assert cursor._compute_start_time() == expected_start_time
+
+
+def test_state_throttling(mocker):
+    """
+    emit_state_message must skip emission if less than DEFAULT_STATE_EMISSION_INTERVAL_SECONDS
+    have passed since the previous emission, and must emit once the interval has elapsed.
+    """
+    cursor = _make_cursor({"history": {}})
+    mock_connector_manager = cursor._connector_state_manager = MagicMock()
+    mock_repo = cursor._message_repository = MagicMock()
+    cursor._last_emission_time = 0.0
+
+    mock_time = mocker.patch("time.time")
+
+    # 100s elapsed: under threshold, no emission
+    mock_time.return_value = 100
+    cursor.emit_state_message()
+    mock_connector_manager.update_state_for_stream.assert_not_called()
+    mock_repo.emit_message.assert_not_called()
+
+    # 300s elapsed: still under threshold
+    mock_time.return_value = 300
+    cursor.emit_state_message()
+    mock_connector_manager.update_state_for_stream.assert_not_called()
+    mock_repo.emit_message.assert_not_called()
+
+    # 700s elapsed: over the 600s threshold, must emit once
+    mock_time.return_value = 700
+    cursor.emit_state_message()
+    mock_connector_manager.update_state_for_stream.assert_called_once()
+    mock_repo.emit_message.assert_called_once()
+
+    # 800s elapsed (only 100s since last emit): throttled again
+    mock_time.return_value = 800
+    cursor.emit_state_message()
+    mock_connector_manager.update_state_for_stream.assert_called_once()
+    mock_repo.emit_message.assert_called_once()
+
+
+def test_ensure_at_least_one_state_emitted_bypasses_throttle(mocker):
+    """
+    The final state at end-of-stream must always be emitted, even within the throttle
+    window. Otherwise the platform could see a sync finish with no final state.
+    """
+    cursor = _make_cursor({"history": {}})
+    mock_connector_manager = cursor._connector_state_manager = MagicMock()
+    mock_repo = cursor._message_repository = MagicMock()
+
+    # Pretend a throttled emission just happened.
+    mock_time = mocker.patch("time.time")
+    mock_time.return_value = 10
+    cursor._last_emission_time = 10.0
+
+    # Only 1s later — well within the throttle window.
+    mock_time.return_value = 11
+    cursor.ensure_at_least_one_state_emitted()
+
+    mock_connector_manager.update_state_for_stream.assert_called_once()
+    mock_repo.emit_message.assert_called_once()
