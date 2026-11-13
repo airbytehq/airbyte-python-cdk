@@ -66,6 +66,30 @@ Fully resolve a manifest including dynamic streams.
 
 **POST** - Generates dynamic streams up to specified limits and includes them in the resolved manifest.
 
+## Request context and log correlation
+
+All five manifest endpoints accept an optional `context` object. Alongside
+`workspace_id` and `project_id`, you can provide `request_id` and `connector_name`
+to correlate server logs and Datadog span tags:
+
+```json
+{"context": {"request_id": "abc", "connector_name": "source-foo"}}
+```
+
+Each new field accepts 1–128 characters: letters, digits, `.`, `_`, `:`, `/`, and
+`-`. Omit a field or set it to `null` to leave it unset. Empty or invalid values
+return HTTP 422. Logs emitted in the request's execution context include the
+fields that are set, for example:
+
+```text
+[request_id=abc connector_name=source-foo] Check succeeded
+```
+
+API responses are unchanged; the prefix appears only in server stdout. Logs
+without request context are unchanged. Worker-thread logs from concurrent
+partition reads in `test_read` (such as HTTP error/retry lines) and uvicorn
+access/traceback lines are not prefixed.
+
 ## Custom Components
 
 The manifest server supports custom Python components, but this feature is **disabled by default** for security reasons.
@@ -175,4 +199,3 @@ This requires the `ddtrace` dependency, which is included in the `manifest-serve
 # Run with Datadog tracing enabled
 DD_ENABLED=true manifest-server start
 ```
-
