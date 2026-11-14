@@ -116,7 +116,7 @@ definitions:
         additionalProperties: true
   AddFields:
     title: Add Fields
-    description: Transformation which adds field to an output record. The path of the added field can be nested.
+    description: "Adds fields to each record. Fields can be nested."
     type: object
     required:
       - type
@@ -149,7 +149,7 @@ definitions:
         additionalProperties: true
   ApiKeyAuthenticator:
     title: API Key Authenticator
-    description: Authenticator for requests authenticated with an API token injected as an HTTP request header.
+    description: "Sends an API key with each request, in a header, query parameter or body field."
     type: object
     required:
       - type
@@ -190,12 +190,7 @@ definitions:
         additionalProperties: true
   AuthFlow:
     title: "Auth flow"
-    description: |-
-      Additional and optional specification object to describe what an 'advanced' Auth flow would need to function.
-        - A connector should be able to fully function with the configuration as described by the ConnectorSpecification in a 'basic' mode.
-        - The 'advanced' mode provides easier UX for the user with UI improvements and automations. However, this requires further setup on the
-        server side by instance or workspace admins beforehand. The trade-off is that the user does not have to provide as many technical
-        inputs anymore and the auth process is faster and easier to complete.
+    description: "Optional. Describes an advanced sign-in flow, like a \"Sign in with...\" button, that's easier for users than typing in credentials. The connector must still work with the basic config alone. The advanced flow needs extra setup by an instance or workspace admin first, but users then enter fewer technical details."
     type: object
     properties:
       auth_flow_type:
@@ -221,7 +216,7 @@ definitions:
         "$ref": "#/definitions/OAuthConfigSpecification"
   BasicHttpAuthenticator:
     title: Basic HTTP Authenticator
-    description: Authenticator for requests authenticated with the Basic HTTP authentication scheme, which encodes a username and an optional password in the Authorization request header.
+    description: "Signs in with a username and an optional password using HTTP Basic authentication. The CDK encodes them and sends them in the `Authorization` header."
     type: object
     required:
       - type
@@ -254,7 +249,7 @@ definitions:
         additionalProperties: true
   BearerAuthenticator:
     title: Bearer Token Authenticator
-    description: "Authenticator for requests authenticated with a bearer token injected as a request header of the form `Authorization: Bearer <token>`."
+    description: "Sends a token in the `Authorization: Bearer <token>` header of each request."
     type: object
     required:
       - type
@@ -277,7 +272,7 @@ definitions:
         additionalProperties: true
   SelectiveAuthenticator:
     title: Selective Authenticator
-    description: Authenticator that selects concrete authenticator based on config property.
+    description: "Picks one of several authenticators based on a value in the user's config. Use it when users can choose how to sign in, like with an API key or with OAuth."
     type: object
     additionalProperties: true
     required:
@@ -323,13 +318,7 @@ definitions:
         additionalProperties: true
   RateLimitedMultipleTokenAuthenticator:
     title: Rate Limited Multiple Token Authenticator
-    description: >
-      Authenticator that rotates between multiple interchangeable tokens, tracking each token's remaining
-      call quota. Outgoing requests are classified into quota pools using request matchers. When the active
-      token's quota for the matched pool is exhausted, the authenticator rotates to the next token. When all
-      tokens are exhausted, it waits until the earliest quota reset (bounded by `max_wait_time`) before
-      resuming. Quota counters are seeded per token from `quota_status_source` at startup and refreshed after
-      an exhaustion wait.
+    description: "Rotates between several tokens so a sync can make more calls than one token allows. It tracks how many calls each token has left and switches to the next token when one runs out. Request matchers sort requests into quota pools. If every token is out of calls, it waits for the earliest reset, up to `max_wait_time`. At startup and after each wait, it reads each token's quota from `quota_status_source`."
     type: object
     required:
       - type
@@ -412,7 +401,7 @@ definitions:
         additionalProperties: true
   QuotaStatusSource:
     title: Quota Status Source
-    description: Describes the endpoint from which a token's current rate limit quota status can be fetched.
+    description: "The endpoint that reports how many calls a token has left."
     type: object
     required:
       - type
@@ -458,7 +447,7 @@ definitions:
         additionalProperties: true
   TokenQuota:
     title: Token Quota
-    description: A named per-token quota pool with matchers that classify outgoing requests into the pool.
+    description: "A named call limit for each token. Its matchers decide which requests count against it."
     type: object
     required:
       - type
@@ -537,7 +526,7 @@ definitions:
         additionalProperties: true
   CheckStream:
     title: Streams to Check
-    description: Defines the streams to try reading when running a check operation.
+    description: "The streams to read when testing the connection."
     type: object
     required:
       - type
@@ -586,7 +575,7 @@ definitions:
         minimum: 1
   CheckDynamicStream:
     title: Dynamic Streams to Check
-    description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
+    description: "(Experimental.) The dynamic streams to read when testing the connection."
     type: object
     required:
       - type
@@ -614,7 +603,7 @@ definitions:
           - page_size: 1
   CompositeErrorHandler:
     title: Composite Error Handler
-    description: Error handler that sequentially iterates over a list of error handlers.
+    description: "Tries a list of error handlers in order."
     type: object
     required:
       - type
@@ -637,7 +626,7 @@ definitions:
         additionalProperties: true
   ConcurrencyLevel:
     title: Concurrency Level
-    description: Defines the amount of parallelization for the streams that are being synced. The factor of parallelization is how many partitions or streams are synced at the same time. For example, with a concurrency_level of 10, ten streams or partitions of data will processed at the same time. Note that a value of 1 could create deadlock if a stream has a very high number of partitions.
+    description: "How many streams or partitions sync at the same time. For example, 10 means up to 10 at once. A value of 1 can cause a deadlock if a stream has many partitions."
     type: object
     required:
       - default_concurrency
@@ -668,7 +657,7 @@ definitions:
         additionalProperties: true
   ConditionalStreams:
     title: Conditional Streams
-    description: Streams that are only available while performing a connector operation when the condition is met.
+    description: "Streams that are only included when a condition is true."
     type: object
     required:
       - type
@@ -698,7 +687,7 @@ definitions:
         additionalProperties: true
   ConstantBackoffStrategy:
     title: Constant Backoff
-    description: Backoff strategy with a constant backoff interval.
+    description: "Waits the same amount of time before every retry."
     type: object
     required:
       - type
@@ -734,7 +723,7 @@ definitions:
         additionalProperties: true
   CursorPagination:
     title: Cursor Pagination
-    description: Pagination strategy that evaluates an interpolated string to define the next page to fetch.
+    description: "Gets the next page from a value in the response, like a cursor, token or \"next\" URL."
     type: object
     required:
       - type
@@ -804,7 +793,7 @@ definitions:
         additionalProperties: true
   CustomAuthenticator:
     title: Custom Authenticator
-    description: Authenticator component whose behavior is derived from a custom code implementation of the connector.
+    description: "Authenticates with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -826,7 +815,7 @@ definitions:
         additionalProperties: true
   CustomBackoffStrategy:
     title: Custom Backoff Strategy
-    description: Backoff strategy component whose behavior is derived from a custom code implementation of the connector.
+    description: "Decides how long to wait before retrying with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -847,7 +836,7 @@ definitions:
         additionalProperties: true
   CustomErrorHandler:
     title: Custom Error Handler
-    description: Error handler component whose behavior is derived from a custom code implementation of the connector.
+    description: "Handles errors with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -868,7 +857,7 @@ definitions:
         additionalProperties: true
   CustomPaginationStrategy:
     title: Custom Pagination Strategy
-    description: Pagination strategy component whose behavior is derived from a custom code implementation of the connector. One instance paginates every partition of the stream in several threads at once, so the next token must be derived from the method arguments, not from state kept on the instance.
+    description: "Paginates with your own Python class. One instance handles every partition at the same time in several threads, so work out the next page from the method arguments, not from values saved on the instance."
     type: object
     additionalProperties: true
     required:
@@ -889,7 +878,7 @@ definitions:
         additionalProperties: true
   CustomRecordExtractor:
     title: Custom Record Extractor
-    description: Record extractor component whose behavior is derived from a custom code implementation of the connector.
+    description: "Extracts records with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -910,7 +899,7 @@ definitions:
         additionalProperties: true
   CustomRecordFilter:
     title: Custom Record Filter
-    description: Record filter component whose behavior is derived from a custom code implementation of the connector.
+    description: "Filters records with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -931,7 +920,7 @@ definitions:
         additionalProperties: true
   CustomRequester:
     title: Custom Requester
-    description: Requester component whose behavior is derived from a custom code implementation of the connector.
+    description: "Sends requests with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -953,7 +942,7 @@ definitions:
         additionalProperties: true
   CustomRetriever:
     title: Custom Retriever
-    description: Retriever component whose behavior is derived from a custom code implementation of the connector. One instance reads every partition of the stream and its `read_records` runs in several threads at once, so per-read state must live in local variables, not on the instance.
+    description: "Gets records with your own Python class. One instance reads every partition at the same time in several threads, so keep per-read values in local variables, not on the instance."
     type: object
     additionalProperties: true
     required:
@@ -975,7 +964,7 @@ definitions:
         additionalProperties: true
   CustomPartitionRouter:
     title: Custom Partition Router
-    description: Partition router component whose behavior is derived from a custom code implementation of the connector.
+    description: "Creates partitions with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -996,7 +985,7 @@ definitions:
         additionalProperties: true
   CustomSchemaLoader:
     title: Custom Schema Loader
-    description: Schema Loader component whose behavior is derived from a custom code implementation of the connector.
+    description: "Loads the schema with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -1017,7 +1006,7 @@ definitions:
         additionalProperties: true
   CustomSchemaNormalization:
     title: Custom Schema Normalization
-    description: Schema normalization component whose behavior is derived from a custom code implementation of the connector.
+    description: "Normalizes records with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -1039,7 +1028,7 @@ definitions:
         additionalProperties: true
   CustomStateMigration:
     title: Custom State Migration
-    description: Apply a custom transformation on the input state.
+    description: "Changes saved state with your own Python class, for example after you change how state is stored."
     type: object
     additionalProperties: true
     required:
@@ -1060,7 +1049,7 @@ definitions:
         additionalProperties: true
   CustomTransformation:
     title: Custom Transformation
-    description: Transformation component whose behavior is derived from a custom code implementation of the connector.
+    description: "Transforms records with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -1081,21 +1070,18 @@ definitions:
         additionalProperties: true
   LegacyToPerPartitionStateMigration:
     title: Legacy To Per-partition-state Migration
-    description:
-      'Transforms the input state for per-partitioned streams from the legacy format to the low-code format.
-      The cursor field and partition ID fields are automatically extracted from the stream''s DatetimebasedCursor and SubstreamPartitionRouter.
+    description: |-
+      Converts old per-partition state into the format low-code connectors use. It reads the cursor and partition fields from the stream's `DatetimeBasedCursor` and `SubstreamPartitionRouter`.
 
       Example input state:
-      {
-      "13506132": {
-      "last_changed": "2022-12-27T08:34:39+00:00"
-      }
+      ```json
+      { "13506132": { "last_changed": "2022-12-27T08:34:39+00:00" } }
+      ```
+
       Example output state:
-      {
-      "partition": {"id": "13506132"},
-      "cursor": {"last_changed": "2022-12-27T08:34:39+00:00"}
-      }
-      '
+      ```json
+      { "partition": {"id": "13506132"}, "cursor": {"last_changed": "2022-12-27T08:34:39+00:00"} }
+      ```
     type: object
     additionalProperties: true
     properties:
@@ -1104,7 +1090,7 @@ definitions:
         enum: [LegacyToPerPartitionStateMigration]
   IncrementingCountCursor:
     title: Incrementing Count Cursor
-    description: Cursor that allows for incremental sync according to a continuously increasing integer.
+    description: "Syncs only new records, using a number that always goes up (like an ID) as the cursor."
     type: object
     required:
       - type
@@ -1146,7 +1132,7 @@ definitions:
         additionalProperties: true
   DatetimeBasedCursor:
     title: Datetime Based Cursor
-    description: Cursor to provide incremental capabilities over datetime.
+    description: "Syncs only new or changed records, using a date or time field as the cursor."
     type: object
     required:
       - type
@@ -1159,7 +1145,7 @@ definitions:
         enum: [DatetimeBasedCursor]
       clamping:
         title: Date Range Clamping
-        description: This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)
+        description: "Moves the start and end of each date window to the start and end of a day, week or month."
         type: object
         required:
           - target
@@ -1637,7 +1623,7 @@ definitions:
         additionalProperties: true
   OAuthAuthenticator:
     title: OAuth2
-    description: Authenticator for requests using OAuth 2.0 authorization flow.
+    description: "Signs in with OAuth 2.0. It gets an access token from the API and refreshes it when it expires."
     type: object
     required:
       - type
@@ -1787,7 +1773,7 @@ definitions:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
       refresh_token_error_status_codes:
         title: Refresh Token Error Status Codes
-        description: Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error
+        description: "Status codes that mean the refresh token is no longer valid. Also set `refresh_token_error_key` and `refresh_token_error_values`. When a response matches all three, the sync fails with a config error that tells the user to re-authenticate."
         type: array
         items:
           type: integer
@@ -1795,13 +1781,13 @@ definitions:
           - [400, 500]
       refresh_token_error_key:
         title: Refresh Token Error Key
-        description: Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).
+        description: "The response key to check when the refresh token is no longer valid. Also set `refresh_token_error_status_codes` and `refresh_token_error_values`. When a response matches all three, the sync fails with a config error that tells the user to re-authenticate."
         type: string
         examples:
           - "error"
       refresh_token_error_values:
         title: Refresh Token Error Values
-        description: 'List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error'
+        description: "Response values that mean the refresh token is no longer valid. Also set `refresh_token_error_status_codes` and `refresh_token_error_key`. When a response matches all three, the sync fails with a config error that tells the user to re-authenticate."
         type: array
         items:
           type: string
@@ -1818,7 +1804,7 @@ definitions:
           - invalid_grant: "The refresh token expired or was revoked. Re-authenticate this source to restore syncs."
       refresh_token_updater:
         title: Refresh Token Updater
-        description: When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
+        description: "Saves the new refresh token, access token and expiry date from each refresh back to the config. Use it when each refresh token works only once."
         properties:
           refresh_token_name:
             title: Refresh Token Property Name
@@ -1883,7 +1869,7 @@ definitions:
               - ["invalid_grant", "invalid_permissions"]
       profile_assertion:
         title: Profile Assertion
-        description: The authenticator being used to authenticate the client authenticator.
+        description: "A JWT authenticator that makes the signed JWT. When `use_profile_assertion` is true, the connector sends that JWT as the assertion to get an access token, with the `urn:ietf:params:oauth:grant-type:jwt-bearer` grant type."
         "$ref": "#/definitions/JwtAuthenticator"
       use_profile_assertion:
         title: Use Profile Assertion
@@ -1895,7 +1881,7 @@ definitions:
         additionalProperties: true
   DeclarativeStream:
     title: Declarative Stream
-    description: A stream whose behavior is described by a set of declarative low code components.
+    description: "A stream defined in YAML: where to get the data, how to read it and how to sync it."
     type: object
     additionalProperties: true
     required:
@@ -2021,11 +2007,7 @@ definitions:
         additional_properties: true
   HTTPAPIBudget:
     title: HTTP API Budget
-    description: >
-      Defines how many requests can be made to the API in a given time frame. `HTTPAPIBudget` extracts the remaining
-      call count and the reset time from HTTP response headers using the header names provided by
-      `ratelimit_remaining_header` and `ratelimit_reset_header`. Only requests using `HttpRequester`
-      are rate-limited; custom components that bypass `HttpRequester` are not covered by this budget.
+    description: "Limits how many requests the connector makes in a period of time. It reads how many calls are left and when the limit resets from the response headers you name. Only requests made through `HttpRequester` count."
     type: object
     required:
       - type
@@ -2063,7 +2045,7 @@ definitions:
     additionalProperties: true
   FixedWindowCallRatePolicy:
     title: Fixed Window Call Rate Policy
-    description: A policy that allows a fixed number of calls within a specific time window.
+    description: "Allows a set number of calls per fixed time period, like 100 calls each minute."
     type: object
     required:
       - type
@@ -2091,7 +2073,7 @@ definitions:
     additionalProperties: true
   MovingWindowCallRatePolicy:
     title: Moving Window Call Rate Policy
-    description: A policy that allows a fixed number of calls within a moving time window.
+    description: "Allows a set number of calls in any rolling time period, like 100 calls in any 60 seconds."
     type: object
     required:
       - type
@@ -2116,7 +2098,7 @@ definitions:
     additionalProperties: true
   UnlimitedCallRatePolicy:
     title: Unlimited Call Rate Policy
-    description: A policy that allows unlimited calls for specific requests.
+    description: "Puts no limit on calls for the requests it matches."
     type: object
     required:
       - type
@@ -2134,7 +2116,7 @@ definitions:
     additionalProperties: true
   Rate:
     title: Rate
-    description: Defines a rate limit with a specific number of calls allowed within a time interval.
+    description: "A number of calls allowed in a time period."
     type: object
     required:
       - limit
@@ -2158,10 +2140,7 @@ definitions:
     additionalProperties: true
   HttpRequestRegexMatcher:
     title: HTTP Request Matcher
-    description: >
-      Matches HTTP requests based on method, base URL, URL path pattern, query parameters, and headers.
-      Use `url_base` to specify the scheme and host (without trailing slash) and
-      `url_path_pattern` to apply a regex to the request path.
+    description: "Matches requests by method, base URL, path, query parameters and headers. Set `url_base` to the scheme and host, with no trailing slash. Set `url_path_pattern` to a regular expression for the path."
     type: object
     properties:
       method:
@@ -2198,7 +2177,7 @@ definitions:
     additionalProperties: true
   DefaultErrorHandler:
     title: Default Error Handler
-    description: Component defining how to handle errors. Default behavior includes only retrying server errors (HTTP 5XX) and too many requests (HTTP 429) with an exponential backoff.
+    description: "Decides what to do when a request fails. By default, it retries server errors (5XX) and rate limit errors (429), waiting longer between each try."
     type: object
     required:
       - type
@@ -2243,7 +2222,7 @@ definitions:
         additional_properties: true
   DefaultPaginator:
     title: Default Paginator
-    description: Default pagination implementation to request pages of results with a fixed size until the pagination strategy no longer returns a next_page_token.
+    description: "Requests one page at a time until there are no more pages. The pagination strategy decides what the next page is."
     type: object
     required:
       - type
@@ -2254,7 +2233,7 @@ definitions:
         enum: [DefaultPaginator]
       pagination_strategy:
         title: Pagination Strategy
-        description: Strategy defining how records are paginated.
+        description: "How to find the next page."
         anyOf:
           - "$ref": "#/definitions/PageIncrement"
           - "$ref": "#/definitions/OffsetIncrement"
@@ -2274,7 +2253,7 @@ definitions:
         additionalProperties: true
   CombineMode:
     title: Combine Mode
-    description: 'How the records of the sub-extractors of a CombinedExtractor are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record.'
+    description: "How a `CombinedExtractor` combines its extractors. `union` (default) returns the records from every extractor, in order. `first_match` returns the records from the first extractor that finds any and ignores the rest. If none find records, it returns nothing."
     type: string
     enum:
       - union
@@ -2284,7 +2263,7 @@ definitions:
       - first_match
   CombinedExtractor:
     title: Combined Extractor
-    description: Record extractor that combines the output of several sub-extractors. Use it when a single response holds records under more than one path, when the records can be found under one of several alternative paths, or when a record has to be assembled from several parallel lists.
+    description: "Combines several extractors into one. Use it when a response has records in more than one place, when records can be in one of several places, or when you build each record from several lists."
     type: object
     required:
       - type
@@ -2334,7 +2313,7 @@ definitions:
             field_path: ["data", "next_items_page", "items"]
   DpathExtractor:
     title: Dpath Extractor
-    description: Record extractor that searches a decoded response over a path defined as an array of fields.
+    description: "Finds records in the response by following a path of field names, like `[\"data\", \"items\"]`."
     type: object
     required:
       - type
@@ -2365,7 +2344,7 @@ definitions:
         additionalProperties: true
   ResponseToFileExtractor:
     title: CSV To File Extractor
-    description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
+    description: "Reads very large CSV responses without running out of memory. It saves the file to disk, reads records from it, then deletes it."
     type: object
     required:
       - type
@@ -2383,7 +2362,7 @@ definitions:
         additionalProperties: true
   RecordExpander:
     title: Record Expander
-    description: Expands records by extracting items from a nested array field. When configured, this component extracts items from a specified nested array path within each record and emits each item as a separate record. Optionally, the original parent record can be embedded in each expanded item for context preservation. Supports wildcards (*) for matching multiple arrays.
+    description: "Turns each item in a nested array into its own record. You can copy parent fields onto each item to keep context. Paths can use `*` to match several arrays."
     type: object
     required:
       - type
@@ -2450,7 +2429,7 @@ definitions:
         additionalProperties: true
   ParentFieldPath:
     title: Parent Field Path
-    description: One value to copy from the record being expanded onto each expanded item. Both paths are lists, so a value nested inside the parent can be copied into a nested position on the item; intermediate objects on `record_path` are created as needed. Glob characters (`*`, `?`, `[`) are not supported in either path, since each must identify a single field; this is enforced on the interpolated values.
+    description: "A field to copy from the parent record onto each expanded item. Both paths are lists. A value nested inside the parent can be copied into a nested position on the item. Intermediate objects on `record_path` are created as needed. Glob characters (`*`, `?`, `[`) are not supported in either path, since each must identify a single field. This is enforced on the interpolated values."
     type: object
     required:
       - type
@@ -2489,7 +2468,7 @@ definitions:
         additionalProperties: true
   ExponentialBackoffStrategy:
     title: Exponential Backoff
-    description: Backoff strategy with an exponential backoff interval. The interval is defined as factor * 2^attempt_count.
+    description: "Waits longer before each retry. The wait time is `factor * 2^attempt_count` seconds."
     type: object
     required:
       - type
@@ -2499,7 +2478,7 @@ definitions:
         enum: [ExponentialBackoffStrategy]
       factor:
         title: Factor
-        description: Multiplicative constant applied on each retry.
+        description: "The number of seconds to multiply by `2^attempt_count` to get each wait time."
         anyOf:
           - type: number
           - type: string
@@ -2522,7 +2501,7 @@ definitions:
         additionalProperties: true
   GroupByKeyMergeStrategy:
     title: Group by Key
-    description: Record merge strategy that combines records according to fields on the record.
+    description: "Merges records that share the same value in the key fields you choose."
     required:
       - type
       - key
@@ -2546,7 +2525,7 @@ definitions:
         additionalProperties: true
   SessionTokenAuthenticator:
     title: Session Token Authenticator
-    description: Authenticator for requests using the session token as an API key that's injected into the request.
+    description: "Gets a session token from a login request, then sends that token with each later request."
     type: object
     required:
       - type
@@ -2609,7 +2588,7 @@ definitions:
   SessionTokenRequestApiKeyAuthenticator:
     type: object
     title: API Key Authenticator
-    description: Authenticator for requests using the session token as an API key that's injected into the request.
+    description: "Sends the session token as an API key, in the place you choose."
     required:
       - type
       - inject_into
@@ -2639,7 +2618,7 @@ definitions:
           - "Bearer {{ session_token }}"
   SessionTokenRequestBearerAuthenticator:
     title: Bearer Authenticator
-    description: Authenticator for requests using the session token as a standard bearer token.
+    description: "Sends the session token in the `Authorization: Bearer <token>` header."
     required:
       - type
     properties:
@@ -2647,7 +2626,7 @@ definitions:
         enum: [Bearer]
   HttpRequester:
     title: HTTP Requester
-    description: Requester submitting HTTP requests and extracting records from the response.
+    description: "Builds and sends the HTTP requests for a stream: the URL, method, headers, parameters, body and authentication."
     type: object
     required:
       - type
@@ -2748,7 +2727,7 @@ definitions:
         "$ref": "#/definitions/PropertiesFromEndpoint"
       query_properties:
         title: Query Properties
-        description: For APIs that require explicit specification of the properties to query for, this component will take a static or dynamic set of properties (which can be optionally split into chunks) and allow them to be injected into an outbound request by accessing stream_partition.extra_fields.
+        description: "For APIs that make you list the fields you want. Sets the fields, which can come from a list or an endpoint and can be split into groups. Each request gets its fields in `stream_partition.extra_fields['query_properties']`."
         "$ref": "#/definitions/QueryProperties"
       request_parameters:
         title: Query Parameters
@@ -2775,7 +2754,7 @@ definitions:
           - sort_by[asc]: updated_at
       request_headers:
         title: Request Headers
-        description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
+        description: "Headers to send with each request, other than authentication headers. Don't set a header the authenticator also sets: the request fails with a duplicate-key error."
         linkable: true
         anyOf:
           - type: object
@@ -2885,7 +2864,7 @@ definitions:
         type: object
         additionalProperties: true
   HttpResponseFilter:
-    description: A filter that is used to select on properties of the HTTP response received. When used with additional filters, a response will be selected if it matches any of the filter's criteria.
+    description: "Matches responses by status code, error message or other response details, and says what to do with them, like retry, ignore or fail. If you set more than one condition, a response matches when it meets any of them."
     type: object
     required:
       - type
@@ -2973,7 +2952,7 @@ definitions:
         additionalProperties: true
   ComplexFieldType:
     title: Schema Field Type
-    description: (This component is experimental. Use at your own risk.) Represents a complex field type.
+    description: "(Experimental.) A field type that contains other types, like an array of strings."
     type: object
     required:
       - field_type
@@ -2986,7 +2965,7 @@ definitions:
           - "$ref": "#/definitions/ComplexFieldType"
   TypesMap:
     title: Types Map
-    description: (This component is experimental. Use at your own risk.) Represents a mapping between a current type and its corresponding target type.
+    description: "(Experimental.) Maps the API's field types to schema types."
     type: object
     required:
       - target_type
@@ -3011,7 +2990,7 @@ definitions:
           - raw_schema
   SchemaTypeIdentifier:
     title: Schema Type Identifier
-    description: (This component is experimental. Use at your own risk.) Identifies schema details for dynamic schema extraction and processing.
+    description: "(Experimental.) Says where field names and types are in the API's response, so the CDK can build a schema."
     type: object
     required:
       - key_pointer
@@ -3053,7 +3032,7 @@ definitions:
         additionalProperties: true
   DynamicSchemaLoader:
     title: Dynamic Schema Loader
-    description: (This component is experimental. Use at your own risk.) Loads a schema by extracting data from retrieved records.
+    description: "(Experimental.) Builds the schema from data the API returns, like a list of fields."
     type: object
     required:
       - type
@@ -3097,7 +3076,7 @@ definitions:
         additionalProperties: true
   InlineSchemaLoader:
     title: Inline Schema Loader
-    description: Loads a schema that is defined directly in the manifest file.
+    description: "Uses a schema written directly in the YAML file."
     type: object
     required:
       - type
@@ -3114,7 +3093,7 @@ definitions:
     deprecated: true
     deprecation_message: "Use `InlineSchemaLoader` instead."
     title: Json File Schema Loader
-    description: Loads the schema from a json file.
+    description: "Loads the schema from a JSON file."
     type: object
     required:
       - type
@@ -3135,7 +3114,7 @@ definitions:
         additionalProperties: true
   JsonDecoder:
     title: JSON
-    description: Select 'JSON' if the response is formatted as a JSON object.
+    description: "Use this when the response is JSON."
     type: object
     required:
       - type
@@ -3145,13 +3124,7 @@ definitions:
         enum: [JsonDecoder]
   JsonItemsDecoder:
     title: JSON Items (Streaming)
-    description: >-
-      Select 'JSON Items (Streaming)' to stream-decode a single JSON document
-      by yielding each element of a nested array, one at a time. Use this for
-      very large single-document JSON responses (e.g. a wrapping object
-      containing a multi-GB array) where buffering the whole document into
-      memory would cause out-of-memory errors. Powered by the `ijson`
-      streaming parser.
+    description: "Reads one item at a time from a large array inside a JSON response, without loading the whole response into memory. Use it for very large responses, like an object that wraps a multi-GB array, that would otherwise run out of memory. Uses the `ijson` library."
     type: object
     required:
       - type
@@ -3179,7 +3152,7 @@ definitions:
         default: utf-8
   JsonlDecoder:
     title: JSON Lines
-    description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
+    description: "Use this when the response is JSON Lines: one JSON object per line."
     type: object
     required:
       - type
@@ -3189,7 +3162,7 @@ definitions:
         enum: [JsonlDecoder]
   JsonSchemaPropertySelector:
     title: Json Schema Property Selector
-    description: When configured, the JSON schema supplied in the catalog containing which columns are selected for the current stream will be used to reduce which query properties will be included in the outbound API request. This can improve the performance of API requests, especially for those requiring multiple requests to get a complete record.
+    description: "Asks the API only for the fields the user selected for this stream. This can make requests faster, especially when a record needs several requests."
     type: object
     required:
       - type
@@ -3217,7 +3190,7 @@ definitions:
         additionalProperties: true
   KeysToLower:
     title: Keys to Lower Case
-    description: A transformation that renames all keys to lower case.
+    description: "Changes every field name to lowercase."
     type: object
     required:
       - type
@@ -3230,7 +3203,7 @@ definitions:
         additionalProperties: true
   KeysToSnakeCase:
     title: Key to Snake Case
-    description: A transformation that renames all keys to snake case.
+    description: "Changes every field name to snake_case."
     type: object
     required:
       - type
@@ -3243,7 +3216,7 @@ definitions:
         additionalProperties: true
   FlattenFields:
     title: Flatten Fields
-    description: A transformation that flatten record to single level format.
+    description: "Flattens nested fields so the record has only one level."
     type: object
     required:
       - type
@@ -3282,7 +3255,7 @@ definitions:
           - _flattened
   DpathFlattenFields:
     title: Dpath Flatten Fields
-    description: A transformation that flatten field values to the to top of the record.
+    description: "Moves the fields of a nested object up to the top level of the record."
     type: object
     required:
       - type
@@ -3318,7 +3291,7 @@ definitions:
         additionalProperties: true
   KeysReplace:
     title: Keys Replace
-    description: A transformation that replaces symbols in keys.
+    description: "Replaces text in field names, like swapping `-` for `_`."
     type: object
     required:
       - type
@@ -3359,7 +3332,7 @@ definitions:
         additionalProperties: true
   IterableDecoder:
     title: Iterable
-    description: Select 'Iterable' if the response consists of strings separated by new lines (`\n`). The string will then be wrapped into a JSON object with the `record` key.
+    description: "Use this when the response is plain text with one value per line. Each line becomes a record like `{\"record\": \"<line>\"}`."
     type: object
     required:
       - type
@@ -3369,7 +3342,7 @@ definitions:
         enum: [IterableDecoder]
   XmlDecoder:
     title: XML
-    description: Select 'XML' if the response consists of XML-formatted data.
+    description: "Use this when the response is XML."
     type: object
     required:
       - type
@@ -3379,7 +3352,7 @@ definitions:
         enum: [XmlDecoder]
   CustomDecoder:
     title: Custom Decoder
-    description: Use this to implement custom decoder logic.
+    description: "Reads responses with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -3401,7 +3374,7 @@ definitions:
         additionalProperties: true
   ZipfileDecoder:
     title: ZIP File
-    description: Select 'ZIP file' for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
+    description: "Use this when the response is a ZIP file. Set an inner decoder to read the files inside."
     type: object
     additionalProperties: true
     required:
@@ -3422,7 +3395,7 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
-    description: A Partition router that specifies a list of attributes where each attribute describes a portion of the complete data set for a stream. During a sync, each value is iterated over and can be used as input to outbound API requests.
+    description: "Runs the stream once for each value in a list you provide, like a list of regions. You can use the current value in the request."
     type: object
     required:
       - type
@@ -3463,7 +3436,7 @@ definitions:
         additionalProperties: true
   MinMaxDatetime:
     title: Min-Max Datetime
-    description: Compares the provided date against optional minimum or maximum times. The max_datetime serves as the ceiling and will be returned when datetime exceeds it. The min_datetime serves as the floor.
+    description: "A date with optional limits. If the date is later than `max_datetime`, it uses `max_datetime`. If it's earlier than `min_datetime`, it uses `min_datetime`."
     type: object
     required:
       - type
@@ -3558,7 +3531,7 @@ definitions:
         additionalProperties: true
   NoAuth:
     title: No Authentication
-    description: Authenticator for requests requiring no authentication.
+    description: "Use this when the API doesn't need authentication."
     type: object
     required:
       - type
@@ -3571,7 +3544,7 @@ definitions:
         additionalProperties: true
   NoPagination:
     title: No Pagination
-    description: Pagination implementation that never returns a next page.
+    description: "Use this when the API returns everything in one response."
     type: object
     required:
       - type
@@ -3581,18 +3554,17 @@ definitions:
         enum: [NoPagination]
   OAuthConfigSpecification:
     title: OAuth Config Specification
-    description: Specification describing how an 'advanced' Auth flow would need to function.
+    description: "Describes the inputs and outputs of an advanced OAuth sign-in flow."
     type: object
     additionalProperties: true
     properties:
       oauth_user_input_from_connector_config_specification:
         title: "OAuth user input"
         description: |-
-          OAuth specific blob. This is a Json Schema used to validate Json configurations used as input to OAuth.
-          Must be a valid non-nested JSON that refers to properties from ConnectorSpecification.connectionSpecification
-          using special annotation 'path_in_connector_config'.
-          These are input values the user is entering through the UI to authenticate to the connector, that might also shared
-          as inputs for syncing data via the connector.
+          Fields users enter to sign in with OAuth, and where to find them in the connector config.
+          Use valid JSON with no nested objects. Refer to properties from `ConnectorSpecification.connectionSpecification`
+          with the special annotation `path_in_connector_config`.
+          Users enter these values in the UI to sign in. The connector may also use them to sync data.
           Examples:
           if no connector values is shared during oauth flow, oauth_user_input_from_connector_config_specification=[]
           if connector values such as 'app_id' inside the top level are used to generate the API url for the oauth flow,
@@ -3620,9 +3592,7 @@ definitions:
       oauth_connector_input_specification:
         title: DeclarativeOAuth Connector Specification
         description: |-
-          The DeclarativeOAuth specific blob.
-          Pertains to the fields defined by the connector relating to the OAuth flow.
-
+          Connector settings for the OAuth flow.
           Interpolation capabilities:
           - The variables placeholders are declared as `{{my_var}}`.
           - The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.
@@ -3832,10 +3802,9 @@ definitions:
       complete_oauth_output_specification:
         title: "OAuth output specification"
         description: |-
-          OAuth specific blob. This is a Json Schema used to validate Json configurations produced by the OAuth flows as they are
-          returned by the distant OAuth APIs.
-          Must be a valid JSON describing the fields to merge back to `ConnectorSpecification.connectionSpecification`.
-          For each field, a special annotation `path_in_connector_config` can be specified to determine where to merge it,
+          Fields the OAuth provider returns, like the access token, and where to put them in the connector config.
+          Use valid JSON that describes the fields to merge back into `ConnectorSpecification.connectionSpecification`.
+          For each field, set `path_in_connector_config` to choose where to put it.
           Examples:
               complete_oauth_output_specification={
                 refresh_token: {
@@ -3852,9 +3821,9 @@ definitions:
       complete_oauth_server_input_specification:
         title: "OAuth input specification"
         description: |-
-          OAuth specific blob. This is a Json Schema used to validate Json configurations persisted as Airbyte Server configurations.
-          Must be a valid non-nested JSON describing additional fields configured by the Airbyte Instance or Workspace Admins to be used by the
-          server when completing an OAuth flow (typically exchanging an auth code for refresh token).
+          Extra OAuth settings that an instance or workspace admin provides on the Airbyte server.
+          Use valid JSON with no nested objects to describe these extra fields. The server uses them to complete the OAuth flow,
+          usually to exchange an auth code for a refresh token.
           Examples:
               complete_oauth_server_input_specification={
                 client_id: {
@@ -3905,7 +3874,7 @@ definitions:
               path_in_connector_config: ["credentials", "client_secret"]
   OffsetIncrement:
     title: Offset Increment
-    description: Pagination strategy that returns the number of records reads so far and returns it as the next page token.
+    description: "Moves to the next page by skipping the records already read (offset pagination)."
     type: object
     required:
       - type
@@ -3937,7 +3906,7 @@ definitions:
         additionalProperties: true
   PageIncrement:
     title: Page Increment
-    description: Pagination strategy that returns the number of pages reads so far and returns it as the next page token.
+    description: "Moves to the next page by page number: 1, 2, 3 and so on."
     type: object
     required:
       - type
@@ -3977,7 +3946,7 @@ definitions:
         additionalProperties: true
   ParentStreamConfig:
     title: Parent Stream Config
-    description: Describes how to construct partitions from the records retrieved from the parent stream..
+    description: "Says which parent stream to read and which of its fields to use for each child request."
     type: object
     required:
       - type
@@ -4045,7 +4014,7 @@ definitions:
         additionalProperties: true
   PrimaryKey:
     title: Primary Key
-    description: The stream field to be used to distinguish unique records. Can either be a single field, an array of fields representing a composite key, or an array of arrays representing a composite key where the fields are nested fields.
+    description: "The field, or fields, that make each record unique. Use one field, a list of fields, or a list of paths for nested fields."
     anyOf:
       - type: string
         title: Single Key
@@ -4070,7 +4039,7 @@ definitions:
       - ["code", "type"]
   PropertiesFromEndpoint:
     title: Properties from Endpoint
-    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records. Note that stream_slices can't be interpolated from this retriever.
+    description: "Gets the list of fields to request from an API endpoint. You can't use `stream_slice` in this retriever."
     type: object
     required:
       - type
@@ -4100,7 +4069,7 @@ definitions:
         additionalProperties: true
   PropertyChunking:
     title: Property Chunking
-    description: For APIs with restrictions on the amount of properties that can be requester per request, property chunking can be applied to make multiple requests with a subset of the properties.
+    description: "Splits a long list of fields into smaller groups and makes one request per group. Use it when the API limits how many fields you can request at once."
     type: object
     required:
       - type
@@ -4128,7 +4097,7 @@ definitions:
         additionalProperties: true
   QueryProperties:
     title: Query Properties
-    description: For APIs that require explicit specification of the properties to query for, this component specifies which property fields and how they are supplied to outbound requests.
+    description: "For APIs that make you list the fields you want. Sets which fields to request and how to send them."
     type: object
     required:
       - type
@@ -4164,7 +4133,7 @@ definitions:
         additionalProperties: true
   RecordFilter:
     title: Record Filter
-    description: Filter applied on a list of records.
+    description: "Keeps only the records that match a condition."
     type: object
     required:
       - type
@@ -4192,7 +4161,7 @@ definitions:
         additionalProperties: true
   RecordSelector:
     title: Record Selector
-    description: Responsible for translating an HTTP response into a list of records by extracting records from the response and optionally filtering records based on a heuristic.
+    description: "Turns a response into records. It pulls records out with an extractor, and can then filter, transform and normalize them."
     type: object
     required:
       - type
@@ -4214,7 +4183,7 @@ definitions:
           - "$ref": "#/definitions/CustomRecordFilter"
       schema_normalization:
         title: Schema Normalization
-        description: Responsible for normalization according to the schema.
+        description: "How to change record values to match the schema's types."
         anyOf:
           - "$ref": "#/definitions/SchemaNormalization"
           - "$ref": "#/definitions/CustomSchemaNormalization"
@@ -4227,7 +4196,7 @@ definitions:
         additionalProperties: true
   SchemaNormalization:
     title: Schema Normalization
-    description: Responsible for normalization according to the schema.
+    description: "Changes record values to match the types in the stream's schema."
     type: string
     enum:
       - Default
@@ -4237,7 +4206,7 @@ definitions:
       - None
   RemoveFields:
     title: Remove Fields
-    description: A transformation which removes fields from a record. The fields removed are designated using FieldPointers. During transformation, if a field or any of its parents does not exist in the record, no error is thrown.
+    description: "Removes fields from each record. If a field isn't there, it's skipped without an error."
     type: object
     required:
       - type
@@ -4247,7 +4216,7 @@ definitions:
         type: string
         enum: [RemoveFields]
       condition:
-        description: The predicate to filter a property by a property value. Property will be removed if it is empty OR expression is evaluated to True.,
+        description: "Optional. A condition that limits which fields are removed. If it's not set, every field in `field_pointers` is removed. If it's set, only the fields where the condition is true are removed."
         type: string
         default: ""
         interpolation_context:
@@ -4272,7 +4241,7 @@ definitions:
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
     title: Request Path
-    description: The URL path to be used for the HTTP request.
+    description: "The URL path for the request."
     type: object
     required:
       - type
@@ -4282,7 +4251,7 @@ definitions:
         enum: [RequestPath]
   RequestOption:
     title: Request Option
-    description: Specifies the key field or path and where in the request a component's value should be injected.
+    description: "Says where to put a value in the request (header, query parameter or body) and under which key."
     type: object
     required:
       - type
@@ -4326,13 +4295,13 @@ definitions:
           - parameters
   Schemas:
     title: Schemas
-    description: The stream schemas representing the shape of the data emitted by the stream.
+    description: "The schemas that describe the data each stream returns."
     type: object
     additionalProperties: true
   LegacySessionTokenAuthenticator:
     title: Session Token Authenticator
     deprecated: true
-    description: Deprecated - use SessionTokenAuthenticator instead. Authenticator for requests authenticated using session tokens. A session token is a random value generated by a server to identify a specific user for the duration of one interaction session.
+    description: "Deprecated. Use `SessionTokenAuthenticator` instead. Authenticates with a session token, which is a temporary value the server creates to identify you during one session."
     type: object
     required:
       - type
@@ -4393,7 +4362,7 @@ definitions:
         additionalProperties: true
   StateDelegatingStream:
     title: State Delegating Stream
-    description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
+    description: "(Experimental.) Uses one stream definition for the first full sync and a different one for later incremental syncs, depending on whether state exists."
     type: object
     required:
       - type
@@ -4440,7 +4409,7 @@ definitions:
         additionalProperties: true
   SimpleRetriever:
     title: Synchronous Retriever
-    description: Retrieves records by synchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router.
+    description: "Gets records by sending requests and reading the responses. It uses the requester, record selector, paginator and partition router together."
     type: object
     required:
       - type
@@ -4472,7 +4441,7 @@ definitions:
         description: Component that describes how to extract records from a HTTP response.
         "$ref": "#/definitions/RecordSelector"
       paginator:
-        description: Paginator component that describes how to navigate through the API's pages.
+        description: "How to move through the API's pages."
         linkable: true
         anyOf:
           - "$ref": "#/definitions/DefaultPaginator"
@@ -4502,7 +4471,7 @@ definitions:
         default: false
       partition_router:
         title: Partition Router
-        description: Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.
+        description: "Runs the stream once for each value in a set, like each parent record or each item in a list."
         anyOf:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
@@ -4523,7 +4492,7 @@ definitions:
         additionalProperties: true
   PaginationReset:
     title: Pagination Reset
-    description: Describes what triggers pagination reset and how to handle it. If SPLIT_USING_CURSOR, the connector developer is accountable for ensuring that the records are returned in ascending order.
+    description: "Says when to restart pagination and how. If you use `SPLIT_USING_CURSOR`, make sure the API returns records in ascending order."
     type: object
     required:
       - type
@@ -4541,7 +4510,7 @@ definitions:
         "$ref": "#/definitions/PaginationResetLimits"
   PaginationResetLimits:
     title: Pagination Reset Limits
-    description: Describes the limits that trigger pagination reset
+    description: "The limits that make pagination restart."
     type: object
     required:
       - type
@@ -4553,21 +4522,15 @@ definitions:
         type: integer
   PageSizeReduction:
     title: Page Size Reduction
-    description: >-
-      Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. On such
-      a response, the connector re-issues the same page with a smaller page size instead of retrying the identical
-      request. Only supported on a DefaultPaginator that has a page_size_option and whose pagination_strategy
-      defines a page_size and is CursorPagination, OffsetIncrement, or a CustomPaginationStrategy whose
-      next_page_token accepts a page_size_override keyword argument. PageIncrement is not supported because a
-      smaller page size moves every following page boundary and would skip records. It is also rejected when the
-      stream uses query properties, a file uploader, or reads its parent stream lazily through lazy_read_pointer,
-      since re-issuing a page whose records were already emitted would duplicate them. A page_token_option of
-      type RequestPath is rejected too: the next page is then a URL built by the API which already carries the
-      page size, so the reduced page size would be sent next to the original one. Each reduction waits a
-      short, growing amount of time before re-issuing the page so that an endpoint failing at every page size
-      is not hit in a burst. That wait is the CDK's own: the error handler's backoff_strategies and any
-      Retry-After header are not consulted on this path, the same way they are not for RESET_PAGINATION, and
-      backoff_seconds is what sets its length.
+    description: |-
+      Asks for the same page again with a smaller page size when an error handler returns `REDUCE_PAGE_SIZE`. Use it for APIs that fail or time out on large pages.
+
+      Support rules:
+      - Requires a `DefaultPaginator` with a `page_size_option` and a strategy that defines a `page_size`.
+      - Works with `CursorPagination`, `OffsetIncrement`, or a `CustomPaginationStrategy` whose `next_page_token` accepts `page_size_override`.
+      - Does not work with `PageIncrement`: smaller pages move later page boundaries and would skip records.
+      - Does not work with query properties, file uploads, or `lazy_read_pointer`: re-reading a page could duplicate records already sent.
+      - Does not work with a `RequestPath` page token: the API's URL already includes the page size, so the request would send both sizes.
     type: object
     required:
       - type
@@ -4678,13 +4641,7 @@ definitions:
         default: NEVER
   RequestWindowSplitting:
     title: Request Window Splitting
-    description: >-
-      Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW
-      action. The connector replaces the failing window with two smaller, ordered windows covering the same
-      range and reads each one fully before checkpointing. If the failing window had already emitted records,
-      those may be re-emitted; downstream primary-key deduplication is expected to handle that. Only supported
-      on a stream whose incremental_sync cursor defines cursor_granularity. Distinct from page_size_reduction,
-      which shrinks a paginator's page size rather than the cursor's window.
+    description: "Splits a date range in half when an error handler returns `SPLIT_REQUEST_WINDOW`, then reads each half in order. Use it when an API fails on large date ranges. Some records may be sent twice; primary-key deduplication removes them. Requires `cursor_granularity` on the stream's cursor."
     type: object
     required:
       - type
@@ -4714,7 +4671,7 @@ definitions:
           - "PT1H"
   GzipDecoder:
     title: gzip
-    description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
+    description: "Use this when the response is gzip-compressed. Set an inner decoder to read the data after it's unzipped."
     type: object
     required:
       - type
@@ -4732,7 +4689,7 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
     title: CSV
-    description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
+    description: "Use this when the response is CSV. You can set the encoding (default `utf-8`) and the delimiter (default `,`)."
     type: object
     required:
       - type
@@ -4751,7 +4708,7 @@ definitions:
         items:
           type: string
   AsyncJobStatusMap:
-    description: Matches the api job status to Async Job Status.
+    description: "Maps the API's job status values to the statuses the CDK understands: running, completed, failed and timed out."
     type: object
     required:
       - running
@@ -4785,7 +4742,7 @@ definitions:
           type: string
   AsyncRetriever:
     title: Asynchronous Retriever
-    description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
+    description: "Gets records from APIs that create a job and return the results later. It starts the job, checks until it's done, then downloads the results."
     type: object
     required:
       - type
@@ -4813,7 +4770,7 @@ definitions:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/CombinedExtractor"
       download_target_extractor:
-        description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
+        description: "Gets the download URLs from a finished job."
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
@@ -4851,12 +4808,12 @@ definitions:
         interpolation_context:
           - config
       download_target_requester:
-        description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
+        description: "How to request the download URL once the job is done."
         anyOf:
           - "$ref": "#/definitions/HttpRequester"
           - "$ref": "#/definitions/CustomRequester"
       download_requester:
-        description: Requester component that describes how to prepare HTTP requests to send to the source API to download the data provided by the completed async job.
+        description: "How to request the job's results once the job is done."
         anyOf:
           - "$ref": "#/definitions/HttpRequester"
           - "$ref": "#/definitions/CustomRequester"
@@ -4866,7 +4823,7 @@ definitions:
           - "$ref": "#/definitions/DefaultPaginator"
           - "$ref": "#/definitions/NoPagination"
       abort_requester:
-        description: Requester component that describes how to prepare HTTP requests to send to the source API to abort a job once it is timed out from the source's perspective.
+        description: "How to cancel a job on the API. The connector cancels jobs that time out, and jobs that are still running when it stops a partition or the sync."
         anyOf:
           - "$ref": "#/definitions/HttpRequester"
           - "$ref": "#/definitions/CustomRequester"
@@ -4877,7 +4834,7 @@ definitions:
           - "$ref": "#/definitions/CustomRequester"
       partition_router:
         title: Partition Router
-        description: PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.
+        description: "Runs the stream once for each value in a set, like each parent record or each item in a list."
         default: []
         anyOf:
           - "$ref": "#/definitions/ListPartitionRouter"
@@ -4924,7 +4881,7 @@ definitions:
         additionalProperties: true
   Spec:
     title: Spec
-    description: A source specification made up of connector metadata and how it can be configured.
+    description: "Describes the connector and the settings users fill in to set it up."
     type: object
     required:
       - type
@@ -4935,7 +4892,7 @@ definitions:
         enum: [Spec]
       connection_specification:
         title: Connection Specification
-        description: A connection specification describing how a the connector can be configured.
+        description: "A JSON schema of the settings users fill in to set up the connector."
         type: object
         additionalProperties: true
       documentation_url:
@@ -4946,7 +4903,7 @@ definitions:
           - "https://docs.airbyte.com/integrations/sources/dremio"
       advanced_auth:
         title: Advanced Auth
-        description: Advanced specification for configuring the authentication flow.
+        description: "Settings for an advanced sign-in flow, like OAuth."
         "$ref": "#/definitions/AuthFlow"
       config_normalization_rules:
         title: Config Normalization Rules
@@ -4987,7 +4944,7 @@ definitions:
             default: []
   ConfigMigration:
     title: Config Migration
-    description: A config migration that will be applied on the incoming config at the start of a sync.
+    description: "Updates the user's config at the start of a sync, for example to rename or move a setting."
     type: object
     required:
       - type
@@ -5012,9 +4969,7 @@ definitions:
         default: []
   StreamGroup:
     title: Stream Group
-    description: >
-      A group of streams that share a common resource and should not be read simultaneously.
-      Streams in the same group will be blocked from concurrent reads based on the specified action.
+    description: "Streams that share something, like an API session, and shouldn't be read at the same time."
     type: object
     required:
       - streams
@@ -5034,12 +4989,7 @@ definitions:
         "$ref": "#/definitions/BlockSimultaneousSyncsAction"
   BlockSimultaneousSyncsAction:
     title: Block Simultaneous Syncs Action
-    description: >
-      Action that prevents streams in the same group from being read concurrently.
-      When applied to a stream group, streams with this action will be deferred if
-      another stream in the same group is currently active.
-      This is useful for APIs that don't allow concurrent access to the same
-      endpoint or session. Only applies to ConcurrentDeclarativeSource.
+    description: "Stops streams in the same group from being read at the same time. A stream waits while another stream in its group is running. Use it for APIs that don't allow parallel access. Only works with `ConcurrentDeclarativeSource`."
     type: object
     required:
       - type
@@ -5049,7 +4999,7 @@ definitions:
         enum: [BlockSimultaneousSyncsAction]
   SubstreamPartitionRouter:
     title: Substream Partition Router
-    description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.
+    description: "Runs the stream once for each record of a parent stream. For example, a parent stream lists car brands, and the child stream gets the models for each brand."
     type: object
     required:
       - type
@@ -5069,7 +5019,7 @@ definitions:
         additionalProperties: true
   ValueType:
     title: Value Type
-    description: A schema type.
+    description: "A data type, like string, number or boolean."
     type: string
     enum:
       - string
@@ -5078,7 +5028,7 @@ definitions:
       - boolean
   WaitTimeFromHeader:
     title: Wait Time Extracted From Response Header
-    description: Extract wait time from a HTTP header in the response.
+    description: "Waits for the number of seconds given in a response header, like `Retry-After`."
     type: object
     required:
       - type
@@ -5117,11 +5067,7 @@ definitions:
         additionalProperties: true
   GroupingPartitionRouter:
     title: Grouping Partition Router
-    description: >
-      A decorator on top of a partition router that groups partitions into batches of a specified size.
-      This is useful for APIs that support filtering by multiple partition keys in a single request.
-      Note that per-partition incremental syncs may not work as expected because the grouping
-      of partitions might change between syncs, potentially leading to inconsistent state tracking.
+    description: "Groups partitions into batches, so one request can cover several. Use it when the API lets you filter by several IDs at once. Per-partition incremental sync may not work well, because batches can change between syncs."
     type: object
     required:
       - type
@@ -5156,16 +5102,7 @@ definitions:
         additionalProperties: true
   UnionPartitionRouter:
     title: Union Partition Router
-    description: >
-      A partition router that yields the deduplicated union of the partitions produced by its child
-      partition routers. Every emitted partition is normalized to a single key defined by `partition_field`;
-      any other partition keys coming from a child router (such as a SubstreamPartitionRouter's `parent_slice`)
-      are moved into the slice's extra fields. The first occurrence of a partition value wins and later
-      duplicates are skipped. Partition values must be hashable; deduplication holds every distinct value
-      in memory for the duration of the sync, and the resulting partition count is the deduplicated sum
-      of the child routers' partition counts, which affects per-partition state size. Because child routers
-      must emit scalar partition values, GroupingPartitionRouter (which emits list-valued partitions)
-      cannot be used as a child.
+    description: "Combines the partitions from several partition routers and removes duplicates. Each partition uses the single key set by `partition_field`. Other keys from a child router, such as a SubstreamPartitionRouter's `parent_slice`, move into the slice's extra fields. The first occurrence of a partition value wins. Later duplicates are skipped. Partition values must be hashable. All distinct values stay in memory for the sync. The partition count is the deduplicated sum of the child routers' partition counts, which affects per-partition state size. Child routers must emit scalar values. You cannot use GroupingPartitionRouter as a child because it emits lists."
     type: object
     required:
       - type
@@ -5201,7 +5138,7 @@ definitions:
         additionalProperties: true
   WaitTimeFromResponse:
     title: Wait Time Extracted From Response
-    description: Compute the wait time, in relative seconds, from the JSON response body or the response headers. A non-JSON body is exposed as an empty `response`. If the expression evaluates to an empty, zero, negative or non-numeric result, or cannot be evaluated on the response, the next backoff strategy is used.
+    description: "Works out how many seconds to wait from the response body or headers. If the result is empty, zero, negative, not a number or can't be worked out, it uses the next backoff strategy."
     type: object
     required:
       - type
@@ -5237,7 +5174,7 @@ definitions:
         additionalProperties: true
   WaitUntilTimeFromHeader:
     title: Wait Until Time Defined In Response Header
-    description: Extract time at which we can retry the request from response header and wait for the difference between now and that time.
+    description: "Waits until the time given in a response header before retrying."
     type: object
     required:
       - type
@@ -5357,7 +5294,7 @@ definitions:
   HttpComponentsResolver:
     type: object
     title: Http Components Resolver
-    description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched via an HTTP retriever.
+    description: "(Experimental.) Fills in stream templates with values from an API request."
     properties:
       type:
         type: string
@@ -5382,7 +5319,7 @@ definitions:
       - components_mapping
   StreamConfig:
     title: Stream Config
-    description: (This component is experimental. Use at your own risk.) Describes how to get streams config from the source config.
+    description: "(Experimental.) Where to find stream settings in the user's config."
     type: object
     required:
       - type
@@ -5415,7 +5352,7 @@ definitions:
   ConfigComponentsResolver:
     type: object
     title: Config Components Resolver
-    description: (This component is experimental. Use at your own risk.) Resolves and populates stream templates with components fetched from the source config.
+    description: "(Experimental.) Fills in stream templates with values from the user's config."
     properties:
       type:
         type: string
@@ -5439,7 +5376,7 @@ definitions:
       - components_mapping
   StreamParametersDefinition:
     title: Stream Parameters Definition
-    description: (This component is experimental. Use at your own risk.) Represents a stream parameters definition to set up dynamic streams from defined values in manifest.
+    description: "(Experimental.) The list of values to create dynamic streams from."
     type: object
     required:
       - type
@@ -5465,7 +5402,7 @@ definitions:
   ParametrizedComponentsResolver:
     type: object
     title: Parametrized Components Resolver
-    description: (This component is experimental. Use at your own risk.) Resolves and populates dynamic streams from defined parametrized values in manifest.
+    description: "(Experimental.) Fills in stream templates with values you list in the YAML file."
     properties:
       type:
         type: string
@@ -5485,7 +5422,7 @@ definitions:
       - components_mapping
   DynamicDeclarativeStream:
     type: object
-    description: (This component is experimental. Use at your own risk.) A component that described how will be created declarative streams based on stream template.
+    description: "(Experimental.) Creates streams from a template, using values from the API, the config or a list."
     properties:
       type:
         type: string
@@ -5505,7 +5442,7 @@ definitions:
           - "$ref": "#/definitions/StateDelegatingStream"
       components_resolver:
         title: Components Resolver
-        description: Component resolve and populates stream templates with components values.
+        description: "Where to get the values that fill in the stream template."
         anyOf:
           - "$ref": "#/definitions/HttpComponentsResolver"
           - "$ref": "#/definitions/ConfigComponentsResolver"
@@ -5521,7 +5458,7 @@ definitions:
       - components_resolver
   RequestBodyPlainText:
     title: Plain-text Body
-    description: Request body value is sent as plain text
+    description: "Sends the request body as plain text."
     type: object
     required:
       - type
@@ -5534,7 +5471,7 @@ definitions:
         type: string
   RequestBodyUrlEncodedForm:
     title: URL-encoded Body
-    description: Request body value is converted into a url-encoded form
+    description: "Sends the request body as a URL-encoded form."
     type: object
     required:
       - type
@@ -5549,7 +5486,7 @@ definitions:
           type: string
   RequestBodyJsonObject:
     title: Json Object Body
-    description: Request body value converted into a JSON object
+    description: "Sends the request body as a JSON object."
     type: object
     required:
       - type
@@ -5563,7 +5500,7 @@ definitions:
         additionalProperties: true
   RequestBodyGraphQL:
     title: GraphQL Body
-    description: Request body value converted into a GraphQL query object
+    description: "Sends the request body as a GraphQL query."
     type: object
     required:
       - type
@@ -5576,7 +5513,7 @@ definitions:
         "$ref": "#/definitions/RequestBodyGraphQlQuery"
   RequestBodyGraphQlQuery:
     title: GraphQL Query Body
-    description: Request body GraphQL query object
+    description: "The GraphQL query to send in the request body."
     type: object
     required:
       - query
@@ -5588,7 +5525,7 @@ definitions:
     additionalProperties: true
   DpathValidator:
     title: Dpath Validator
-    description: Validator that extracts the value located at a given field path.
+    description: "Checks the config value at a given path."
     type: object
     required:
       - type
@@ -5619,7 +5556,7 @@ definitions:
           - "$ref": "#/definitions/CustomValidationStrategy"
   PredicateValidator:
     title: Predicate Validator
-    description: Validator that applies a validation strategy to a specified value.
+    description: "Checks a value with a validation strategy."
     type: object
     required:
       - type
@@ -5654,7 +5591,7 @@ definitions:
           - "$ref": "#/definitions/CustomValidationStrategy"
   ValidateAdheresToSchema:
     title: Validate Adheres To Schema
-    description: Validates that a user-provided schema adheres to a specified JSON schema.
+    description: "Checks that a value matches a JSON schema."
     type: object
     required:
       - type
@@ -5707,7 +5644,7 @@ definitions:
               - age
   CustomValidationStrategy:
     title: Custom Validation Strategy
-    description: Custom validation strategy that allows for custom validation logic.
+    description: "Checks values with your own Python class."
     type: object
     additionalProperties: true
     required:
@@ -5726,7 +5663,7 @@ definitions:
           - "source_declarative_manifest.components.MyCustomValidationStrategy"
   ConfigRemapField:
     title: Remap Field
-    description: Transformation that remaps a field's value to another value based on a static map.
+    description: "Replaces a config value with another value from a map you define."
     type: object
     required:
       - type
@@ -5765,7 +5702,7 @@ definitions:
           - ["data", "*", "status"]
   ConfigAddFields:
     title: Config Add Fields
-    description: Transformation that adds fields to a config. The path of the added field can be nested.
+    description: "Adds fields to the config. Fields can be nested."
     type: object
     required:
       - type
@@ -5794,7 +5731,7 @@ definitions:
           - "{{ property == 'some_string_to_match' }}"
   ConfigRemoveFields:
     title: Config Remove Fields
-    description: Transformation that removes a field from the config.
+    description: "Removes fields from the config."
     type: object
     required:
       - type
@@ -5828,7 +5765,7 @@ definitions:
           - "{{ property == 'some_string_to_match' }}"
   CustomConfigTransformation:
     title: Custom Config Transformation
-    description: A custom config transformation that can be used to transform the connector configuration.
+    description: "Changes the config with your own Python class."
     type: object
     required:
       - type
