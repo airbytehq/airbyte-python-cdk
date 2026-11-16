@@ -32,7 +32,7 @@ from ..api_models import (
 from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
 from ..helpers.auth import verify_jwt_token
-from ..helpers.tracing import apply_trace_tags_from_context
+from ..helpers.tracing import with_request_context
 
 
 def safe_build_source(
@@ -73,17 +73,11 @@ router = APIRouter(
         400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
     },
 )
+@with_request_context
 def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     """
     Test reading from a specific stream in the manifest.
     """
-    # Apply trace tags from context if provided
-    if request.context:
-        apply_trace_tags_from_context(
-            workspace_id=request.context.workspace_id,
-            project_id=request.context.project_id,
-        )
-
     config_dict = request.config.model_dump()
 
     catalog = build_catalog(request.stream_name)
@@ -140,15 +134,9 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
         400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
     },
 )
+@with_request_context
 def check(request: CheckRequest) -> CheckResponse:
     """Check configuration against a manifest"""
-    # Apply trace tags from context if provided
-    if request.context:
-        apply_trace_tags_from_context(
-            workspace_id=request.context.workspace_id,
-            project_id=request.context.project_id,
-        )
-
     try:
         source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
         runner = ManifestCommandProcessor(source)
@@ -167,15 +155,9 @@ def check(request: CheckRequest) -> CheckResponse:
         400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
     },
 )
+@with_request_context
 def discover(request: DiscoverRequest) -> DiscoverResponse:
     """Discover streams from a manifest"""
-    # Apply trace tags from context if provided
-    if request.context:
-        apply_trace_tags_from_context(
-            workspace_id=request.context.workspace_id,
-            project_id=request.context.project_id,
-        )
-
     try:
         source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
         runner = ManifestCommandProcessor(source)
@@ -201,15 +183,9 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
         400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
     },
 )
+@with_request_context
 def resolve(request: ResolveRequest) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
-    # Apply trace tags from context if provided
-    if request.context:
-        apply_trace_tags_from_context(
-            workspace_id=request.context.workspace_id,
-            project_id=request.context.project_id,
-        )
-
     try:
         source = safe_build_source(request.manifest.model_dump(), {})
         return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
@@ -226,19 +202,13 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
         400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
     },
 )
+@with_request_context
 def full_resolve(request: FullResolveRequest) -> ManifestResponse:
     """
     Fully resolve a manifest, including dynamic streams.
 
     This is a similar operation to resolve, but has an extra step which generates streams from dynamic stream templates if the manifest contains any. This is used when a user clicks the generate streams button on a stream template in the Builder UI
     """
-    # Apply trace tags from context if provided
-    if request.context:
-        apply_trace_tags_from_context(
-            workspace_id=request.context.workspace_id,
-            project_id=request.context.project_id,
-        )
-
     try:
         source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
         manifest = {**source.resolved_manifest}

@@ -237,6 +237,7 @@ components:
           type: string
           title: Name
         json_schema:
+          additionalProperties: true
           type: object
           title: Json Schema
         supported_sync_modes:
@@ -431,7 +432,8 @@ components:
           title: Url
         headers:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Headers
         http_method:
@@ -461,7 +463,8 @@ components:
           title: Body
         headers:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Headers
       type: object
@@ -521,6 +524,25 @@ components:
           - type: string
           - type: 'null'
           title: Project Id
+        request_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._:/-]+$
+          - type: 'null'
+          title: Request Id
+          description: Request identifier included in server logs and Datadog span
+            tags.
+        connector_name:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._:/-]+$
+          - type: 'null'
+          title: Connector Name
+          description: Connector name included in server logs and Datadog span tags.
       type: object
       title: RequestContext
       description: Optional context information for tracing and observability.
@@ -578,7 +600,8 @@ components:
           title: Auxiliary Requests
         inferred_schema:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Inferred Schema
         inferred_datetime_formats:
@@ -590,7 +613,8 @@ components:
           title: Inferred Datetime Formats
         latest_config_update:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Latest Config Update
       type: object
@@ -613,13 +637,15 @@ components:
           title: Pages
         slice_descriptor:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: string
           - type: 'null'
           title: Slice Descriptor
         state:
           anyOf:
           - items:
+              additionalProperties: true
               type: object
             type: array
           - type: 'null'
