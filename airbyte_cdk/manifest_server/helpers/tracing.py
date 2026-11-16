@@ -69,7 +69,12 @@ def with_request_context(
         token = _log_context.set(" ".join(log_parts))
         try:
             if context:
-                apply_trace_tags_from_context(**context.model_dump())
+                apply_trace_tags_from_context(
+                    workspace_id=context.workspace_id,
+                    project_id=context.project_id,
+                    request_id=context.request_id,
+                    connector_name=context.connector_name,
+                )
             return endpoint(request)
         finally:
             _log_context.reset(token)
