@@ -8,7 +8,7 @@ from __future__ import (  # Used to evaluate type hints at runtime, a NameError:
 
 import time
 from copy import copy
-from typing import Any, List, MutableMapping
+from typing import Any, Dict, List, Mapping, MutableMapping
 
 import orjson
 
@@ -102,7 +102,37 @@ def emit_configuration_as_airbyte_control_message(config: MutableMapping[str, An
     )
 
 
+class ConfigWithCheckOverrides(dict):  # type: ignore # disallow_any_generics is set to True, and dict is equivalent to dict[Any]
+    """A connector config with check-only values overlaid on top of it.
+
+    Components built during `check` read the overlaid values. A CONNECTOR_CONFIG control message is
+    what the platform saves as the connection's config, so `without_overrides` is what gets emitted:
+    a check-only value must not become a saved one.
+    """
+
+    def __init__(self, config: Mapping[str, Any], overrides: Mapping[str, Any]) -> None:
+        super().__init__({**config, **overrides})
+        self._config_before_overrides = config
+        self._overridden_keys = frozenset(overrides)
+
+    def without_overrides(self) -> Dict[str, Any]:
+        """The config as it stands now, with every overridden key back at its value before the overlay.
+
+        Values written during the check, such as a rotated refresh token, are kept. A key that only the
+        overrides introduced is dropped.
+        """
+        config = dict(self)
+        for key in self._overridden_keys:
+            if key in self._config_before_overrides:
+                config[key] = self._config_before_overrides[key]
+            else:
+                config.pop(key, None)
+        return config
+
+
 def create_connector_config_control_message(config: MutableMapping[str, Any]) -> AirbyteMessage:
+    if isinstance(config, ConfigWithCheckOverrides):
+        config = config.without_overrides()
     control_message = AirbyteControlMessage(
         type=OrchestratorType.CONNECTOR_CONFIG,
         emitted_at=time.time() * 1000,

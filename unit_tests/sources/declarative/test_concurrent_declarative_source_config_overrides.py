@@ -336,6 +336,39 @@ def _manifest_with_refresh_token_updater(check_component, refresh_token_updater=
     return manifest
 
 
+_CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN = {
+    "resource": "sync",
+    "credentials": {
+        "client_id": "client_id",
+        "client_secret": "client_secret",
+        "refresh_token": "old_refresh",
+    },
+}
+
+
+def _mock_token_refresh(http_mocker):
+    http_mocker.post(
+        HttpRequest(
+            "https://api.test.com/oauth/token",
+            body="grant_type=refresh_token&client_id=client_id&client_secret=client_secret&refresh_token=old_refresh",
+        ),
+        HttpResponse(
+            json.dumps(
+                {"access_token": "new_access", "refresh_token": "new_refresh", "expires_in": 3600}
+            )
+        ),
+    )
+
+
+def _emitted_connector_configs(output):
+    messages = [json.loads(line) for line in output.splitlines() if line.strip()]
+    return [
+        message["control"]["connectorConfig"]["config"]
+        for message in messages
+        if message.get("type") == "CONTROL"
+    ]
+
+
 @pytest.mark.parametrize(
     "refresh_token_updater",
     [
@@ -348,29 +381,125 @@ def _manifest_with_refresh_token_updater(check_component, refresh_token_updater=
         pytest.param({}, id="empty-taking-all-defaults"),
     ],
 )
-def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_rejected(
-    refresh_token_updater,
+def test_given_refresh_token_updater_when_check_refreshes_the_token_then_the_saved_config_has_no_overrides(
+    refresh_token_updater, capsys
 ):
-    """A `refresh_token_updater` emits the whole config it was handed as a CONNECTOR_CONFIG control
-    message, which the platform persists - so a check-only override would become the connection's saved
-    config. The restore cannot recall a message already on stdout, so the combination is refused."""
+    """A `refresh_token_updater` emits the config it was handed as a CONNECTOR_CONFIG control message,
+    which the platform persists. During a check that config carries the overrides, so the message must
+    leave them out while keeping the rotated tokens."""
+    config = deepcopy(_CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN)
     source = ConcurrentDeclarativeSource(
         source_config=_manifest_with_refresh_token_updater(
             {
                 "type": "CheckStream",
                 "stream_names": ["items"],
-                "config_overrides": {"resource": "check-only"},
+                "config_overrides": {"resource": "check-only", "only_in_overrides": True},
             },
             refresh_token_updater=refresh_token_updater,
         ),
-        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        config=config,
         catalog=None,
         state=None,
     )
 
-    with pytest.raises(AirbyteTracedException, match="refresh_token_updater") as raised:
-        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    with HttpMocker() as http_mocker:
+        _mock_token_refresh(http_mocker)
+        # Only the overridden path is mocked, so the check passes only if the override was applied.
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/check-only"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        assert source.check(logger, config).status == Status.SUCCEEDED
+
+    emitted_configs = _emitted_connector_configs(capsys.readouterr().out)
+    assert len(emitted_configs) == 1
+    emitted_config = emitted_configs[0]
+    assert emitted_config["resource"] == "sync"
+    assert "only_in_overrides" not in emitted_config
+    assert emitted_config["credentials"]["refresh_token"] == "new_refresh"
+    assert emitted_config["credentials"]["access_token"] == "new_access"
+    assert emitted_config["credentials"]["token_expiry_date"]
+
+
+def test_given_refresh_token_updater_writing_top_level_keys_when_check_then_the_tokens_are_saved(
+    capsys,
+):
+    """Tokens written to a top-level key land on the overlay itself rather than on a nested object it
+    shares with the user config, so they must be read back from the overlay when the config is emitted."""
+    config = {**deepcopy(_CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN), "refresh_token": "old_refresh"}
+    manifest = _manifest_with_refresh_token_updater(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "check-only"},
+        },
+        refresh_token_updater={
+            "access_token_config_path": ["access_token"],
+            "refresh_token_config_path": ["refresh_token"],
+            "token_expiry_date_config_path": ["token_expiry_date"],
+        },
+    )
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"]["refresh_token"] = (
+        "{{ config['refresh_token'] }}"
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=config, catalog=None, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_token_refresh(http_mocker)
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/check-only"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        assert source.check(logger, config).status == Status.SUCCEEDED
+
+    emitted_configs = _emitted_connector_configs(capsys.readouterr().out)
+    assert len(emitted_configs) == 1
+    assert emitted_configs[0]["resource"] == "sync"
+    assert emitted_configs[0]["refresh_token"] == "new_refresh"
+    assert emitted_configs[0]["access_token"] == "new_access"
+
+
+@pytest.mark.parametrize(
+    "refresh_token_updater, config_overrides, clashing_key",
+    [
+        pytest.param(
+            {}, {"credentials": {"client_id": "check-only"}}, "credentials", id="default-paths"
+        ),
+        pytest.param(
+            {"refresh_token_config_path": ["refresh_token"]},
+            {"refresh_token": "check-only"},
+            "refresh_token",
+            id="declared-top-level-path",
+        ),
+    ],
+)
+def test_given_an_override_of_a_key_the_refresh_token_updater_writes_under_then_manifest_is_rejected(
+    refresh_token_updater, config_overrides, clashing_key
+):
+    """The new tokens would be written into the check-only value and dropped with it when the config is
+    emitted, while the provider has already retired the old refresh token."""
+    source = ConcurrentDeclarativeSource(
+        source_config=_manifest_with_refresh_token_updater(
+            {
+                "type": "CheckStream",
+                "stream_names": ["items"],
+                "config_overrides": config_overrides,
+            },
+            refresh_token_updater=refresh_token_updater,
+        ),
+        config=deepcopy(_CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN),
+        catalog=None,
+        state=None,
+    )
+
+    with pytest.raises(AirbyteTracedException, match="writes refreshed tokens to") as raised:
+        source.check(logger, _CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN)
     assert raised.value.failure_type == FailureType.system_error
+    assert f"['{clashing_key}']" in raised.value.message
 
 
 def test_given_no_refresh_token_updater_when_config_overrides_then_manifest_is_accepted():
@@ -464,7 +593,7 @@ def test_given_override_of_a_field_named_refresh_token_updater_then_it_is_allowe
         assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
 
 
-def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
+def test_given_refresh_token_updater_behind_a_ref_then_a_clashing_override_is_rejected():
     """The coarse walk is what makes a `$ref`-ed authenticator detectable at all: the raw manifest holds
     only the reference, and the authenticator itself sits under `definitions`. Narrowing the walk must
     not lose that."""
@@ -472,7 +601,7 @@ def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
         {
             "type": "CheckStream",
             "stream_names": ["items"],
-            "config_overrides": {"resource": "check-only"},
+            "config_overrides": {"credentials": {"client_id": "check-only"}},
         }
     )
     manifest["definitions"] = {
@@ -484,13 +613,13 @@ def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
 
     source = ConcurrentDeclarativeSource(
         source_config=manifest,
-        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        config=deepcopy(_CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN),
         catalog=None,
         state=None,
     )
 
-    with pytest.raises(AirbyteTracedException, match="refresh_token_updater") as raised:
-        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    with pytest.raises(AirbyteTracedException, match="writes refreshed tokens to") as raised:
+        source.check(logger, _CONFIG_WITH_SINGLE_USE_REFRESH_TOKEN)
     assert raised.value.failure_type == FailureType.system_error
 
 
@@ -922,7 +1051,8 @@ def test_given_a_custom_authenticator_declaring_a_refresh_token_updater_then_it_
     # Matched on the guard's own sentence: a failure to import the custom class also mentions
     # `refresh_token_updater`, because the message echoes the component definition.
     with pytest.raises(
-        AirbyteTracedException, match="cannot be used by a manifest that declares"
+        AirbyteTracedException,
+        match="cannot be used by a manifest whose custom authenticator declares",
     ) as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
     assert raised.value.failure_type == FailureType.system_error

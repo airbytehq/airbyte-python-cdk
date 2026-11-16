@@ -24,7 +24,10 @@ from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, Stre
 from jsonschema.exceptions import ValidationError, best_match
 from jsonschema.validators import validator_for
 
-from airbyte_cdk.config_observation import create_connector_config_control_message
+from airbyte_cdk.config_observation import (
+    ConfigWithCheckOverrides,
+    create_connector_config_control_message,
+)
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
@@ -173,6 +176,14 @@ class ConcurrentDeclarativeSource(Source):
     _CONFIG_PERSISTING_AUTHENTICATOR_TYPES = frozenset(
         {"OAuthAuthenticator", "CustomAuthenticator"}
     )
+
+    # The config paths a `refresh_token_updater` writes to, with the defaults `RefreshTokenUpdater`
+    # declares for them.
+    _REFRESH_TOKEN_UPDATER_CONFIG_PATHS: Mapping[str, List[str]] = {
+        "access_token_config_path": ["credentials", "access_token"],
+        "refresh_token_config_path": ["credentials", "refresh_token"],
+        "token_expiry_date_config_path": ["credentials", "token_expiry_date"],
+    }
 
     def __init__(
         self,
@@ -771,7 +782,12 @@ class ConcurrentDeclarativeSource(Source):
 
         The copy is shallow, so a component writing into a nested path writes through to the config the
         source was constructed with and the restore does not undo it. Only top-level writes are
-        discarded, which is why `_raise_if_config_is_persisted` refuses config-persisting manifests.
+        discarded.
+
+        The overlay is a `ConfigWithCheckOverrides`, so a CONNECTOR_CONFIG control message emitted during
+        the check (a `refresh_token_updater` rotating a token) carries the config without the overrides
+        and the platform never saves a check-only value. `_raise_if_overrides_would_be_persisted` refuses
+        the two cases this cannot cover.
 
         Known limitation: `$parameters` declared on a check component still propagate into object-valued
         overrides. See https://github.com/airbytehq/airbyte-internal-issues/issues/16995.
@@ -782,7 +798,7 @@ class ConcurrentDeclarativeSource(Source):
 
         self._raise_on_non_string_override_keys(config_overrides)
         self._raise_on_reserved_override_keys(config_overrides)
-        self._raise_if_config_is_persisted(config_overrides)
+        self._raise_if_overrides_would_be_persisted(config_overrides)
         self._warn_on_unknown_override_keys(config_overrides)
         self._register_override_secrets(config_overrides)
         # Keys only. An override may name a secret field, so values must not reach the logs.
@@ -791,7 +807,7 @@ class ConcurrentDeclarativeSource(Source):
         )
 
         unmodified_config = self._config
-        self._config = {**self._config, **config_overrides}
+        self._config = ConfigWithCheckOverrides(self._config, config_overrides)
         try:
             yield
         finally:
@@ -842,36 +858,72 @@ class ConcurrentDeclarativeSource(Source):
                 failure_type=FailureType.system_error,
             )
 
-    def _raise_if_config_is_persisted(self, config_overrides: Mapping[str, Any]) -> None:
-        """Reject `config_overrides` on a manifest whose authenticator writes the config back.
+    def _raise_if_overrides_would_be_persisted(self, config_overrides: Mapping[str, Any]) -> None:
+        """Reject `config_overrides` where a check-only value could still reach the saved config.
 
         A `refresh_token_updater` builds a `DeclarativeSingleUseRefreshTokenOauth2Authenticator`, whose
-        `_emit_control_message` emits the entire config it was handed as a `CONNECTOR_CONFIG` message.
-        During a check that is the overlay, and the platform persists it, so a check-only override would
-        become the connection's saved config. The restore cannot recall a message already on stdout.
+        `_emit_control_message` emits the config it was handed as a `CONNECTOR_CONFIG` message, and the
+        platform persists it. During a check that config is a `ConfigWithCheckOverrides`, which is
+        emitted without the overrides, so the combination is allowed. Two cases are still refused:
+
+          - a `CustomAuthenticator` that declares a `refresh_token_updater`: custom code can emit the
+            config by its own means, so nothing guarantees the overrides are left out;
+          - an override of a top-level key the updater writes under: the new tokens would be written
+            into the check-only value and dropped with it, while the provider has already retired the
+            old refresh token.
         """
-        if not self._manifest_writes_back_config(self._source_config):
-            return
-        raise AirbyteTracedException(
-            message=(
-                "This connector's manifest is invalid: `config_overrides` cannot be used by a "
-                "manifest that declares a `refresh_token_updater`. A token refresh during `check` "
-                "emits the whole config it was handed as a CONNECTOR_CONFIG control message, which "
-                f"the platform persists, so the check-only override(s) {sorted(config_overrides)} "
-                "would be saved as this connection's config and applied to every later sync. This "
-                "is a bug in the connector rather than in this connection's settings."
-            ),
-            internal_message=(
-                "config_overrides rejected: manifest persists config via refresh_token_updater. "
-                "Remove `config_overrides` from the check component, or drop the "
-                "`refresh_token_updater`."
-            ),
-            failure_type=FailureType.system_error,
-        )
+        for authenticator in self._config_persisting_authenticators(self._source_config):
+            if authenticator.get("type") == "CustomAuthenticator":
+                raise AirbyteTracedException(
+                    message=(
+                        "This connector's manifest is invalid: `config_overrides` cannot be used by a "
+                        "manifest whose custom authenticator declares a `refresh_token_updater`. A "
+                        "token refresh during `check` emits the config it was handed as a "
+                        "CONNECTOR_CONFIG control message, which the platform persists, so the "
+                        f"check-only override(s) {sorted(config_overrides)} could be saved as this "
+                        "connection's config and applied to every later sync. This is a bug in the "
+                        "connector rather than in this connection's settings."
+                    ),
+                    internal_message=(
+                        "config_overrides rejected: a CustomAuthenticator persists config via "
+                        "refresh_token_updater. Remove `config_overrides` from the check component, "
+                        "or use an `OAuthAuthenticator`."
+                    ),
+                    failure_type=FailureType.system_error,
+                )
+
+            refresh_token_updater = authenticator["refresh_token_updater"]
+            written_keys = {
+                (refresh_token_updater.get(path_field) or default_path)[0]
+                for path_field, default_path in self._REFRESH_TOKEN_UPDATER_CONFIG_PATHS.items()
+            }
+            clashing_keys = sorted(written_keys.intersection(config_overrides))
+            if clashing_keys:
+                raise AirbyteTracedException(
+                    message=(
+                        "This connector's manifest is invalid: its check component overrides the "
+                        f"config key(s) {clashing_keys}, which its `refresh_token_updater` writes "
+                        "refreshed tokens to. A token refresh during `check` would write the new "
+                        "tokens into the check-only value, and they would be lost with it. This is a "
+                        "bug in the connector rather than in this connection's settings."
+                    ),
+                    internal_message=(
+                        f"config_overrides rejected: key(s) {clashing_keys} hold a config path of a "
+                        "refresh_token_updater. Remove them from `config_overrides`."
+                    ),
+                    failure_type=FailureType.system_error,
+                )
 
     @staticmethod
     def _manifest_writes_back_config(definition: Any) -> bool:
-        """Whether any component in the manifest emits the connector config back to the platform.
+        """Whether any component in the manifest emits the connector config back to the platform."""
+        return any(
+            True for _ in ConcurrentDeclarativeSource._config_persisting_authenticators(definition)
+        )
+
+    @staticmethod
+    def _config_persisting_authenticators(definition: Any) -> Iterator[Mapping[str, Any]]:
+        """The components in the manifest that emit the connector config back to the platform.
 
         Walks the whole manifest, since an authenticator can sit under any requester, inside a
         `SelectiveAuthenticator`, or in a `ConditionalStreams` branch. Callers pass `self._source_config`,
@@ -890,17 +942,12 @@ class ConcurrentDeclarativeSource(Source):
                 and definition.get("type")
                 in ConcurrentDeclarativeSource._CONFIG_PERSISTING_AUTHENTICATOR_TYPES
             ):
-                return True
-            return any(
-                ConcurrentDeclarativeSource._manifest_writes_back_config(value)
-                for value in definition.values()
-            )
-        if isinstance(definition, list):
-            return any(
-                ConcurrentDeclarativeSource._manifest_writes_back_config(item)
-                for item in definition
-            )
-        return False
+                yield definition
+            for value in definition.values():
+                yield from ConcurrentDeclarativeSource._config_persisting_authenticators(value)
+        elif isinstance(definition, list):
+            for item in definition:
+                yield from ConcurrentDeclarativeSource._config_persisting_authenticators(item)
 
     def _warn_on_unknown_override_keys(self, config_overrides: Mapping[str, Any]) -> None:
         """Warn about override keys the spec does not declare.
