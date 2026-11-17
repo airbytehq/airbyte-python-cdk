@@ -64,10 +64,12 @@ jobs:
 
       - name: Detect Release Tag Version from git ref ('${{ github.ref_name }}')
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
         run: |
-          echo "Overriding Dunamai detected version: '${{ env.DETECTED_VERSION || 'none' }}'"
+          echo "Overriding Dunamai detected version: '${DETECTED_VERSION:-none}'"
           # Extract the version from the git ref
-          DETECTED_VERSION=${{ github.ref_name }}
+          DETECTED_VERSION=${GH_REF_NAME}
           # Remove the 'v' prefix if it exists
           DETECTED_VERSION="${DETECTED_VERSION#v}"
           echo "Setting detected version to '$DETECTED_VERSION'"
@@ -75,8 +77,10 @@ jobs:
 
       - name: Validate and set VERSION (detected='${{ env.DETECTED_VERSION }}', input='${{ github.event.inputs.version || 'none' }}')
         id: set_version
+        env:
+          EVENT_INPUTS_VERSION: ${{ github.event.inputs.version }}
         run: |
-          INPUT_VERSION=${{ github.event.inputs.version }}
+          INPUT_VERSION=${EVENT_INPUTS_VERSION}
           echo "Version input set to '${INPUT_VERSION}'"
           # Exit with success if both detected and input versions are empty
           if [ -z "${DETECTED_VERSION:-}" ] && [ -z "${INPUT_VERSION:-}" ]; then
@@ -96,6 +100,11 @@ jobs:
           # Fail if the version is still empty
           if [ -z "$VERSION" ]; then
             echo "Error: VERSION is not set. Ensure the tag follows the format 'refs/tags/vX.Y.Z'."
+            exit 1
+          fi
+          # Fail if the version has characters that a version cannot have
+          if [[ ! "$VERSION" =~ ^[0-9A-Za-z.+_-]+$ ]]; then
+            echo "Error: VERSION '$VERSION' is not a valid version string."
             exit 1
           fi
           echo "Setting version to '$VERSION'"
@@ -383,7 +392,7 @@ jobs:
           sed -i "/^manifestServer:/,/^[a-zA-Z]/ s/tag: ${PREVIOUS_VERSION}/tag: ${VERSION}/" "$VALUES_FILE"
           # Also update the CDK version in the manifest-server-api build file
           sed -i "s/refs\/tags\/v${PREVIOUS_VERSION}/refs\/tags\/v${VERSION}/g" "oss/airbyte-api/manifest-server-api/build.gradle.kts"
-          echo ${VERSION} > oss/airbyte-connector-builder-resources/CDK_VERSION
+          echo "${VERSION}" > oss/airbyte-connector-builder-resources/CDK_VERSION
       - name: Create Pull Request
         id: create-pull-request
         uses: peter-evans/create-pull-request@v7
