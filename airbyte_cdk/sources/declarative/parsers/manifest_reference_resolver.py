@@ -19,6 +19,14 @@ REF_TAG = "$ref"
 _FIELDS_HOLDING_CONFIG_VALUES = frozenset({"config_overrides"})
 
 
+def _copy_without_sharing(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _copy_without_sharing(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_copy_without_sharing(item) for item in value]
+    return deepcopy(value)
+
+
 class ManifestReferenceResolver:
     """
     An incoming manifest can contain references to values previously defined.
@@ -115,7 +123,7 @@ class ManifestReferenceResolver:
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):
             evaluated_dict = {
-                k: deepcopy(v)
+                k: _copy_without_sharing(v)
                 if k in _FIELDS_HOLDING_CONFIG_VALUES
                 else self._evaluate_node(v, manifest, visited)
                 for k, v in node.items()
