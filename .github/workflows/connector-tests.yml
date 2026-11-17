@@ -173,7 +173,7 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
           MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
-          poetry run airbyte-cdk secrets fetch ${MATRIX_CONNECTOR}
+          poetry run airbyte-cdk secrets fetch "${MATRIX_CONNECTOR}"
 
       - name: Bump to Dev Branch CDK [Python Connectors]
         if: env.CONNECTOR_LANGUAGE == 'python'
@@ -182,7 +182,7 @@ jobs:
           EXPR_1: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           echo "Using CDK ref ${EXPR_1}"
-          poe use-cdk-branch ${EXPR_1}
+          poe use-cdk-branch "${EXPR_1}"
           poetry install --all-extras
 
       - name: Run Unit Tests [Python Connectors]
@@ -228,7 +228,7 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
           MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
-          poetry run airbyte-cdk connector test ${MATRIX_CONNECTOR} \
+          poetry run airbyte-cdk connector test "${MATRIX_CONNECTOR}" \
             --pytest-arg=--connector-base-image \
             --pytest-arg=airbyte/source-declarative-manifest:dev
 
@@ -245,8 +245,8 @@ jobs:
           MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
           if [ "$CONNECTOR_LANGUAGE" = "manifest-only" ]; then
-            poetry run airbyte-cdk image test ${MATRIX_CONNECTOR} \
+            poetry run airbyte-cdk image test "${MATRIX_CONNECTOR}" \
               --connector-base-image airbyte/source-declarative-manifest:dev
           else
-            poetry run airbyte-cdk image test ${MATRIX_CONNECTOR}
+            poetry run airbyte-cdk image test "${MATRIX_CONNECTOR}"
           fi

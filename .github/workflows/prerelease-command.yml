@@ -45,7 +45,11 @@ jobs:
       - name: Get PR info
         id: pr-info
         run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${EVENT_INPUTS_PR})
+          if [[ ! "${EVENT_INPUTS_PR}" =~ ^[0-9]+$ ]]; then
+            echo "::error::The pr input must be a number."
+            exit 1
+          fi
+          PR_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${EVENT_INPUTS_PR}")
           HEAD_REF=$(echo "$PR_JSON" | jq -r .head.ref)
           HEAD_REPO=$(echo "$PR_JSON" | jq -r .head.repo.full_name)
           echo "head-ref=${HEAD_REF}" >> $GITHUB_OUTPUT

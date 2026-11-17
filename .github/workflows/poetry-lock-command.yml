@@ -58,7 +58,11 @@ jobs:
       - name: Get PR info
         id: pr-info
         run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${EVENT_INPUTS_PR})
+          if [[ ! "${EVENT_INPUTS_PR}" =~ ^[0-9]+$ ]]; then
+            echo "::error::The pr input must be a number."
+            exit 1
+          fi
+          PR_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${EVENT_INPUTS_PR}")
           echo "repo=$(echo "$PR_JSON" | jq -r .head.repo.full_name)" >> $GITHUB_OUTPUT
           echo "branch=$(echo "$PR_JSON" | jq -r .head.ref)" >> $GITHUB_OUTPUT
         env:
@@ -128,8 +132,8 @@ jobs:
           STEP_PR_INFO_REPO: ${{ steps.pr-info.outputs.repo }}
           STEP_PR_INFO_BRANCH: ${{ steps.pr-info.outputs.branch }}
         run: |
-          git remote add contributor https://github.com/${STEP_PR_INFO_REPO}.git
-          git push contributor HEAD:${STEP_PR_INFO_BRANCH}
+          git remote add contributor "https://github.com/${STEP_PR_INFO_REPO}.git"
+          git push contributor "HEAD:${STEP_PR_INFO_BRANCH}"
 
       - name: Append success comment
         uses: peter-evans/create-or-update-comment@v4
