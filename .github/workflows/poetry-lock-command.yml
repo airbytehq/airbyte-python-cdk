@@ -58,10 +58,11 @@ jobs:
       - name: Get PR info
         id: pr-info
         run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr }})
+          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${EVENT_INPUTS_PR})
           echo "repo=$(echo "$PR_JSON" | jq -r .head.repo.full_name)" >> $GITHUB_OUTPUT
           echo "branch=$(echo "$PR_JSON" | jq -r .head.ref)" >> $GITHUB_OUTPUT
         env:
+          EVENT_INPUTS_PR: ${{ github.event.inputs.pr }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
 
@@ -123,9 +124,12 @@ jobs:
 
       - name: Push changes to '(${{ steps.pr-info.outputs.repo }})'
         if: steps.git-diff.outputs.changes == 'true'
+        env:
+          STEP_PR_INFO_REPO: ${{ steps.pr-info.outputs.repo }}
+          STEP_PR_INFO_BRANCH: ${{ steps.pr-info.outputs.branch }}
         run: |
-          git remote add contributor https://github.com/${{ steps.pr-info.outputs.repo }}.git
-          git push contributor HEAD:${{ steps.pr-info.outputs.branch }}
+          git remote add contributor https://github.com/${STEP_PR_INFO_REPO}.git
+          git push contributor HEAD:${STEP_PR_INFO_BRANCH}
 
       - name: Append success comment
         uses: peter-evans/create-or-update-comment@v4

@@ -64,10 +64,12 @@ jobs:
 
       - name: Detect Release Tag Version from git ref ('${{ github.ref_name }}')
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
         run: |
           echo "Overriding Dunamai detected version: '${{ env.DETECTED_VERSION || 'none' }}'"
           # Extract the version from the git ref
-          DETECTED_VERSION=${{ github.ref_name }}
+          DETECTED_VERSION=${GH_REF_NAME}
           # Remove the 'v' prefix if it exists
           DETECTED_VERSION="${DETECTED_VERSION#v}"
           echo "Setting detected version to '$DETECTED_VERSION'"
@@ -75,8 +77,10 @@ jobs:
 
       - name: Validate and set VERSION (detected='${{ env.DETECTED_VERSION }}', input='${{ github.event.inputs.version || 'none' }}')
         id: set_version
+        env:
+          EVENT_INPUTS_VERSION: ${{ github.event.inputs.version }}
         run: |
-          INPUT_VERSION=${{ github.event.inputs.version }}
+          INPUT_VERSION=${EVENT_INPUTS_VERSION}
           echo "Version input set to '${INPUT_VERSION}'"
           # Exit with success if both detected and input versions are empty
           if [ -z "${DETECTED_VERSION:-}" ] && [ -z "${INPUT_VERSION:-}" ]; then

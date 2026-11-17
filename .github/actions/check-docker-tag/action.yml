@@ -12,9 +12,12 @@ runs:
   steps:
     - name: "Check for existing tag (${{ inputs.image_name }}:${{ inputs.tag }})"
       shell: bash
+      env:
+        IN_IMAGE_NAME: ${{ inputs.image_name }}
+        IN_TAG: ${{ inputs.tag }}
       run: |
-        image="${{ inputs.image_name }}"
-        tag_input="${{ inputs.tag }}"
+        image="${IN_IMAGE_NAME}"
+        tag_input="${IN_TAG}"
         if [ -z "$image" ] || [ -z "$tag_input" ]; then
           echo "Error: image_name and tag are required."
           exit 1

@@ -100,13 +100,18 @@ jobs:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
         id: no_changes
         if: ${{ needs.cdk_changes.outputs['src'] == 'false' || matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
+        env:
+          EXPR_1: ${{ needs.cdk_changes.outputs['src'] }}
+          MATRIX_CDK_EXTRA: ${{ matrix.cdk_extra }}
+          EXPR_2: ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}
+          MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
           echo "Aborting job."
-          echo "Source code changed: ${{ needs.cdk_changes.outputs['src'] }}"
-          if [ "${{ matrix.cdk_extra }}" != "n/a" ]; then
-            echo "Extra not changed: ${{ matrix.cdk_extra }} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          echo "Source code changed: ${EXPR_1}"
+          if [ "${MATRIX_CDK_EXTRA}" != "n/a" ]; then
+            echo "Extra not changed: ${MATRIX_CDK_EXTRA} = ${EXPR_2}"
           fi
-          echo "> Skipped '${{matrix.connector}}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
+          echo "> Skipped '${MATRIX_CONNECTOR}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
           echo "status=cancelled" >> $GITHUB_OUTPUT
           exit 0
         continue-on-error: true
@@ -166,15 +171,18 @@ jobs:
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+          MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
-          poetry run airbyte-cdk secrets fetch ${{ matrix.connector }}
+          poetry run airbyte-cdk secrets fetch ${MATRIX_CONNECTOR}
 
       - name: Bump to Dev Branch CDK [Python Connectors]
         if: env.CONNECTOR_LANGUAGE == 'python'
         working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        env:
+          EXPR_1: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          echo "Using CDK ref ${{ github.event.pull_request.head.sha || github.sha }}"
-          poe use-cdk-branch ${{ github.event.pull_request.head.sha || github.sha }}
+          echo "Using CDK ref ${EXPR_1}"
+          poe use-cdk-branch ${EXPR_1}
           poetry install --all-extras
 
       - name: Run Unit Tests [Python Connectors]
@@ -218,8 +226,9 @@ jobs:
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+          MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
-          poetry run airbyte-cdk connector test ${{ matrix.connector }} \
+          poetry run airbyte-cdk connector test ${MATRIX_CONNECTOR} \
             --pytest-arg=--connector-base-image \
             --pytest-arg=airbyte/source-declarative-manifest:dev
 
@@ -233,10 +242,11 @@ jobs:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
           PYTEST_ADDOPTS: --read-from-streams=default
+          MATRIX_CONNECTOR: ${{ matrix.connector }}
         run: |
           if [ "$CONNECTOR_LANGUAGE" = "manifest-only" ]; then
-            poetry run airbyte-cdk image test ${{ matrix.connector }} \
+            poetry run airbyte-cdk image test ${MATRIX_CONNECTOR} \
               --connector-base-image airbyte/source-declarative-manifest:dev
           else
-            poetry run airbyte-cdk image test ${{ matrix.connector }}
+            poetry run airbyte-cdk image test ${MATRIX_CONNECTOR}
           fi

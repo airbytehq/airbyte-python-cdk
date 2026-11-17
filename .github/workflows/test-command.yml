@@ -21,8 +21,9 @@ jobs:
         id: pr-info
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_INPUTS_PR: ${{ github.event.inputs.pr }}
         run: |
-          PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr }}")
+          PR_JSON=$(gh api "repos/${{ github.repository }}/pulls/${EVENT_INPUTS_PR}")
           echo "$PR_JSON" > pr-info.json
           echo "sha=$(jq -r .head.sha < pr-info.json)" >> "$GITHUB_OUTPUT"
           echo "run-url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
@@ -128,6 +129,9 @@ jobs:
           files: |
             build/test-results/**/*.xml
       - name: Post CI Success to GitHub
+        env:
+          MATRIX_PYTHON_VERSION: ${{ matrix.python-version }}
+          MATRIX_OS: ${{ matrix.os }}
         run: |
           curl --request POST \
           --url "https://api.github.com/repos/${{ github.repository }}/statuses/$(jq -r .head.sha < pr-info.json)" \
@@ -135,7 +139,7 @@ jobs:
           --header 'content-type: application/json' \
           --data '{
             "state": "success",
-            "context": "Pytest (All, Python ${{ matrix.python-version }}, ${{ matrix.os }})",
+            "context": "Pytest (All, Python '"${MATRIX_PYTHON_VERSION}"', '"${MATRIX_OS}"')",
             "target_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
             }' \
   log-success-comment:

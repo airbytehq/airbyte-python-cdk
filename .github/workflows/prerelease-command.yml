@@ -45,20 +45,23 @@ jobs:
       - name: Get PR info
         id: pr-info
         run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr }})
+          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${EVENT_INPUTS_PR})
           HEAD_REF=$(echo "$PR_JSON" | jq -r .head.ref)
           HEAD_REPO=$(echo "$PR_JSON" | jq -r .head.repo.full_name)
           echo "head-ref=${HEAD_REF}" >> $GITHUB_OUTPUT
           echo "head-repo=${HEAD_REPO}" >> $GITHUB_OUTPUT
           echo "PR branch: ${HEAD_REF} from ${HEAD_REPO}"
         env:
+          EVENT_INPUTS_PR: ${{ github.event.inputs.pr }}
           GH_TOKEN: ${{ steps.get-app-token.outputs.token }}
 
       - name: Check that PR is from this repository (not a fork)
         if: steps.pr-info.outputs.head-repo != github.repository
+        env:
+          STEP_PR_INFO_HEAD_REPO: ${{ steps.pr-info.outputs.head-repo }}
         run: |
           echo "Error: /prerelease only works for branches in this repository, not forks."
-          echo "PR is from: ${{ steps.pr-info.outputs.head-repo }}"
+          echo "PR is from: ${STEP_PR_INFO_HEAD_REPO}"
           echo "Expected: ${{ github.repository }}"
           exit 1
 
