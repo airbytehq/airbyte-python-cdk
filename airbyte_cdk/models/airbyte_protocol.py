@@ -76,7 +76,7 @@ class AirbyteStateMessage:
 
 
 # The following dataclasses have been redeclared to include scopes, optional_scopes,
-# and scopes_join_strategy fields that are used by declarative OAuth connectors.
+# scopes_join_strategy and optional_extract_output fields that are used by declarative OAuth connectors.
 # The protocol model (OauthConnectorInputSpecification) does not include these fields,
 # so serpyco_rs silently drops them during deserialization. By overriding the model here
 # and cascading through OAuthConfigSpecification → AdvancedAuth → ConnectorSpecification,
@@ -95,6 +95,7 @@ class OauthConnectorInputSpecification:
     access_token_headers: Optional[Dict[str, Any]] = None
     access_token_params: Optional[Dict[str, Any]] = None
     extract_output: Optional[List[str]] = None
+    optional_extract_output: Optional[List[str]] = None
     state: Optional[State] = None  # type: ignore [name-defined]
     client_id_key: Optional[str] = None
     client_secret_key: Optional[str] = None

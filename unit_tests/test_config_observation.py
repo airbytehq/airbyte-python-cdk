@@ -9,8 +9,10 @@ import pytest
 
 from airbyte_cdk.config_observation import (
     ConfigObserver,
+    ConfigWithCheckOverrides,
     ObservedDict,
     create_connector_config_control_message,
+    emit_configuration_as_airbyte_control_message,
     observe_connector_config,
 )
 from airbyte_cdk.models import AirbyteControlConnectorConfigMessage, OrchestratorType, Type
@@ -97,3 +99,33 @@ def test_create_connector_config_control_message():
     assert message.control.type == OrchestratorType.CONNECTOR_CONFIG
     assert message.control.connectorConfig == AirbyteControlConnectorConfigMessage(config=A_CONFIG)
     assert message.control.emitted_at is not None
+
+
+def test_given_config_with_check_overrides_when_reading_then_the_overrides_win():
+    config = ConfigWithCheckOverrides({"kept": 1, "overridden": "saved"}, {"overridden": "check"})
+
+    assert config == {"kept": 1, "overridden": "check"}
+
+
+def test_given_config_with_check_overrides_when_creating_control_message_then_overrides_are_left_out():
+    user_config = {"overridden": "saved", "credentials": {"refresh_token": "old"}}
+    config = ConfigWithCheckOverrides(user_config, {"overridden": "check", "added": "check"})
+    config["credentials"]["refresh_token"] = "new"
+    config["written_during_check"] = "token"
+
+    message = create_connector_config_control_message(config)
+
+    assert message.control.connectorConfig.config == {
+        "overridden": "saved",
+        "credentials": {"refresh_token": "new"},
+        "written_during_check": "token",
+    }
+
+
+def test_given_config_with_check_overrides_when_emitting_then_stdout_has_no_overrides(capsys):
+    config = ConfigWithCheckOverrides({"overridden": "saved"}, {"overridden": "check"})
+
+    emit_configuration_as_airbyte_control_message(config)
+
+    emitted = json.loads(capsys.readouterr().out)
+    assert emitted["control"]["connectorConfig"]["config"] == {"overridden": "saved"}
