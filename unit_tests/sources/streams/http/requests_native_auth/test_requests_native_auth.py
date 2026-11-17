@@ -770,6 +770,7 @@ class TestOauth2Authenticator:
         ),
         (
             ((400,), 400, "error", "error", ("invalid_grant",), "invalid_grant", True),
+            ((200, 400), 200, "error", "error", ("invalid_grant",), "invalid_grant", True),
             ((401,), 400, "error", "error", ("invalid_grant",), "invalid_grant", False),
             ((400,), 400, "error_key", "error", ("invalid_grant",), "invalid_grant", False),
             ((400,), 400, "error", "error", ("invalid_grant",), "valid_grant", False),
@@ -1439,6 +1440,106 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             "Configured single-use guidance. Provider error: invalid_grant: AADSTS50078"
         )
         assert exc_info.value.failure_type == FailureType.config_error
+
+    def test_given_ok_response_reporting_a_listed_error_then_config_error_and_config_untouched(
+        self, connector_config, requests_mock, capsys
+    ):
+        """Some providers answer a rejected refresh token with HTTP 200 and an `error` body."""
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            refresh_token_error_status_codes=(200, 400),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("bad_refresh_token",),
+        )
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            status_code=200,
+            json={"error": "bad_refresh_token", "error_description": "The refresh token is bad."},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            authenticator.refresh_and_set_access_token()
+
+        assert exc_info.value.failure_type == FailureType.config_error
+        assert exc_info.value.message.startswith("Refresh token was rejected by the OAuth provider")
+        assert exc_info.value.message.endswith("Provider error: bad_refresh_token")
+        assert "HTTP 200" in exc_info.value.internal_message
+        assert connector_config["credentials"]["access_token"] == "my_access_token"
+        assert connector_config["credentials"]["refresh_token"] == "my_refresh_token"
+        assert "CONNECTOR_CONFIG" not in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        "error_status_codes, error_values, response_body",
+        [
+            pytest.param(
+                (400,),
+                ("bad_refresh_token",),
+                {"error": "bad_refresh_token"},
+                id="status_not_listed",
+            ),
+            pytest.param(
+                (200,), ("bad_refresh_token",), {"error": "slow_down"}, id="error_value_not_listed"
+            ),
+            pytest.param((), (), {"unexpected": "payload"}, id="no_error_configuration"),
+        ],
+    )
+    def test_given_ok_response_without_access_token_then_refresh_fails_and_config_untouched(
+        self,
+        connector_config,
+        requests_mock,
+        capsys,
+        error_status_codes,
+        error_values,
+        response_body,
+    ):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            refresh_token_error_status_codes=error_status_codes,
+            refresh_token_error_key="error" if error_values else "",
+            refresh_token_error_values=error_values,
+        )
+        requests_mock.post("https://refresh_endpoint.com", status_code=200, json=response_body)
+
+        with pytest.raises(Exception, match="Token refresh API response was missing access token"):
+            authenticator.refresh_and_set_access_token()
+
+        assert connector_config["credentials"]["access_token"] == "my_access_token"
+        assert connector_config["credentials"]["refresh_token"] == "my_refresh_token"
+        assert connector_config["credentials"]["token_expiry_date"] == "2022-12-31T00:00:00+00:00"
+        assert "CONNECTOR_CONFIG" not in capsys.readouterr().out
+
+    def test_given_ok_response_with_an_access_token_and_a_listed_ok_status_then_token_is_refreshed(
+        self, connector_config, requests_mock
+    ):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            refresh_token_error_status_codes=(200, 400),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("bad_refresh_token",),
+        )
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            status_code=200,
+            json={
+                "access_token": "new_access_token",
+                "refresh_token": "new_refresh_token",
+                "expires_in": 28800,
+            },
+        )
+
+        authenticator.refresh_and_set_access_token()
+
+        assert connector_config["credentials"]["access_token"] == "new_access_token"
+        assert connector_config["credentials"]["refresh_token"] == "new_refresh_token"
 
     @pytest.mark.parametrize(
         "test_name, expires_in_value, expiry_date_format, expected_expiry_date",
