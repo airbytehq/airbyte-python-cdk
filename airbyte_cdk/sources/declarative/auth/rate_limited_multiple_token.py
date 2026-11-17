@@ -8,12 +8,13 @@ import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from itertools import cycle
-from typing import Any, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import requests
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
+from airbyte_cdk.sources.declarative.exceptions import ReadException
 from airbyte_cdk.sources.streams.call_rate import RequestMatcher
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import HttpStatusErrorHandler
@@ -24,7 +25,9 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ErrorResolution,
     ResponseAction,
 )
-from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import (
+    AbstractHeaderAuthenticator,
+)
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
@@ -85,6 +88,44 @@ class _QuotaState:
     """
 
 
+# What a credential's login can raise: a rejected request, or a response without a token.
+_LOGIN_ERRORS = (AirbyteTracedException, ReadException, KeyError)
+
+
+@dataclass(frozen=True)
+class RotatingCredential:
+    """A credential the authenticator logs in with itself, rather than a static token.
+
+    `key` identifies the credential for quota tracking and in error messages. It has to stay the same when
+    `authenticator` refreshes its token, because quota belongs to the credential rather than to
+    whichever token it currently holds, and it must not be secret.
+    """
+
+    key: str
+    authenticator: DeclarativeAuthenticator
+
+
+class _StaticTokenAuthenticator(AbstractHeaderAuthenticator):
+    """Signs with a fixed `tokens` entry, so static tokens run as credentials that never log in."""
+
+    def __init__(self, token: str, auth_method: str, header: str) -> None:
+        self._header_value = f"{auth_method} {token}".strip()
+        self._header = header
+
+    @property
+    def auth_header(self) -> str:
+        return self._header
+
+    @property
+    def token(self) -> str:
+        return self._header_value
+
+    def get_auth_header(self) -> Mapping[str, Any]:
+        # Always the header, even an empty name: a lookup error would name the credential, and a
+        # static credential's key is its token.
+        return {self._header: self._header_value}
+
+
 class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     """Authenticator that rotates between multiple interchangeable tokens with per-token quota tracking.
 
@@ -109,6 +150,17 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     between seedings and makes the authenticator rotate off a token the server has rejected even
     though the local count still looks healthy. All state transitions are guarded by a lock so
     the authenticator can be shared safely across concurrent streams; sleeps never hold the lock.
+
+    Instead of static `tokens`, the authenticator can be given `credentials`: authenticators that
+    obtain and refresh their own tokens, such as a session login. Quota state is then kept per
+    credential key rather than per token string, so a refreshed token keeps the counters of the
+    credential it belongs to, and the internal token list holds those keys. Static tokens take the
+    same path: each is a credential keyed by the token itself, signing with a fixed header value.
+    Each request is signed with the credential's current header value, and responses are
+    attributed back to the credential through the header values it has issued. A missing, empty or malformed credential
+    list is reported when the authenticator is first used rather than when it is built, so a
+    `SelectiveAuthenticator`, which builds every branch up front, does not fail the configs that
+    select another branch.
     """
 
     HEARTBEAT_INTERVAL = 60.0  # Log every 60s during exhaustion wait
@@ -118,6 +170,9 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     # current window. Covers ordinary disagreement between the quota endpoint and response
     # headers; anything older is treated as belonging to a window that has already rolled over.
     RESET_SKEW_TOLERANCE = timedelta(seconds=60)
+    # Header values remembered per credential, so a response to a request signed just before a
+    # token refresh is still attributed to the credential that sent it.
+    ISSUED_HEADER_VALUES_PER_CREDENTIAL = 3
 
     def __init__(
         self,
@@ -132,13 +187,53 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         max_wait_time: timedelta = timedelta(hours=2),
         budget_reserve_fraction: float = 0.1,
         budget_min_reserve: int = 50,
+        credentials: Optional[List[RotatingCredential]] = None,
+        credentials_error: Optional[str] = None,
+        credentials_error_detail: Optional[str] = None,
     ) -> None:
-        if not tokens:
+        """`credentials` replaces `tokens`; see the class docstring.
+
+        `credentials_error` is set by the declarative factory when the user's credential list
+        cannot be used (empty, malformed, a missing key). It is raised as a config error on first
+        use rather than at construction; Python callers have no reason to pass it. Nor
+        `credentials_error_detail`, which the factory adds to the internal message when an
+        expression of the credential set could not be evaluated.
+        """
+        # Every token is a credential: a static `tokens` entry signs with a fixed value and is
+        # its own key, a `credentials` entry logs in and is keyed by its non-secret `key`.
+        self._credentials: Dict[str, AbstractHeaderAuthenticator] = {}
+        # Static keys are the tokens themselves, so errors must never name them.
+        self._static_tokens = credentials is None
+        self._credentials_error = credentials_error
+        self._credentials_error_detail = (
+            f" ({credentials_error_detail})" if credentials_error_detail else ""
+        )
+        if credentials is not None:
+            if tokens:
+                raise ValueError(
+                    "RateLimitedMultipleTokenAuthenticator takes either `tokens` or `credentials`, not both"
+                )
+            for credential in credentials:
+                if credential.key in self._credentials and self._credentials_error is None:
+                    self._credentials_error = (
+                        f"More than one credential has the key '{credential.key}'. "
+                        "Every credential needs its own key."
+                    )
+                self._credentials[credential.key] = credential.authenticator
+            tokens = list(self._credentials)
+            # The header name is read from the credentials on first use, not here: an
+            # authenticator whose header depends on its token (an API-key header) would have to
+            # log in to answer, and construction must not touch the network.
+        elif not tokens:
             raise AirbyteTracedException(
                 failure_type=FailureType.config_error,
                 internal_message="RateLimitedMultipleTokenAuthenticator requires at least one token",
                 message="Authentication tokens are missing from the configuration.",
             )
+        else:
+            self._credentials = {
+                token: _StaticTokenAuthenticator(token, auth_method, header) for token in tokens
+            }
         if not quotas:
             raise AirbyteTracedException(
                 failure_type=FailureType.config_error,
@@ -166,37 +261,134 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         self._unmatched_logged = False
         self._untracked_logged = False
         self._states: dict[str, dict[str, _QuotaState]] = {}
+        # Header value -> credential key, and each credential's recent header values (oldest first).
+        self._issued_header_values: Dict[str, str] = {}
+        self._header_values_by_credential: Dict[str, List[str]] = {}
+        # A static token's header is `header`; credentials name theirs, read on first use.
+        self._credentials_header_resolved = self._static_tokens
+        self._credentials_header_lock = threading.Lock()
+        if self._static_tokens:
+            # Known up front, so a request signed with a token elsewhere is still attributed.
+            for token, authenticator in self._credentials.items():
+                self._remember_issued_header_value(token, authenticator.token)
         self._token_to_http_client: Mapping[str, HttpClient] = {
             token: HttpClient(
                 name="quota_status",
                 logger=self._logger,
-                authenticator=TokenAuthenticator(
-                    token, auth_method=self._auth_method, auth_header=self._header
-                ),
+                authenticator=self._credentials[token],
                 use_cache=False,  # quota values change frequently; never reuse cached responses
                 error_handler=self._quota_status_error_handler(),
             )
             for token in self._tokens
         }
         self._tokens_iter = cycle(self._tokens)
-        self._active_token = next(self._tokens_iter)
+        self._active_token = next(self._tokens_iter) if self._tokens else ""
 
     @property
     def auth_header(self) -> str:
+        self._raise_if_credentials_unusable()
         return self._header
 
     @property
     def token(self) -> str:
+        self._raise_if_credentials_unusable()
         with self._lock:
-            return f"{self._auth_method} {self._active_token}".strip()
+            token = self._active_token
+        return self._header_value(token)
 
     def __call__(self, request: requests.PreparedRequest) -> Any:
         """Attach the HTTP headers required to authenticate on the HTTP request"""
         self._ensure_initialized()
         quota = self._match_quota(request)
         token = self._acquire_call(quota)
-        request.headers[self._header] = f"{self._auth_method} {token}".strip()
+        header_value = self._header_value(token)
+        self._remember_issued_header_value(token, header_value)
+        request.headers[self._header] = header_value
         return request
+
+    def _header_value(self, token: str) -> str:
+        """The header value to sign a request with, for a static token or a credential key."""
+        # Logs in or refreshes when a credential's token is missing or expired.
+        try:
+            return str(self._credentials[token].get_auth_header()[self._header])
+        except _LOGIN_ERRORS as error:
+            raise self._credential_error(token, error) from error
+
+    @staticmethod
+    def _credential_error(key: str, error: Exception) -> AirbyteTracedException:
+        """Name the credential in an error from its login or its quota-status request.
+
+        A login that is rejected arrives as an `AirbyteTracedException`; one whose response has no
+        token at `session_token_path` arrives as a `ReadException` or a `KeyError`.
+        """
+        if isinstance(error, AirbyteTracedException):
+            failure_type, message = error.failure_type, error.message or ""
+            internal_message = error.internal_message or message
+        else:
+            failure_type, message = FailureType.system_error, ""
+            internal_message = f"{type(error).__name__}: {error}"
+        return AirbyteTracedException(
+            failure_type=failure_type,
+            internal_message=f"Credential '{key}': {internal_message}",
+            message=f"The credential '{key}' failed. {message}".strip(),
+            exception=error,
+        )
+
+    def _remember_issued_header_value(self, key: str, header_value: str) -> None:
+        with self._lock:
+            if self._issued_header_values.get(header_value) == key:
+                return
+            self._issued_header_values[header_value] = key
+            recent = self._header_values_by_credential.setdefault(key, [])
+            recent.append(header_value)
+            while len(recent) > self.ISSUED_HEADER_VALUES_PER_CREDENTIAL:
+                self._issued_header_values.pop(recent.pop(0), None)
+
+    def _raise_if_credentials_unusable(self) -> None:
+        """Report a credential list that cannot be used, at first use rather than at construction."""
+        if self._credentials_error is not None:
+            raise AirbyteTracedException(
+                failure_type=FailureType.config_error,
+                internal_message=f"RateLimitedMultipleTokenAuthenticator credentials are invalid: {self._credentials_error}{self._credentials_error_detail}",
+                message=f"The authentication credentials are invalid. {self._credentials_error}",
+            )
+        if not self._credentials:
+            raise AirbyteTracedException(
+                failure_type=FailureType.config_error,
+                internal_message=f"RateLimitedMultipleTokenAuthenticator requires at least one credential{self._credentials_error_detail}",
+                message="Authentication credentials are missing from the configuration.",
+            )
+        self._resolve_credentials_header()
+
+    def _resolve_credentials_header(self) -> None:
+        """Take the request header from the credentials, which must all use the same one.
+
+        Reading `auth_header` can log a credential in (an API-key header names itself from its
+        token's request options), which is why this runs on first use and not in `__init__`.
+        """
+        if self._credentials_header_resolved:
+            return
+        with self._credentials_header_lock:
+            if self._credentials_header_resolved:
+                return
+            headers = set()
+            for key, authenticator in self._credentials.items():
+                # An API-key header names itself from its token, so this can log in.
+                try:
+                    headers.add(authenticator.auth_header)
+                except _LOGIN_ERRORS as error:
+                    raise self._credential_error(key, error) from error
+            if len(headers) != 1 or "" in headers:
+                raise AirbyteTracedException(
+                    failure_type=FailureType.system_error,
+                    internal_message=(
+                        "Every credential of a RateLimitedMultipleTokenAuthenticator must inject its "
+                        f"token into the same request header; got {sorted(headers)}"
+                    ),
+                    message="The connector's authentication is misconfigured.",
+                )
+            self._header = headers.pop()
+            self._credentials_header_resolved = True
 
     def _quota_status_error_handler(self) -> Optional[HttpStatusErrorHandler]:
         """Error handling for the quota status request itself.
@@ -284,6 +476,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
+        self._raise_if_credentials_unusable()
         with self._refresh_lock:
             if not self._initialized:
                 self._seed_all_tokens()
@@ -455,12 +648,19 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
 
     def _fetch_quota_states(self, token: str) -> dict[str, _QuotaState]:
         http_client = self._token_to_http_client[token]
-        _, response = http_client.send_request(
-            http_method=self._quota_status_http_method,
-            url=self._quota_status_url,
-            headers=self._quota_status_headers,
-            request_kwargs={},
-        )
+        try:
+            _, response = http_client.send_request(
+                http_method=self._quota_status_http_method,
+                url=self._quota_status_url,
+                headers=self._quota_status_headers,
+                request_kwargs={},
+            )
+        except _LOGIN_ERRORS as error:
+            if self._static_tokens:
+                # The key is the token itself: re-raise without naming it.
+                raise
+            # Signing this request logs the credential in, so a failed login surfaces here.
+            raise self._credential_error(token, error) from error
         if response.status_code in self._unavailable_status_codes:
             # Only reachable when the connector opted in: without `unavailable_status_codes`
             # the default error mapping raises before this point. `_seed_all_tokens` reports it
@@ -631,21 +831,14 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     def _token_from_request(self, request: requests.PreparedRequest) -> Optional[str]:
         """Recover the token a request was signed with from its auth header.
 
-        The prefix is checked rather than assumed: the header may have been written by
-        something other than this authenticator, and slicing blindly would leave membership in
-        `_states` as the only thing standing between a mangled value and a wrong attribution.
+        The value is looked up among those this authenticator issued rather than parsed: a
+        credential's value changes on every token refresh, and the header may have been written
+        by something other than this authenticator.
         """
         value = request.headers.get(self._header)
         if not value:
             return None
-        if self._auth_method:
-            prefix = f"{self._auth_method} "
-            if not value.startswith(prefix):
-                return None
-            token = value[len(prefix) :].strip()
-        else:
-            token = value.strip()
-        return token if token in self._states else None
+        return self._issued_header_values.get(value)
 
     @staticmethod
     def _header_int(response: requests.Response, header: Optional[str]) -> Optional[int]:
