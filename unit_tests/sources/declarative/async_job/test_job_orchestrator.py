@@ -409,6 +409,25 @@ class AsyncJobOrchestratorTest(TestCase):
 
         assert job_tracker.try_to_get_intent()
 
+    def test_given_start_job_exception_contains_secret_when_start_job_then_emit_sanitized_trace(
+        self,
+    ) -> None:
+        secret = "FAKE_SECRET_TOKEN"
+        update_secrets([secret])
+        try:
+            self._job_repository.start.side_effect = RuntimeError(secret)
+            orchestrator = self._orchestrator([_A_STREAM_SLICE])
+
+            orchestrator._start_job(_A_STREAM_SLICE)
+
+            trace_error = self._message_repository.emit_message.call_args.args[0].trace.error
+            assert secret not in trace_error.message
+            assert secret not in trace_error.internal_message
+            assert secret not in trace_error.stack_trace
+            assert "****" in trace_error.internal_message
+        finally:
+            update_secrets([])
+
     @mock.patch(sleep_mock_target)
     def test_given_skipped_when_create_and_get_completed_partitions_then_skip_without_fetching_records(
         self, mock_sleep: MagicMock
