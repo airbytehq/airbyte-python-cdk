@@ -22,6 +22,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonItemsParser,
     JsonLineParser,
     JsonParser,
+    XmlParser,
 )
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -565,3 +566,52 @@ def test_json_items_parser_is_lazy() -> None:
     first = next(iterator)
     assert first == {"id": 0, "name": "name-0"}
     assert stream.bytes_read < stream.total_size
+
+
+@pytest.mark.parametrize(
+    "xml_content, expected",
+    [
+        pytest.param(
+            b"<root><item>1</item></root>",
+            [{"root": {"item": "1"}}],
+            id="simple_element",
+        ),
+        pytest.param(
+            b'<root><item id="1" category="books">Book</item></root>',
+            [{"root": {"item": {"@id": "1", "@category": "books", "#text": "Book"}}}],
+            id="attributes_and_text_content",
+        ),
+        pytest.param(
+            b"not xml",
+            [{}],
+            id="malformed_document_yields_empty_record",
+        ),
+    ],
+)
+def test_xml_parser(xml_content: bytes, expected: List[dict]):
+    assert list(XmlParser().parse(BytesIO(xml_content))) == expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(compress_with_gzip("<root><item>1</item></root>"), id="gzipped"),
+        pytest.param(b"<root><item>1</item></root>", id="not_gzipped"),
+    ],
+)
+def test_gzip_parser_composes_with_xml_parser(payload: bytes):
+    parser = GzipParser(inner_parser=XmlParser())
+
+    assert list(parser.parse(BytesIO(payload))) == [{"root": {"item": "1"}}]
+
+
+def test_xml_parser_honors_encoding():
+    xml_content = (
+        '<?xml version="1.0" encoding="iso-8859-1"?><root><name>Jörg</name></root>'.encode(
+            "iso-8859-1"
+        )
+    )
+
+    assert list(XmlParser(encoding="iso-8859-1").parse(BytesIO(xml_content))) == [
+        {"root": {"name": "Jörg"}}
+    ]
