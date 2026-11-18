@@ -415,10 +415,11 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
 
     def _update_current_window(self) -> None:
         now = datetime.datetime.now()
-        if now > self._next_reset_ts:
-            logger.debug("started new window, %s calls available now", self._call_limit)
-            self._next_reset_ts = self._next_reset_ts + self._offset
+        if now >= self._next_reset_ts:
+            elapsed_periods = (now - self._next_reset_ts) // self._offset + 1
+            self._next_reset_ts = self._next_reset_ts + self._offset * elapsed_periods
             self._calls_num = 0
+            logger.debug("started new window, %s calls available now", self._call_limit)
 
 
 class MovingWindowCallRatePolicy(BaseCallRatePolicy):
