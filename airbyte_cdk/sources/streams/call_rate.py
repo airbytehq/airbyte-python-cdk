@@ -570,8 +570,13 @@ class APIBudget(AbstractAPIBudget):
         :param policies: list of policies in this budget
         :param maximum_attempts_to_acquire: number of attempts before throwing hit ratelimit exception, we put some big number here
          to avoid situations when many threads compete with each other for a few lots over a significant amount of time
+        :raises: ValueError if maximum_attempts_to_acquire is less than 1
         """
 
+        if maximum_attempts_to_acquire < 1:
+            raise ValueError(
+                f"maximum_attempts_to_acquire must be at least 1, got {maximum_attempts_to_acquire}"
+            )
         self._policies = policies
         self._maximum_attempts_to_acquire = maximum_attempts_to_acquire
 
@@ -643,13 +648,15 @@ class APIBudget(AbstractAPIBudget):
         last_exception = None
         endpoint = self._extract_endpoint(request)
         # sometimes we spend all budget before a second attempt, so we have a few more attempts
-        for attempt in range(1, self._maximum_attempts_to_acquire):
+        for attempt in range(1, self._maximum_attempts_to_acquire + 1):
             try:
                 weight = policy.get_weight(request) if isinstance(policy, BaseCallRatePolicy) else 1
                 policy.try_acquire(request, weight=weight)
                 return
             except CallRateLimitHit as exc:
                 last_exception = exc
+                if attempt == self._maximum_attempts_to_acquire:
+                    break
                 if block:
                     if timeout is not None:
                         time_to_wait = min(timedelta(seconds=timeout), exc.time_to_wait)
