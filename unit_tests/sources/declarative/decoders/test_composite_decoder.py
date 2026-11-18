@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
@@ -355,6 +356,36 @@ def test_composite_raw_decoder_parse_empty_strings(
 
     parsed_records = list(composite_raw_decoder.decode(response))
     assert parsed_records == expected_data
+
+
+def test_csv_parser_default_max_field_size_allows_large_fields():
+    large_field = "a" * 200_000
+
+    parsed_records = list(CsvParser().parse(BytesIO(f"value\n{large_field}\n".encode())))
+
+    assert parsed_records == [{"value": large_field}]
+
+
+def test_csv_parser_max_field_size_override_is_honored():
+    previous_limit = csv.field_size_limit()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(CsvParser(max_field_size=10).parse(BytesIO(b"value\nthis value is too long\n")))
+
+    assert (
+        exception.value.message == "CSV field exceeds the configured maximum size of 10 characters."
+    )
+    assert exception.value.failure_type == FailureType.config_error
+    assert exception.value.internal_message == "field larger than field limit (10)"
+    assert csv.field_size_limit() == previous_limit
+
+
+def test_csv_parser_restores_global_field_size_limit_after_parsing():
+    previous_limit = csv.field_size_limit()
+
+    list(CsvParser(max_field_size=10).parse(BytesIO(b"value\nshort\n")))
+
+    assert csv.field_size_limit() == previous_limit
 
 
 class TestServer(BaseHTTPRequestHandler):
