@@ -34,7 +34,7 @@ class DeliverRawFiles(BaseModel):
     delivery_type: Literal["use_file_transfer"] = Field("use_file_transfer", const=True)
 
     preserve_directory_structure: bool = Field(
-        title="Preserve Sub-Directories in File Paths",
+        title="Preserve sub-directories in file paths",
         description=(
             "If enabled, sends subdirectory folder structure "
             "along with source file names to the destination. "
@@ -52,7 +52,7 @@ class AbstractFileBasedSpec(BaseModel):
     """
 
     start_date: Optional[str] = Field(
-        title="Start Date",
+        title="Start date",
         description="UTC date and time in the format 2017-01-25T00:00:00.000000Z. Any file modified before this date will not be replicated.",
         examples=[
             "2021-01-01",
@@ -94,7 +94,7 @@ class AbstractFileBasedSpec(BaseModel):
     )
 
     delivery_method: Union[DeliverRecords, DeliverRawFiles, DeliverPermissions] = Field(
-        title="Delivery Method",
+        title="Delivery method",
         discriminator="delivery_type",
         type="object",
         order=7,
@@ -122,7 +122,43 @@ class AbstractFileBasedSpec(BaseModel):
         cls.replace_enum_allOf_and_anyOf(transformed_schema)
         cls.remove_discriminator(transformed_schema)
 
+        delivery_method = transformed_schema["properties"]["delivery_method"]
+        required = transformed_schema.setdefault("required", [])
+        if "default" in delivery_method and "delivery_method" not in required:
+            required.append("delivery_method")
+        cls._mark_defaulted_fields_as_required(delivery_method)
+        cls._mark_defaulted_fields_as_required(transformed_schema["properties"]["streams"])
+
         return transformed_schema
+
+    @staticmethod
+    def _mark_defaulted_fields_as_required(schema: Dict[str, Any]) -> None:
+        if schema.get("airbyte_hidden") is True:
+            return
+
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            required = schema.setdefault("required", [])
+            for name, property_schema in properties.items():
+                if not isinstance(property_schema, dict):
+                    continue
+                if (
+                    "default" in property_schema
+                    and property_schema.get("airbyte_hidden") is not True
+                    and name not in required
+                ):
+                    required.append(name)
+                AbstractFileBasedSpec._mark_defaulted_fields_as_required(property_schema)
+
+        items = schema.get("items")
+        if isinstance(items, dict):
+            AbstractFileBasedSpec._mark_defaulted_fields_as_required(items)
+
+        options = schema.get("oneOf")
+        if isinstance(options, list):
+            for option in options:
+                if isinstance(option, dict):
+                    AbstractFileBasedSpec._mark_defaulted_fields_as_required(option)
 
     @staticmethod
     def remove_discriminator(schema: Dict[str, Any]) -> None:

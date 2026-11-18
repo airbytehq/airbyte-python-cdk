@@ -263,6 +263,7 @@ single_avro_scenario = (
     .set_name("single_avro_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -270,7 +271,7 @@ single_avro_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -332,6 +333,7 @@ multiple_avro_combine_schema_scenario = (
     .set_name("multiple_avro_combine_schema_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -339,7 +341,7 @@ multiple_avro_combine_schema_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -438,6 +440,7 @@ avro_all_types_scenario = (
     .set_name("avro_all_types_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -445,7 +448,7 @@ avro_all_types_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -567,6 +570,7 @@ multiple_streams_avro_scenario = (
     .set_name("multiple_streams_avro_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "songs_stream",
@@ -580,7 +584,7 @@ multiple_streams_avro_scenario = (
                     "globs": ["*_festivals.avro"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -760,6 +764,7 @@ avro_file_with_double_as_number_scenario = (
     .set_name("avro_file_with_double_as_number_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -767,7 +772,7 @@ avro_file_with_double_as_number_scenario = (
                     "validation_policy": "Emit Record",
                     "format": {"filetype": "avro", "double_as_string": False},
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(

@@ -88,6 +88,7 @@ valid_single_stream_user_input_schema_scenario = (
     .set_name("valid_single_stream_user_input_schema_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -96,7 +97,7 @@ valid_single_stream_user_input_schema_scenario = (
                     "validation_policy": "Emit Record",
                     "input_schema": '{"col1": "string", "col2": "string"}',
                 }
-            ]
+            ],
         }
     )
     .set_expected_check_status("SUCCEEDED")
@@ -108,6 +109,7 @@ single_stream_user_input_schema_scenario_schema_is_invalid = (
     .set_name("single_stream_user_input_schema_scenario_schema_is_invalid")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -116,7 +118,7 @@ single_stream_user_input_schema_scenario_schema_is_invalid = (
                     "validation_policy": "Emit Record",
                     "input_schema": '{"col1": "x", "col2": "string"}',
                 }
-            ]
+            ],
         }
     )
     .set_catalog(CatalogBuilder().with_stream("stream1", SyncMode.full_refresh).build())
@@ -136,6 +138,7 @@ single_stream_user_input_schema_scenario_emit_nonconforming_records = (
     .set_name("single_stream_user_input_schema_scenario_emit_nonconforming_records")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -144,7 +147,7 @@ single_stream_user_input_schema_scenario_emit_nonconforming_records = (
                     "validation_policy": "Emit Record",
                     "input_schema": '{"col1": "integer", "col2": "string"}',
                 }
-            ]
+            ],
         }
     )
     .set_expected_check_status("FAILED")
@@ -179,6 +182,7 @@ single_stream_user_input_schema_scenario_skip_nonconforming_records = (
     .set_name("single_stream_user_input_schema_scenario_skip_nonconforming_records")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -187,7 +191,7 @@ single_stream_user_input_schema_scenario_skip_nonconforming_records = (
                     "validation_policy": "Skip Record",
                     "input_schema": '{"col1": "integer", "col2": "string"}',
                 }
-            ]
+            ],
         }
     )
     .set_expected_check_status("FAILED")
@@ -403,6 +407,7 @@ valid_multi_stream_user_input_schema_scenario = (
     .set_name("valid_multi_stream_user_input_schema_scenario")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -424,7 +429,7 @@ valid_multi_stream_user_input_schema_scenario = (
                     "globs": ["c.csv"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_expected_check_status("SUCCEEDED")
@@ -436,6 +441,7 @@ multi_stream_user_input_schema_scenario_schema_is_invalid = (
     .set_name("multi_stream_user_input_schema_scenario_schema_is_invalid")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -457,7 +463,7 @@ multi_stream_user_input_schema_scenario_schema_is_invalid = (
                     "globs": ["c.csv"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_catalog(
@@ -483,6 +489,7 @@ multi_stream_user_input_schema_scenario_emit_nonconforming_records = (
     .set_name("multi_stream_user_input_schema_scenario_emit_nonconforming_records")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -504,7 +511,7 @@ multi_stream_user_input_schema_scenario_emit_nonconforming_records = (
                     "globs": ["c.csv"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_expected_catalog(
@@ -645,6 +652,7 @@ multi_stream_user_input_schema_scenario_skip_nonconforming_records = (
     .set_name("multi_stream_user_input_schema_scenario_skip_nonconforming_records")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -666,7 +674,7 @@ multi_stream_user_input_schema_scenario_skip_nonconforming_records = (
                     "globs": ["c.csv"],
                     "validation_policy": "Emit Record",
                 },
-            ]
+            ],
         }
     )
     .set_expected_catalog(

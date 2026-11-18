@@ -155,6 +155,7 @@ single_parquet_scenario = (
     .set_name("single_parquet_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -162,7 +163,7 @@ single_parquet_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -223,6 +224,7 @@ single_partitioned_parquet_scenario = (
     .set_name("single_partitioned_parquet_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -230,7 +232,7 @@ single_partitioned_parquet_scenario = (
                     "globs": ["path_prefix/**/*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -299,6 +301,7 @@ multi_parquet_scenario = (
     .set_name("multi_parquet_stream")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -306,7 +309,7 @@ multi_parquet_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -388,6 +391,7 @@ parquet_various_types_scenario = (
     .set_name("parquet_various_types")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -395,7 +399,7 @@ parquet_various_types_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -535,6 +539,7 @@ parquet_file_with_decimal_no_config_scenario = (
     .set_name("parquet_file_with_decimal_no_config")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -542,7 +547,7 @@ parquet_file_with_decimal_no_config_scenario = (
                     "globs": ["*"],
                     "validation_policy": "Emit Record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -592,6 +597,7 @@ parquet_file_with_decimal_as_string_scenario = (
     .set_name("parquet_file_with_decimal_as_string")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -599,7 +605,7 @@ parquet_file_with_decimal_as_string_scenario = (
                     "validation_policy": "Emit Record",
                     "format": {"filetype": "parquet", "decimal_as_float": False},
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -649,6 +655,7 @@ parquet_file_with_decimal_as_float_scenario = (
     .set_name("parquet_file_with_decimal_as_float")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -656,7 +663,7 @@ parquet_file_with_decimal_as_float_scenario = (
                     "validation_policy": "Emit Record",
                     "format": {"filetype": "parquet", "decimal_as_float": True},
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -706,6 +713,7 @@ parquet_file_with_decimal_legacy_config_scenario = (
     .set_name("parquet_file_with_decimal_legacy_config")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -715,7 +723,7 @@ parquet_file_with_decimal_legacy_config_scenario = (
                     "globs": ["*"],
                     "validation_policy": "emit_record",
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(
@@ -765,6 +773,7 @@ parquet_with_invalid_config_scenario = (
     .set_name("parquet_with_invalid_config")
     .set_config(
         {
+            "delivery_method": {"delivery_type": "use_records_transfer"},
             "streams": [
                 {
                     "name": "stream1",
@@ -772,7 +781,7 @@ parquet_with_invalid_config_scenario = (
                     "validation_policy": "Emit Record",
                     "format": {"filetype": "csv"},
                 }
-            ]
+            ],
         }
     )
     .set_source_builder(

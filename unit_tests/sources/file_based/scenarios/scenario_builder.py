@@ -14,7 +14,67 @@ from airbyte_cdk.models import (
     SyncMode,
 )
 from airbyte_cdk.sources import AbstractSource
+from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.source import TState
+
+
+def _apply_required_schema_defaults(schema: Mapping[str, Any], config: Any) -> None:
+    if schema.get("airbyte_hidden") is True:
+        return
+
+    if isinstance(config, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for item in config:
+                _apply_required_schema_defaults(item_schema, item)
+        return
+
+    if not isinstance(config, dict):
+        return
+
+    properties = schema.get("properties")
+    required = schema.get("required", [])
+    if isinstance(properties, dict):
+        for name, property_schema in properties.items():
+            if not isinstance(property_schema, dict):
+                continue
+            if name in required and name not in config and "default" in property_schema:
+                default = deepcopy(property_schema["default"])
+                options = property_schema.get("oneOf")
+                if isinstance(default, str) and isinstance(options, list):
+                    for option in options:
+                        if not isinstance(option, dict):
+                            continue
+                        option_properties = option.get("properties", {})
+                        if not isinstance(option_properties, dict):
+                            continue
+                        for discriminator, discriminator_schema in option_properties.items():
+                            if (
+                                isinstance(discriminator_schema, dict)
+                                and discriminator_schema.get("default") == default
+                            ):
+                                default = {discriminator: default}
+                                break
+                        if isinstance(default, dict):
+                            break
+                config[name] = default
+            if name in config:
+                _apply_required_schema_defaults(property_schema, config[name])
+
+    options = schema.get("oneOf")
+    if isinstance(options, list):
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            option_properties = option.get("properties", {})
+            if isinstance(option_properties, dict) and any(
+                name in config
+                and isinstance(property_schema, dict)
+                and property_schema.get("default") == config[name]
+                for name, property_schema in option_properties.items()
+            ):
+                _apply_required_schema_defaults(option, config)
+                break
 
 
 @dataclass
@@ -142,7 +202,8 @@ class TestScenarioBuilder(Generic[SourceType]):
         return self
 
     def set_config(self, config: Mapping[str, Any]) -> "TestScenarioBuilder[SourceType]":
-        self._config = config
+        self._config = deepcopy(config)
+        _apply_required_schema_defaults(AbstractFileBasedSpec.schema(), self._config)
         return self
 
     def set_expected_spec(
