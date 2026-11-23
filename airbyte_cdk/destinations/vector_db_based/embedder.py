@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
@@ -25,6 +24,7 @@ from airbyte_cdk.destinations.vector_db_based.config import (
 )
 from airbyte_cdk.destinations.vector_db_based.utils import create_chunks, format_exception
 from airbyte_cdk.models import AirbyteRecordMessage
+from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException, FailureType
 
 
@@ -208,11 +208,7 @@ class OpenAICompatibleEmbedder(Embedder):
         )  # type: ignore
 
     def check(self) -> Optional[str]:
-        deployment_mode = os.environ.get("DEPLOYMENT_MODE", "")
-        if (
-            deployment_mode.casefold() == CLOUD_DEPLOYMENT_MODE
-            and not self.config.base_url.startswith("https://")
-        ):
+        if is_cloud_environment() and not self.config.base_url.startswith("https://"):
             return "Base URL must start with https://"
 
         try:
