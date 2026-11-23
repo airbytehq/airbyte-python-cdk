@@ -150,3 +150,42 @@ def test_openai_chunking():
     ]
     assert embedder.embed_documents(chunks) == [[0] * OPEN_AI_VECTOR_SIZE] * 1005
     mock_embedding_instance.embed_documents.assert_has_calls([call(["a"] * 1000), call(["a"] * 5)])
+
+
+@pytest.mark.parametrize(
+    "env, base_url, expected_error",
+    [
+        pytest.param({}, "http://my-service.com", None, id="oss_allows_http"),
+        pytest.param(
+            {"AIRBYTE_EDITION": "cloud"},
+            "http://my-service.com",
+            "Base URL must start with https://",
+            id="cloud_edition_rejects_http",
+        ),
+        pytest.param(
+            {"DEPLOYMENT_MODE": "CLOUD"},
+            "http://my-service.com",
+            "Base URL must start with https://",
+            id="cloud_deployment_mode_rejects_http",
+        ),
+    ],
+)
+def test_openai_compatible_embedder_check_requires_https_in_cloud(
+    monkeypatch, env, base_url, expected_error
+):
+    monkeypatch.delenv("AIRBYTE_EDITION", raising=False)
+    monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    embedder = OpenAICompatibleEmbedder(
+        OpenAICompatibleEmbeddingConfigModel(
+            **{"base_url": base_url, "api_key": "", "model_name": "model", "dimensions": 1}
+        )
+    )
+    embedder.embeddings = MagicMock()
+    embedder.embeddings.embed_query.return_value = [0.1]
+
+    if expected_error:
+        assert embedder.check() == expected_error
+    else:
+        assert embedder.check() is None

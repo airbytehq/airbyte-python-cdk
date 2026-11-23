@@ -590,8 +590,9 @@ def test_invalid_command(entrypoint: AirbyteEntrypoint, config_mock):
     ],
 )
 @patch.object(requests.Session, "send", lambda self, request, **kwargs: requests.Response())
-def test_filter_internal_requests(deployment_mode, url, expected_error):
-    with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
+@pytest.mark.parametrize("env_var", ["DEPLOYMENT_MODE", "AIRBYTE_EDITION"])
+def test_filter_internal_requests(env_var, deployment_mode, url, expected_error):
+    with mock.patch.dict(os.environ, {env_var: deployment_mode}, clear=False):
         AirbyteEntrypoint(source=MockSource())
 
         session = requests.Session()
