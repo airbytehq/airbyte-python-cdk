@@ -1,4 +1,8 @@
+import json
+from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 
 from airbyte_cdk.manifest_server.command_processor.utils import (
     SHOULD_MIGRATE_KEY,
@@ -6,6 +10,66 @@ from airbyte_cdk.manifest_server.command_processor.utils import (
     build_catalog,
     build_source,
 )
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
+
+
+@pytest.mark.parametrize("manifest_server", [True, False], ids=["manifest-server", "standalone"])
+def test_config_migration_only_emits_to_standalone_stdout(
+    manifest_server: bool, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    secret = "MARKER-12345"
+    config = {"api_key": secret}
+    manifest = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": []},
+        "streams": [],
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {
+                "type": "object",
+                "properties": {"api_key": {"type": "string", "airbyte_secret": True}},
+            },
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "config_migrations": [
+                    {
+                        "type": "ConfigMigration",
+                        "transformations": [
+                            {
+                                "type": "ConfigAddFields",
+                                "fields": [
+                                    {
+                                        "type": "AddedFieldDefinition",
+                                        "path": ["migrated_marker"],
+                                        "value": "added-by-migration",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    }
+    if manifest_server:
+        source = build_source(manifest, catalog=None, config=config, state=None)
+    else:
+        source = ConcurrentDeclarativeSource(source_config=manifest, config=config)
+
+    migrated_config = {"api_key": secret, "migrated_marker": "added-by-migration"}
+    assert source.configure(config, str(tmp_path)) == migrated_config
+    stdout = capsys.readouterr().out
+    if manifest_server:
+        assert secret not in stdout
+        assert "CONNECTOR_CONFIG" not in stdout
+    else:
+        message = json.loads(stdout)
+        assert message["type"] == "CONTROL"
+        assert message["control"]["type"] == "CONNECTOR_CONFIG"
+        assert message["control"]["connectorConfig"]["config"] == migrated_config
 
 
 class TestManifestUtils:

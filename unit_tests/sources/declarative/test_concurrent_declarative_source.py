@@ -7127,9 +7127,9 @@ def test_given_refresh_token_updater_when_read_then_exactly_one_connector_config
     )
 
 
-def test_given_refresh_token_updater_and_connector_builder_mode_when_read_then_control_message_yielded_once(
-    capsys,
-):
+def test_given_refresh_token_updater_and_connector_builder_mode_when_read_then_control_message_is_only_yielded(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     config = _single_use_refresh_token_config()
     catalog = _single_use_refresh_token_catalog()
     source = ConcurrentDeclarativeSource(
@@ -7138,6 +7138,7 @@ def test_given_refresh_token_updater_and_connector_builder_mode_when_read_then_c
         catalog=catalog,
         state=None,
         emit_connector_builder_messages=True,
+        custom_components_trusted=False,
         limits=TestLimits(max_records=10, max_pages_per_slice=10, max_slices=10, max_streams=10),
     )
 
@@ -7149,7 +7150,7 @@ def test_given_refresh_token_updater_and_connector_builder_mode_when_read_then_c
     assert len(yielded_control_messages) == 1
     assert yielded_control_messages[0].control.type == OrchestratorType.CONNECTOR_CONFIG
     connector_config_messages = _connector_config_lines(capsys.readouterr().out)
-    assert len(connector_config_messages) == 1
+    assert not connector_config_messages
 
 
 def test_given_refresh_token_updater_when_check_then_connector_config_message_on_stdout(capsys):
