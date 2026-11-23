@@ -3,6 +3,7 @@
 #
 
 import os
+import socket
 from argparse import Namespace
 from collections import defaultdict
 from copy import deepcopy
@@ -1272,3 +1273,27 @@ def test_run_check_section_rejects_a_section_without_check(
     ]
     check.assert_not_called()
     check_section.assert_not_called()
+
+
+def test_internal_request_filter_checks_each_request_once_across_entrypoints(monkeypatch):
+    def fake_adapter_send(self, request, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        return response
+
+    looked_up_hosts = []
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        looked_up_hosts.append(host)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(requests.Session, "send", requests.Session.send)
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", fake_adapter_send)
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setenv("DEPLOYMENT_MODE", "cloud")
+
+    AirbyteEntrypoint(source=MockSource())
+    AirbyteEntrypoint(source=MockSource())
+    requests.Session().send(requests.Request("GET", "https://example.com").prepare())
+
+    assert looked_up_hosts == ["example.com"]
