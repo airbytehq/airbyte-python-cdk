@@ -1547,7 +1547,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         )
         assert [m for m in message_repository.consume_queue() if m.type == Type.CONTROL] == []
 
-    def test_given_emit_control_message_to_message_repository_when_get_access_token_then_emit_to_stdout_and_repository(
+    def test_given_emit_control_message_to_message_repository_when_get_access_token_then_emit_only_to_repository(
         self, mocker, connector_config, capsys
     ):
         message_repository = InMemoryMessageRepository()
@@ -1577,12 +1577,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
 
         authenticator.get_access_token()
 
-        messages = [
-            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
-        ]
-        assert len(messages) == 1
-        assert messages[0]["type"] == "CONTROL"
-        assert messages[0]["control"]["type"] == "CONNECTOR_CONFIG"
+        assert not capsys.readouterr().out
         emitted_messages = [
             message
             for message in message_repository.consume_queue()
