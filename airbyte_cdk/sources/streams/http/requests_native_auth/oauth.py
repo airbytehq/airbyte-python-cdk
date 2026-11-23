@@ -194,6 +194,8 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         refresh_token_error_values: Tuple[str, ...] = (),
         emit_control_message_to_message_repository: bool = False,
         refresh_token_error_messages: Optional[Mapping[str, str]] = None,
+        *,
+        emit_control_message_to_stdout: bool = True,
     ) -> None:
         """
         Args:
@@ -217,6 +219,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             message_repository (MessageRepository): The message repository used to emit logs on HTTP requests and control message on config update.
             emit_control_message_to_message_repository (bool): Whether the message repository additionally receives the CONNECTOR_CONFIG message. This is only for in-process consumers such as the Connector Builder, because messages in the repository are otherwise printed to stdout by the entrypoint and would duplicate the direct stdout emission. Defaults to False.
             refresh_token_error_messages (Optional[Mapping[str, str]]): Fixed user-facing messages for refresh token errors
+            emit_control_message_to_stdout (bool): Whether to emit the CONNECTOR_CONFIG message to stdout for the platform. In-process consumers should disable this when stdout is used for logs. Defaults to True.
         """
         self._connector_config = connector_config
         self._client_id: str = self._get_config_value_by_path(
@@ -238,6 +241,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self._emit_control_message_to_message_repository = (
             emit_control_message_to_message_repository
         )
+        self._emit_control_message_to_stdout = emit_control_message_to_stdout
         super().__init__(
             token_refresh_endpoint=token_refresh_endpoint,
             client_id_name=self._client_id_name,
@@ -442,15 +446,15 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     def _emit_control_message(self) -> None:
         """Emit the updated connector config as a CONNECTOR_CONFIG control message.
 
-        The message is always printed to stdout, which is the delivery the platform relies on: it
+        By default the message is printed to stdout, which is the delivery the platform relies on: it
         is immediate and independent of whether the source exposes a message repository and of
         when that repository is drained (for `ConcurrentDeclarativeSource` the internal repository
         is only drained during `read`, after partitions are processed). The message repository is
-        only used in addition when explicitly requested, for in-process consumers such as the
-        Connector Builder; repository messages are otherwise printed by the entrypoint too and
-        would duplicate the stdout emission.
+        used when explicitly requested, for in-process consumers such as the Connector Builder
+        where stdout is a log stream rather than a protocol stream.
         """
-        emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
+        if self._emit_control_message_to_stdout:
+            emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
         if self._emit_control_message_to_message_repository and not isinstance(
             self._message_repository, NoopMessageRepository
         ):
