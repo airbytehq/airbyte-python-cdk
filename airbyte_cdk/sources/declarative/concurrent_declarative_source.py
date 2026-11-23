@@ -384,6 +384,8 @@ class ConcurrentDeclarativeSource(Source):
             if config_path:
                 with open(config_path, "w") as f:
                     json.dump(mutable_config, f)
+            # In Builder/manifest-server mode, stdout goes to container logs, not the protocol
+            # stream. Printing the unmasked config there would leak secrets.
             if not self._emit_connector_builder_messages:
                 control_message = create_connector_config_control_message(mutable_config)
                 print(orjson.dumps(AirbyteMessageSerializer.dump(control_message)).decode())
