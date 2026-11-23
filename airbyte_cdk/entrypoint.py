@@ -11,6 +11,7 @@ import os.path
 import socket
 import sys
 import tempfile
+import threading
 from collections import defaultdict
 from functools import wraps
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
@@ -55,6 +56,8 @@ logger = init_logger("airbyte")
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+_INTERNAL_REQUEST_FILTER_MARKER = "_airbyte_internal_request_filter"
+_INTERNAL_REQUEST_FILTER_LOCK = threading.Lock()
 
 
 class AirbyteEntrypoint(object):
@@ -430,7 +433,16 @@ def launch(source: Source, args: List[str]) -> None:
 def _init_internal_request_filter() -> None:
     """
     Wraps the Python requests library to prevent sending requests to internal URL endpoints.
+
+    Long-lived processes such as the manifest server create an entrypoint per request, from concurrent threads, so the
+    wrap is applied once under a lock.
     """
+    with _INTERNAL_REQUEST_FILTER_LOCK:
+        if not getattr(Session.send, _INTERNAL_REQUEST_FILTER_MARKER, False):
+            _wrap_session_send()
+
+
+def _wrap_session_send() -> None:
     wrapped_fn = Session.send
 
     @wraps(wrapped_fn)
@@ -464,6 +476,7 @@ def _init_internal_request_filter() -> None:
 
         return wrapped_fn(self, request, **kwargs)
 
+    setattr(filtered_send, _INTERNAL_REQUEST_FILTER_MARKER, True)
     Session.send = filtered_send  # type: ignore [method-assign]
 
 
