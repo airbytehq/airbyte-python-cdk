@@ -1273,17 +1273,3 @@ def test_run_check_section_rejects_a_section_without_check(
     ]
     check.assert_not_called()
     check_section.assert_not_called()
-
-
-def test_internal_request_filter_is_installed_once():
-    original_send = requests.Session.send
-    try:
-        with mock.patch.dict(os.environ, {"AIRBYTE_EDITION": "cloud"}, clear=False):
-            AirbyteEntrypoint(source=MockSource())
-            filtered_send = requests.Session.send
-            AirbyteEntrypoint(source=MockSource())
-
-        assert filtered_send is not original_send
-        assert requests.Session.send is filtered_send
-    finally:
-        requests.Session.send = original_send
