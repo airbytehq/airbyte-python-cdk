@@ -55,6 +55,7 @@ logger = init_logger("airbyte")
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+_INTERNAL_REQUEST_FILTER_MARKER = "_airbyte_internal_request_filter"
 
 
 class AirbyteEntrypoint(object):
@@ -430,7 +431,11 @@ def launch(source: Source, args: List[str]) -> None:
 def _init_internal_request_filter() -> None:
     """
     Wraps the Python requests library to prevent sending requests to internal URL endpoints.
+
+    Long-lived processes such as the manifest server create an entrypoint per request, so the wrap is applied once.
     """
+    if getattr(Session.send, _INTERNAL_REQUEST_FILTER_MARKER, False):
+        return
     wrapped_fn = Session.send
 
     @wraps(wrapped_fn)
@@ -464,6 +469,7 @@ def _init_internal_request_filter() -> None:
 
         return wrapped_fn(self, request, **kwargs)
 
+    setattr(filtered_send, _INTERNAL_REQUEST_FILTER_MARKER, True)
     Session.send = filtered_send  # type: ignore [method-assign]
 
 
