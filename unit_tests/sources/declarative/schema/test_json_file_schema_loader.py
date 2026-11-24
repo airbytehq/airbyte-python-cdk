@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from airbyte_cdk.sources.declarative.schema.default_schema_loader import DefaultSchemaLoader
 from airbyte_cdk.sources.declarative.schema.json_file_schema_loader import (
     JsonFileSchemaLoader,
     _default_file_path,
@@ -90,6 +91,9 @@ def test_interpolated_traversal_from_config_is_rejected(outside_json_file):
         pytest.param("etc/passwd", id="existing_non_json_file"),
         pytest.param("etc/does-not-exist.json", id="missing_file"),
         pytest.param("proc/self/environ", id="process_environment"),
+        pytest.param(
+            "var/run/secrets/kubernetes.io/serviceaccount/token", id="service_account_token"
+        ),
     ],
 )
 def test_outside_paths_fail_before_file_access(outside_path):
@@ -153,17 +157,46 @@ def test_symlink_inside_package_pointing_outside_is_rejected(
         loader.get_json_schema()
 
 
-def test_doubled_slash_inside_package_still_loads():
-    loader = JsonFileSchemaLoader(
-        {}, {}, "airbyte_cdk//sources/declarative/declarative_component_schema.yaml"
-    )
+SPEC_JSON_PATH = "airbyte_cdk/cli/source_declarative_manifest/spec.json"
 
-    with patch(
-        "airbyte_cdk.sources.declarative.schema.json_file_schema_loader.pkgutil.get_data",
-        return_value=b"{}",
-    ) as get_data:
+
+@pytest.mark.parametrize(
+    "file_path",
+    [
+        pytest.param("airbyte_cdk//cli/source_declarative_manifest/spec.json", id="doubled_slash"),
+        pytest.param("airbyte_cdk.cli/source_declarative_manifest/spec.json", id="dotted_package"),
+    ],
+)
+def test_equivalent_in_package_paths_load_the_same_file(file_path):
+    expected = JsonFileSchemaLoader({}, {}, SPEC_JSON_PATH).get_json_schema()
+
+    assert JsonFileSchemaLoader({}, {}, file_path).get_json_schema() == expected
+
+
+def test_namespace_package_is_rejected(tmp_path, monkeypatch):
+    """A namespace package has no single directory to contain the path, so it cannot anchor one."""
+    (tmp_path / "namespace_test_package" / "schemas").mkdir(parents=True)
+    (tmp_path / "namespace_test_package" / "schemas" / "stream.json").write_text("{}")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    loader = JsonFileSchemaLoader({}, {}, "namespace_test_package/schemas/stream.json")
+
+    with pytest.raises(ValueError, match="does not start with an installed package"):
         loader.get_json_schema()
 
-    get_data.assert_called_once_with(
-        "airbyte_cdk", "/sources/declarative/declarative_component_schema.yaml"
+
+BUILDER_DEFAULT_FILE_PATH = "./{{parameters['name']}}.json"
+
+
+def test_default_schema_loader_cannot_escape_the_package_through_the_stream_name(
+    outside_json_file, monkeypatch
+):
+    """Without a `schema_loader`, the stream name is interpolated into the default schema path."""
+    # The default path outside a `source_*` package, as in the manifest server.
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.schema.json_file_schema_loader._default_file_path",
+        lambda: BUILDER_DEFAULT_FILE_PATH,
     )
+    stream_name = TRAVERSAL_PREFIX + str(outside_json_file.with_suffix("")).lstrip("/")
+    loader = DefaultSchemaLoader(config={}, parameters={"name": stream_name})
+
+    assert loader.get_json_schema() == {}
