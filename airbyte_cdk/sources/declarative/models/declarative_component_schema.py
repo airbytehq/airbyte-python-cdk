@@ -2987,6 +2987,14 @@ class FileUploader(BaseModel):
             "{{ record.id }}_{{ record.file_name }}/",
         ],
     )
+    allowed_extensions: Optional[List[str]] = Field(
+        None,
+        description="Allowed final filename extensions (case-insensitive, optional leading dot). Requires a matching file signature. Supported extensions are gif, gz, jpeg, jpg, pdf, png, tif, tiff, and zip.",
+    )
+    allowed_content_types: Optional[List[str]] = Field(
+        None,
+        description="Allowed HTTP Content-Type media types (case-insensitive, parameters ignored). Requires a matching file signature. Supported types are application/gzip, application/pdf, application/zip, image/gif, image/jpeg, image/png, and image/tiff.",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
