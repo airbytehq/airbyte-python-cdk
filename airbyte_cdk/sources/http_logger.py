@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Dict, Mapping, Optional, Union
+from typing import Any, Dict, Mapping, Optional, Union
 
 import requests
 
@@ -58,7 +58,7 @@ def _normalize_body_string(body_str: Optional[Union[str, bytes]]) -> Optional[st
     return body_str.decode() if isinstance(body_str, (bytes, bytearray)) else body_str
 
 
-def mask_credential_headers(headers: Optional[Mapping[str, str]]) -> Dict[str, str]:
+def mask_credential_headers(headers: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     if headers is None:
         return {}
     return {
