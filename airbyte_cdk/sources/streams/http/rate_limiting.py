@@ -73,7 +73,7 @@ def default_backoff_handler(
 
 def http_client_default_backoff_handler(
     max_tries: Optional[int],
-    max_time: Optional[int] = None,
+    max_time: Optional[float] = None,
     before_wait: Optional[Callable[[float], None]] = None,
     **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
@@ -90,16 +90,11 @@ def http_client_default_backoff_handler(
         if before_wait is not None:
             before_wait(details["wait"])
 
-    def should_give_up(exc: Exception) -> bool:
-        # If made it here, the ResponseAction was RETRY and therefore should not give up
-        return False
-
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.expo,
         TRANSIENT_EXCEPTIONS,
         jitter=None,
         on_backoff=log_retry_attempt,
-        giveup=should_give_up,
         max_tries=max_tries,
         max_time=max_time,
         **kwargs,
@@ -108,7 +103,7 @@ def http_client_default_backoff_handler(
 
 def user_defined_backoff_handler(
     max_tries: Optional[int],
-    max_time: Optional[int] = None,
+    max_time: Optional[float] = None,
     before_wait: Optional[Callable[[float], None]] = None,
     **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:

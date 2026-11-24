@@ -26,6 +26,7 @@ from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
+from airbyte_cdk.sources.streams.http.http_client import HttpRetryBudget
 from airbyte_cdk.sources.types import Config, EmptyString, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import (
     combine_mappings,
@@ -469,6 +470,7 @@ class HttpRequester(Requester):
         *,
         stream_response: Optional[bool] = None,
         bypass_cache: bool = False,
+        retry_budget: Optional[HttpRetryBudget] = None,
     ) -> Optional[requests.Response]:
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
@@ -497,6 +499,7 @@ class HttpRequester(Requester):
             log_formatter=log_formatter,
             exit_on_rate_limit=self._exit_on_rate_limit,
             bypass_cache=bypass_cache,
+            retry_budget=retry_budget,
         )
 
         return response

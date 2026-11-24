@@ -107,6 +107,7 @@ def test_file_type_policy(
     mock_response = MagicMock(spec=Response, headers={"Content-Type": declared_type})
     del mock_response.content
     mock_response.iter_content.return_value = iter((content[:2], content[2:5], content[5:]))
+    requester = Mock(**{"send_request.return_value": mock_response})
     record = Record(
         data={},
         stream_name="attachments",
@@ -115,7 +116,7 @@ def test_file_type_policy(
 
     def upload() -> None:
         DefaultFileUploader(
-            requester=Mock(**{"send_request.return_value": mock_response}),
+            requester=requester,
             download_target_extractor=Mock(**{"extract_records.return_value": ["/attachment"]}),
             config={},
             file_writer=LocalFileSystemFileWriter(),
@@ -137,5 +138,6 @@ def test_file_type_policy(
         assert list(tmp_path.iterdir()) == []
         if "do not match" in error_message:
             mock_response.iter_content.assert_called_once()
+            requester.send_request.assert_called_once()
         else:
             mock_response.iter_content.assert_not_called()
