@@ -362,7 +362,11 @@ class HttpClient:
         user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
             self._send
         )
-        rate_limit_backoff_handler = rate_limit_default_backoff_handler(max_tries=max_tries)
+        rate_limit_backoff_handler = (
+            rate_limit_default_backoff_handler(max_tries=max_tries)
+            if self._deadline is None
+            else rate_limit_default_backoff_handler(max_tries=max_tries, max_time=max_time)
+        )
         backoff_handler = http_client_default_backoff_handler(
             max_tries=max_tries, max_time=max_time
         )
@@ -454,16 +458,19 @@ class HttpClient:
                     "Authenticator failed to update quota state from response", exc_info=True
                 )
 
+    def _deadline_exceeded_error(self) -> AirbyteTracedException:
+        return AirbyteTracedException(
+            message="The test read ran out of time before the next request to the API. Reduce the number of pages, slices or records requested, or set a shorter timeout on the requester.",
+            internal_message=f"Request deadline passed for stream {self._name}.",
+            failure_type=FailureType.transient_error,
+            stream_descriptor=StreamDescriptor(name=self._name),
+        )
+
     def _timeout_within_deadline(self, request_kwargs: Mapping[str, Any]) -> Tuple[float, float]:
         assert self._deadline is not None
         remaining = self._deadline - time.monotonic()
         if remaining <= 0:
-            raise AirbyteTracedException(
-                message="The request was not sent because the test read ran out of time. Reduce the number of pages, slices or records requested, or set a shorter timeout on the requester.",
-                internal_message=f"Request deadline passed for stream {self._name}.",
-                failure_type=FailureType.transient_error,
-                stream_descriptor=StreamDescriptor(name=self._name),
-            )
+            raise self._deadline_exceeded_error()
         timeout = request_kwargs.get("timeout")
         connect_timeout, read_timeout = (
             timeout if isinstance(timeout, tuple) else (timeout, timeout)
@@ -857,6 +864,13 @@ class HttpClient:
                 error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and not exit_on_rate_limit
             )
+
+            if (
+                user_defined_backoff_time
+                and self._deadline is not None
+                and time.monotonic() + user_defined_backoff_time >= self._deadline
+            ):
+                raise self._deadline_exceeded_error()
 
             if user_defined_backoff_time:
                 raise UserDefinedBackoffException(

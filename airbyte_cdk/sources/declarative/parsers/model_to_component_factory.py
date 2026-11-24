@@ -771,7 +771,20 @@ _DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS = 300.0
 
 def _connector_builder_request_deadline_seconds() -> float:
     value = os.environ.get(_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV)
-    return float(value) if value else _DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
+    if not value:
+        return _DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = math.nan
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError(
+            f"{_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV} must be a positive number of seconds, got {value!r}."
+        )
+    return seconds
+
+
+_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS = _connector_builder_request_deadline_seconds()
 
 
 class ModelToComponentFactory:
@@ -800,7 +813,7 @@ class ModelToComponentFactory:
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._builder_request_deadline = (
-            time.monotonic() + _connector_builder_request_deadline_seconds()
+            time.monotonic() + _CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
             if emit_connector_builder_messages
             else None
         )

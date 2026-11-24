@@ -2193,3 +2193,27 @@ def test_no_request_is_sent_after_the_deadline():
 
     assert exc_info.value.failure_type == FailureType.transient_error
     mocked_session.send.assert_not_called()
+
+
+def test_user_defined_backoff_past_the_deadline_stops_instead_of_sleeping():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_response = requests.Response()
+    mocked_response.status_code = 429
+    mocked_session.send.return_value = mocked_response
+    backoff_strategy = MagicMock()
+    backoff_strategy.backoff_time.return_value = 3600
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+        backoff_strategy=backoff_strategy,
+        deadline=time.monotonic() + 30,
+    )
+
+    started = time.monotonic()
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert time.monotonic() - started < 5
+    assert "ran out of time" in exc_info.value.message
+    assert mocked_session.send.call_count == 1
