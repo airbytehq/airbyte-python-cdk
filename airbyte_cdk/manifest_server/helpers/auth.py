@@ -16,10 +16,10 @@ MANIFEST_SERVER_AUDIENCE = "airbyte-manifest-server"
 
 def _signature_secret() -> str:
     """The manifest server's own signing key, falling back to the key shared by Airbyte services."""
-    return (
-        os.getenv(MANIFEST_SERVER_SIGNATURE_SECRET_ENV_VAR, "").strip()
-        or os.getenv(SHARED_SIGNATURE_SECRET_ENV_VAR, "").strip()
-    )
+    dedicated_secret = os.getenv(MANIFEST_SERVER_SIGNATURE_SECRET_ENV_VAR, "")
+    if dedicated_secret.strip():
+        return dedicated_secret
+    return os.getenv(SHARED_SIGNATURE_SECRET_ENV_VAR, "")
 
 
 def _audience_is_valid(audience: Any) -> bool:
@@ -52,7 +52,8 @@ def verify_jwt_token(
     """
     jwt_secret = _signature_secret()
 
-    if not jwt_secret:
+    # Tokens are signed with the exact secret value, so only use the stripped value to detect a blank one.
+    if not jwt_secret.strip():
         if os.getenv(ALLOW_UNAUTHENTICATED_ENV_VAR, "false").lower() == "true":
             return
         raise HTTPException(

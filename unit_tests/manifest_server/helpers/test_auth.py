@@ -248,6 +248,16 @@ def test_dedicated_signing_key_replaces_the_shared_key():
     assert exc_info.value.status_code == 401
 
 
+def test_dedicated_signing_key_with_whitespace_is_used_as_is():
+    secret = " manifest-server-only\n"
+    with patch.dict(os.environ, {"AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET": secret}):
+        verify_jwt_token(_token(secret))
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(_token(secret.strip()))
+
+    assert exc_info.value.status_code == 401
+
+
 def test_dedicated_signing_key_alone_enables_authentication():
     with patch.dict(
         os.environ, {"AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET": "manifest-server-only"}
@@ -255,6 +265,25 @@ def test_dedicated_signing_key_alone_enables_authentication():
         with pytest.raises(HTTPException) as exc_info:
             verify_jwt_token(None)
         verify_jwt_token(_token("manifest-server-only"))
+
+    assert exc_info.value.status_code == 401
+
+
+def test_secret_with_surrounding_whitespace_is_used_as_is():
+    """The platform signs with the exact secret value, so whitespace in it must not be stripped."""
+    secret = " padded-secret\n"
+    payload = {"exp": datetime.now(timezone.utc) + timedelta(hours=1)}
+    exact = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret, algorithm="HS256")
+    )
+    stripped = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret.strip(), algorithm="HS256")
+    )
+
+    with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
+        verify_jwt_token(exact)
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(stripped)
 
     assert exc_info.value.status_code == 401
 

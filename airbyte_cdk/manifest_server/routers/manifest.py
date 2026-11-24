@@ -63,6 +63,12 @@ router = APIRouter(
     prefix="/manifest",
     tags=["manifest"],
     dependencies=[Depends(verify_jwt_token)],
+    responses={
+        401: {"description": "Unauthorized - Bearer token missing or invalid"},
+        503: {
+            "description": "Service Unavailable - Manifest server authentication is not configured"
+        },
+    },
 )
 
 

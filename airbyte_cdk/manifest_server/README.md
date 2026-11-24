@@ -32,6 +32,8 @@ manifest-server start --port 8080
 python -m airbyte_cdk.manifest_server.cli.run start
 ```
 
+The `/v1/manifest/*` routes reject every request until authentication is configured (see [Authentication](#authentication)). For local development without tokens, start the server with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`.
+
 The server will start on `http://localhost:8000` by default.
 
 ## API Endpoints
@@ -128,9 +130,9 @@ curl -H "Authorization: Bearer <your-jwt-token>" \
 
 ### Behavior
 
-- **Without a signing key**: All requests are rejected with `503`
-- **Without a signing key and with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`**: All requests pass through (local development only)
-- **With a signing key**: Requires a valid HS256 JWT bearer token with an `exp` claim. A token whose `aud` claim does not include `airbyte-manifest-server` is rejected. Set `AB_MANIFEST_SERVER_JWT_REQUIRE_AUDIENCE=true` to also reject tokens without an `aud` claim.
+- **Without a signing key**: All `/v1/manifest/*` requests are rejected with `503`. `/health` and `/capabilities` stay open, so liveness and readiness probes do not catch a missing key
+- **Without a signing key and with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`**: All `/v1/manifest/*` requests pass through (local development only)
+- **With a signing key**: Requires a valid HS256 JWT bearer token with an `exp` claim. A token whose `aud` claim does not include `airbyte-manifest-server` is rejected. Set `AB_MANIFEST_SERVER_JWT_REQUIRE_AUDIENCE=true` to also reject tokens without an `aud` claim. The key is used exactly as set, including any surrounding whitespace.
 
 ## OpenAPI Specification
 
