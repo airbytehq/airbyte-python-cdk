@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import csv
+import errno
 import os
 from io import BytesIO
 from pathlib import Path
@@ -139,7 +140,14 @@ def scratch_dir(tmp_path, monkeypatch):
     return scratch
 
 
-def test_extractor_writes_its_scratch_file_to_the_temp_directory(
+def _file_path_of(data) -> str:
+    return os.readlink(f"/proc/self/fd/{data.fileno()}")
+
+
+@pytest.mark.skipif(
+    not os.path.isdir("/proc/self/fd"), reason="needs /proc to see where an unnamed file lives"
+)
+def test_extractor_writes_its_scratch_file_to_the_temp_directory_without_a_name(
     tmp_path, monkeypatch, requests_mock, scratch_dir
 ):
     working_dir = tmp_path / "app"
@@ -147,25 +155,27 @@ def test_extractor_writes_its_scratch_file_to_the_temp_directory(
     monkeypatch.chdir(working_dir)
     requests_mock.get("https://a-url.com", content=b"id,name\n1,first\n2,second\n")
     extractor = ResponseToFileExtractor({})
-    read_paths = []
+    paths_during_read = []
     read_with_chunks = extractor._read_with_chunks
 
-    def spy(path, *args, **kwargs):
-        read_paths.append(path)
-        assert os.path.isfile(path)
-        yield from read_with_chunks(path, *args, **kwargs)
+    def spy(data, *args, **kwargs):
+        paths_during_read.append(_file_path_of(data))
+        assert list(scratch_dir.iterdir()) == []
+        yield from read_with_chunks(data, *args, **kwargs)
 
     monkeypatch.setattr(extractor, "_read_with_chunks", spy)
 
     records = list(extractor.extract_records(requests.get("https://a-url.com", stream=True)))
 
     assert records == [{"id": "1", "name": "first"}, {"id": "2", "name": "second"}]
-    assert [os.path.dirname(path) for path in read_paths] == [str(scratch_dir)]
+    assert len(paths_during_read) == 1, paths_during_read
+    assert paths_during_read[0].startswith(f"{scratch_dir}/"), paths_during_read
+    assert paths_during_read[0].endswith(" (deleted)"), paths_during_read
     assert list(working_dir.iterdir()) == []
     assert list(scratch_dir.iterdir()) == []
 
 
-def test_interrupted_download_removes_its_scratch_file(tmp_path, monkeypatch, scratch_dir):
+def test_interrupted_download_leaves_no_scratch_file(tmp_path, monkeypatch, scratch_dir):
     working_dir = tmp_path / "app"
     working_dir.mkdir()
     monkeypatch.chdir(working_dir)
@@ -180,4 +190,31 @@ def test_interrupted_download_removes_its_scratch_file(tmp_path, monkeypatch, sc
         list(ResponseToFileExtractor({}).extract_records(response))
 
     assert list(working_dir.iterdir()) == []
+    assert list(scratch_dir.iterdir()) == []
+    response.close.assert_called()
+
+
+def test_response_is_closed_when_the_scratch_file_cannot_be_created(monkeypatch, scratch_dir):
+    def no_space(*args, **kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr("tempfile.TemporaryFile", no_space)
+    response = Mock(headers={}, iter_content=Mock(return_value=iter([b"id\n1\n"])))
+
+    with pytest.raises(OSError):
+        list(ResponseToFileExtractor({}).extract_records(response))
+
+    response.close.assert_called_once()
+    response.iter_content.assert_not_called()
+
+
+def test_stopping_early_removes_the_scratch_file(requests_mock, scratch_dir):
+    requests_mock.get("https://a-url.com", content=b"id\n1\n2\n3\n")
+    records = ResponseToFileExtractor({}).extract_records(
+        requests.get("https://a-url.com", stream=True)
+    )
+
+    assert next(records) == {"id": "1"}
+    records.close()
+
     assert list(scratch_dir.iterdir()) == []

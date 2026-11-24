@@ -1,14 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import io
 import logging
-import os
 import tempfile
 import zlib
 from contextlib import closing
 from dataclasses import InitVar, dataclass
 from math import nan
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import IO, Any, Dict, Iterable, Mapping, Optional
 
 import requests
 
@@ -81,58 +81,42 @@ class ResponseToFileExtractor(RecordExtractor):
             )
         return res
 
-    def _save_to_file(self, response: requests.Response) -> Tuple[str, str]:
+    def _save_to_file(self, response: requests.Response, data_file: IO[bytes]) -> str:
         """
-        Saves the binary data from the given response to a temporary file and returns the filepath and response encoding.
+        Streams the binary data from the given response into `data_file` and returns the response encoding.
 
         Args:
-            response (Optional[requests.Response]): The response object containing the binary data. Defaults to None.
+            response (requests.Response): The response object containing the binary data.
+            data_file (IO[bytes]): The open file the data is written to.
 
         Returns:
-            Tuple[str, str]: A tuple containing the filepath of the temporary file and the response encoding.
-
-        Raises:
-            ValueError: If the temporary file does not exist after saving the binary data.
+            str: The response encoding.
         """
-        # set filepath for binary data from response
         decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
         needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
 
-        fd, tmp_file = tempfile.mkstemp(prefix="airbyte-response-")
-        try:
-            with closing(response) as response, os.fdopen(fd, "wb") as data_file:
-                response_encoding = self._get_response_encoding(dict(response.headers or {}))
-                for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                    try:
-                        if needs_decompression:
-                            data_file.write(decompressor.decompress(chunk))
-                            needs_decompression = True
-                        else:
-                            data_file.write(self._filter_null_bytes(chunk))
-                    except zlib.error:
+        with closing(response) as response:
+            response_encoding = self._get_response_encoding(dict(response.headers or {}))
+            for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                try:
+                    if needs_decompression:
+                        data_file.write(decompressor.decompress(chunk))
+                        needs_decompression = True
+                    else:
                         data_file.write(self._filter_null_bytes(chunk))
-                        needs_decompression = False
-        except BaseException:
-            os.remove(tmp_file)
-            raise
-
-        # check the file exists
-        if os.path.isfile(tmp_file):
-            return tmp_file, response_encoding
-        else:
-            raise ValueError(
-                f"The IO/Error occured while verifying binary data. Tmp file {tmp_file} doesn't exist."
-            )
+                except zlib.error:
+                    data_file.write(self._filter_null_bytes(chunk))
+                    needs_decompression = False
+        return response_encoding
 
     def _read_with_chunks(
-        self, path: str, file_encoding: str, chunk_size: int = 100
+        self, data: IO[str], chunk_size: int = 100
     ) -> Iterable[Mapping[str, Any]]:
         """
-        Reads data from a file in chunks and yields each row as a dictionary.
+        Reads CSV data from an open file in chunks and yields each row as a dictionary.
 
         Args:
-            path (str): The path to the file to be read.
-            file_encoding (str): The encoding of the file.
+            data (IO[str]): The open file to be read.
             chunk_size (int, optional): The size of each chunk to be read. Defaults to 100.
 
         Yields:
@@ -143,38 +127,30 @@ class ResponseToFileExtractor(RecordExtractor):
         """
 
         # Imported lazily: pandas (and numpy) are slow to import and only needed for CSV parsing.
-        try:
-            import pandas as pd
-        except ImportError:
-            os.remove(path)
-            raise
+        import pandas as pd
 
         try:
-            with open(path, "r", encoding=file_encoding) as data:
-                # When preserving NA values, disable pandas' default NA parsing so strings like "NA"/"N/A" are kept as-is,
-                # and explicitly map empty cells to None. Otherwise, keep the historical behavior where pandas converts its
-                # default NA tokens (including empty cells) to NaN, which we then map to None.
-                na_replacements = {nan: None, "": None} if self.preserve_na_values else {nan: None}
-                chunks = pd.read_csv(
-                    data,
-                    chunksize=chunk_size,
-                    iterator=True,
-                    dialect="unix",
-                    dtype=object,
-                    keep_default_na=not self.preserve_na_values,
-                )
-                for chunk in chunks:
-                    chunk = chunk.replace(na_replacements).to_dict(orient="records")
-                    for row in chunk:
-                        yield row
+            # When preserving NA values, disable pandas' default NA parsing so strings like "NA"/"N/A" are kept as-is,
+            # and explicitly map empty cells to None. Otherwise, keep the historical behavior where pandas converts its
+            # default NA tokens (including empty cells) to NaN, which we then map to None.
+            na_replacements = {nan: None, "": None} if self.preserve_na_values else {nan: None}
+            chunks = pd.read_csv(
+                data,
+                chunksize=chunk_size,
+                iterator=True,
+                dialect="unix",
+                dtype=object,
+                keep_default_na=not self.preserve_na_values,
+            )
+            for chunk in chunks:
+                chunk = chunk.replace(na_replacements).to_dict(orient="records")
+                for row in chunk:
+                    yield row
         except pd.errors.EmptyDataError as e:
             self.logger.info(f"Empty data received. {e}")
             yield from []
         except IOError as ioe:
-            raise ValueError(f"The IO/Error occured while reading tmp data. Called: {path}", ioe)
-        finally:
-            # remove binary tmp file, after data is read
-            os.remove(path)
+            raise ValueError("The IO/Error occured while reading tmp data.", ioe)
 
     def extract_records(
         self, response: Optional[requests.Response] = None
@@ -194,7 +170,13 @@ class ResponseToFileExtractor(RecordExtractor):
             None
         """
         if response:
-            file_path, encoding = self._save_to_file(response)
-            yield from self._read_with_chunks(file_path, encoding)
+            # The temp file has no name on disk (on POSIX), so it is removed when it is closed, even if the process dies.
+            with (
+                closing(response),
+                tempfile.TemporaryFile(prefix="airbyte-response-") as data_file,
+            ):
+                encoding = self._save_to_file(response, data_file)
+                data_file.seek(0)
+                yield from self._read_with_chunks(io.TextIOWrapper(data_file, encoding=encoding))
         else:
             yield from []
