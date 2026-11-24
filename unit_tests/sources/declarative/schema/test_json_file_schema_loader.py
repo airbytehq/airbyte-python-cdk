@@ -57,3 +57,62 @@ def test_exclude_cdk_packages(mocked_sys):
     default_file_path = _default_file_path()
 
     assert "source_gitlab" in default_file_path
+
+
+TRAVERSAL_PREFIX = "airbyte_cdk/" + "../" * 20
+
+
+@pytest.fixture
+def outside_json_file(tmp_path):
+    secret_file = tmp_path / "secret.json"
+    secret_file.write_text('{"leaked": "FILE_OUTSIDE_PACKAGE"}')
+    return secret_file
+
+
+def test_traversal_outside_package_is_rejected(outside_json_file):
+    loader = JsonFileSchemaLoader({}, {}, TRAVERSAL_PREFIX + str(outside_json_file).lstrip("/"))
+
+    with pytest.raises(ValueError, match="points outside the 'airbyte_cdk' package"):
+        loader.get_json_schema()
+
+
+def test_interpolated_traversal_from_config_is_rejected(outside_json_file):
+    config = {"schema_path": TRAVERSAL_PREFIX + str(outside_json_file).lstrip("/")}
+    loader = JsonFileSchemaLoader(config, {}, "{{ config['schema_path'] }}")
+
+    with pytest.raises(ValueError, match="points outside the 'airbyte_cdk' package"):
+        loader.get_json_schema()
+
+
+@pytest.mark.parametrize(
+    "outside_path",
+    [
+        pytest.param("etc/passwd", id="existing_non_json_file"),
+        pytest.param("etc/does-not-exist.json", id="missing_file"),
+        pytest.param("proc/self/environ", id="process_environment"),
+    ],
+)
+def test_outside_paths_fail_before_file_access(outside_path):
+    loader = JsonFileSchemaLoader({}, {}, TRAVERSAL_PREFIX + outside_path)
+
+    with patch(
+        "airbyte_cdk.sources.declarative.schema.json_file_schema_loader.pkgutil.get_data"
+    ) as get_data:
+        with pytest.raises(ValueError, match="points outside the 'airbyte_cdk' package"):
+            loader.get_json_schema()
+
+    get_data.assert_not_called()
+
+
+def test_path_inside_package_still_loads():
+    loader = JsonFileSchemaLoader({}, {}, "airbyte_cdk/cli/source_declarative_manifest/spec.json")
+
+    assert loader.get_json_schema()
+
+
+def test_parent_segments_that_stay_inside_package_still_load():
+    loader = JsonFileSchemaLoader(
+        {}, {}, "airbyte_cdk/sources/../cli/source_declarative_manifest/spec.json"
+    )
+
+    assert loader.get_json_schema()
