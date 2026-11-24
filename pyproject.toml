@@ -89,7 +89,7 @@ unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958); upper cap removed so >=48.0.1 (ASN.1 OOB read fix) can be installed
 pytz = ">=2024.2"
-pytest = {version = "^7", optional = true }
+pytest = {version = ">=7,<10", optional = true }
 orjson = "^3.10.7"
 ijson = "^3.3.0"  # Streaming JSON parser used by `JsonItemsParser` to handle very large response bodies without OOMing.
 serpyco-rs = "^1.10.2"
