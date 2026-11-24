@@ -186,8 +186,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # Resolve references in the manifest
         resolved_manifest = ManifestReferenceResolver().preprocess_manifest(manifest)
         # Propagate types and parameters throughout the manifest
-        propagated_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
-            "", resolved_manifest, {}
+        # Resolver output is freshly built and contains no shared containers.
+        propagated_manifest = ManifestComponentTransformer()._propagate_in_place(
+            "", dict(resolved_manifest), {}
         )
 
         return propagated_manifest
