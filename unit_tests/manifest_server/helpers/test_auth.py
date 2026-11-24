@@ -20,6 +20,7 @@ class TestVerifyJwtToken:
         [
             pytest.param({}, id="secret_unset"),
             pytest.param({"AB_JWT_SIGNATURE_SECRET": ""}, id="secret_empty"),
+            pytest.param({"AB_JWT_SIGNATURE_SECRET": "  \n"}, id="secret_whitespace_only"),
             pytest.param(
                 {"AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED": "false"},
                 id="secret_unset_opt_out_false",

@@ -25,7 +25,7 @@ def verify_jwt_token(
     Raises:
         HTTPException: If the secret is not configured, or the token is missing or invalid
     """
-    jwt_secret = os.getenv("AB_JWT_SIGNATURE_SECRET")
+    jwt_secret = os.getenv("AB_JWT_SIGNATURE_SECRET", "").strip()
 
     if not jwt_secret:
         if os.getenv(ALLOW_UNAUTHENTICATED_ENV_VAR, "false").lower() == "true":
