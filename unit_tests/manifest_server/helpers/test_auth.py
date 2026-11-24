@@ -186,6 +186,25 @@ class TestVerifyJwtToken:
             verify_jwt_token(minimal_credentials)
 
 
+def test_secret_with_surrounding_whitespace_is_used_as_is():
+    """The platform signs with the exact secret value, so whitespace in it must not be stripped."""
+    secret = " padded-secret\n"
+    payload = {"exp": datetime.now(timezone.utc) + timedelta(hours=1)}
+    exact = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret, algorithm="HS256")
+    )
+    stripped = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret.strip(), algorithm="HS256")
+    )
+
+    with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
+        verify_jwt_token(exact)
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(stripped)
+
+    assert exc_info.value.status_code == 401
+
+
 MANIFEST_ROUTES = [
     "/v1/manifest/check",
     "/v1/manifest/discover",

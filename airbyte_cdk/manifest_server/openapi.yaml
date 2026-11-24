@@ -62,6 +62,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StreamReadResponse'
+        '401':
+          description: Unauthorized - Bearer token missing or invalid
+        '503':
+          description: Service Unavailable - Manifest server authentication is not
+            configured
         '400':
           description: Bad Request - Error processing request
           content:
@@ -96,6 +101,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CheckResponse'
+        '401':
+          description: Unauthorized - Bearer token missing or invalid
+        '503':
+          description: Service Unavailable - Manifest server authentication is not
+            configured
         '400':
           description: Bad Request - Error processing request
           content:
@@ -130,6 +140,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiscoverResponse'
+        '401':
+          description: Unauthorized - Bearer token missing or invalid
+        '503':
+          description: Service Unavailable - Manifest server authentication is not
+            configured
         '400':
           description: Bad Request - Error processing request
           content:
@@ -164,6 +179,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManifestResponse'
+        '401':
+          description: Unauthorized - Bearer token missing or invalid
+        '503':
+          description: Service Unavailable - Manifest server authentication is not
+            configured
         '400':
           description: Bad Request - Error processing request
           content:
@@ -204,6 +224,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManifestResponse'
+        '401':
+          description: Unauthorized - Bearer token missing or invalid
+        '503':
+          description: Service Unavailable - Manifest server authentication is not
+            configured
         '400':
           description: Bad Request - Error processing request
           content:
