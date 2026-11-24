@@ -3,7 +3,7 @@
 #
 
 import ast
-from functools import cache
+from functools import lru_cache
 from typing import Any, Mapping, Optional, Set, Tuple, Type
 
 from jinja2 import meta
@@ -57,6 +57,10 @@ _RESTRICTED_BUILTIN_FUNCTIONS = [
 _ENVIRONMENT = StreamPartitionAccessEnvironment()
 _ENVIRONMENT.filters.update(**filters)
 _ENVIRONMENT.globals.update(**macros)
+
+# Each manifest contributes its own template strings, so a long-lived process such as the
+# Manifest Server would otherwise keep every template it has ever seen.
+_TEMPLATE_CACHE_SIZE = 4096
 
 for extension in _RESTRICTED_EXTENSIONS:
     _ENVIRONMENT.extensions.pop(extension, None)
@@ -148,7 +152,7 @@ class JinjaInterpolation(Interpolation):
             return s
 
     @staticmethod
-    @cache
+    @lru_cache(maxsize=_TEMPLATE_CACHE_SIZE)
     def _find_undeclared_variables(s: Optional[str]) -> Set[str]:
         """
         Find undeclared variables and cache them
@@ -157,7 +161,7 @@ class JinjaInterpolation(Interpolation):
         return meta.find_undeclared_variables(ast)
 
     @staticmethod
-    @cache
+    @lru_cache(maxsize=_TEMPLATE_CACHE_SIZE)
     def _compile(s: str) -> Template:
         """
         We must cache the Jinja Template ourselves because we're using `from_string` instead of a template loader

@@ -371,3 +371,19 @@ def test_given_valid_type_complex_when_eval_then_return_string():
     val = interpolation.eval(s, config, valid_types=(complex,))
 
     assert isinstance(val, complex)
+
+
+def test_template_caches_are_bounded():
+    from airbyte_cdk.sources.declarative.interpolation.jinja import _TEMPLATE_CACHE_SIZE
+
+    interpolation = JinjaInterpolation()
+    for i in range(_TEMPLATE_CACHE_SIZE + 10):
+        assert interpolation.eval(f"{{{{ config['key'] }}}}-{i}", config={"key": "v"}) == f"v-{i}"
+
+    assert JinjaInterpolation._compile.cache_info().currsize <= _TEMPLATE_CACHE_SIZE
+    assert (
+        JinjaInterpolation._find_undeclared_variables.cache_info().currsize <= _TEMPLATE_CACHE_SIZE
+    )
+
+    # The first template has been evicted; rendering it again must compile it afresh.
+    assert interpolation.eval("{{ config['key'] }}-0", config={"key": "other"}) == "other-0"
