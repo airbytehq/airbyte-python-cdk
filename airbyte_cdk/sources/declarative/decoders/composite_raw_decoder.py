@@ -132,11 +132,13 @@ class JsonLineParser(Parser):
     encoding: Optional[str] = "utf-8"
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
-        for line in data:
+        for line_number, line in enumerate(data, start=1):
             try:
                 yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
             except json.JSONDecodeError as e:
-                logger.warning(f"Cannot decode/parse line {line!r} as JSON, error: {e}")
+                logger.warning(
+                    f"Cannot parse line {line_number} ({len(line)} bytes) as JSON, error: {e}"
+                )
 
 
 class _Utf8Recoder:
