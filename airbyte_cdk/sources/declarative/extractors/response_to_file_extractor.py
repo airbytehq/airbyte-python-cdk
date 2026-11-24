@@ -4,7 +4,6 @@
 import logging
 import os
 import tempfile
-import uuid
 import zlib
 from contextlib import closing
 from dataclasses import InitVar, dataclass
@@ -99,19 +98,23 @@ class ResponseToFileExtractor(RecordExtractor):
         decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
         needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
 
-        tmp_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
-        with closing(response) as response, open(tmp_file, "wb") as data_file:
-            response_encoding = self._get_response_encoding(dict(response.headers or {}))
-            for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                try:
-                    if needs_decompression:
-                        data_file.write(decompressor.decompress(chunk))
-                        needs_decompression = True
-                    else:
+        fd, tmp_file = tempfile.mkstemp(prefix="airbyte-response-")
+        try:
+            with closing(response) as response, os.fdopen(fd, "wb") as data_file:
+                response_encoding = self._get_response_encoding(dict(response.headers or {}))
+                for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                    try:
+                        if needs_decompression:
+                            data_file.write(decompressor.decompress(chunk))
+                            needs_decompression = True
+                        else:
+                            data_file.write(self._filter_null_bytes(chunk))
+                    except zlib.error:
                         data_file.write(self._filter_null_bytes(chunk))
-                except zlib.error:
-                    data_file.write(self._filter_null_bytes(chunk))
-                    needs_decompression = False
+                        needs_decompression = False
+        except BaseException:
+            os.remove(tmp_file)
+            raise
 
         # check the file exists
         if os.path.isfile(tmp_file):

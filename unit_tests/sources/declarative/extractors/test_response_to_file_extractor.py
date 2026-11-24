@@ -4,6 +4,7 @@ import os
 from io import BytesIO
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import Mock
 
 import pandas  # noqa: F401  # loaded here so limit_memory measures CSV parsing, not the extractor's lazy import
 import pytest
@@ -129,26 +130,54 @@ def test_response_to_file_extractor_memory_usage(requests_mock, large_events_res
     assert counter == lines_in_response
 
 
-def test_extractor_does_not_write_to_the_working_directory(tmp_path, monkeypatch, requests_mock):
-    read_only_cwd = tmp_path / "app"
-    read_only_cwd.mkdir()
-    read_only_cwd.chmod(0o555)
-    scratch_dir = tmp_path / "scratch"
-    scratch_dir.mkdir()
-    monkeypatch.chdir(read_only_cwd)
-    monkeypatch.setenv("TMPDIR", str(scratch_dir))
+@pytest.fixture
+def scratch_dir(tmp_path, monkeypatch):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setenv("TMPDIR", str(scratch))
     monkeypatch.setattr("tempfile.tempdir", None)
-    requests_mock.get("https://a-url.com", content=b"id,name\n1,first\n2,second\n")
+    return scratch
 
-    try:
-        records = list(
-            ResponseToFileExtractor({}).extract_records(
-                requests.get("https://a-url.com", stream=True)
-            )
-        )
-    finally:
-        read_only_cwd.chmod(0o755)
+
+def test_extractor_writes_its_scratch_file_to_the_temp_directory(
+    tmp_path, monkeypatch, requests_mock, scratch_dir
+):
+    working_dir = tmp_path / "app"
+    working_dir.mkdir()
+    monkeypatch.chdir(working_dir)
+    requests_mock.get("https://a-url.com", content=b"id,name\n1,first\n2,second\n")
+    extractor = ResponseToFileExtractor({})
+    read_paths = []
+    read_with_chunks = extractor._read_with_chunks
+
+    def spy(path, *args, **kwargs):
+        read_paths.append(path)
+        assert os.path.isfile(path)
+        yield from read_with_chunks(path, *args, **kwargs)
+
+    monkeypatch.setattr(extractor, "_read_with_chunks", spy)
+
+    records = list(extractor.extract_records(requests.get("https://a-url.com", stream=True)))
 
     assert records == [{"id": "1", "name": "first"}, {"id": "2", "name": "second"}]
-    assert list(read_only_cwd.iterdir()) == []
+    assert [os.path.dirname(path) for path in read_paths] == [str(scratch_dir)]
+    assert list(working_dir.iterdir()) == []
+    assert list(scratch_dir.iterdir()) == []
+
+
+def test_interrupted_download_removes_its_scratch_file(tmp_path, monkeypatch, scratch_dir):
+    working_dir = tmp_path / "app"
+    working_dir.mkdir()
+    monkeypatch.chdir(working_dir)
+
+    def broken_body(chunk_size):
+        yield b"id,name\n1,first\n"
+        raise requests.exceptions.ChunkedEncodingError("connection reset")
+
+    response = Mock(headers={}, iter_content=broken_body)
+
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        list(ResponseToFileExtractor({}).extract_records(response))
+
+    assert list(working_dir.iterdir()) == []
     assert list(scratch_dir.iterdir()) == []
