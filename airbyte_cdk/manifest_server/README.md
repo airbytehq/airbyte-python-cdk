@@ -68,6 +68,27 @@ Fully resolve a manifest including dynamic streams.
 
 **POST** - Generates dynamic streams up to specified limits and includes them in the resolved manifest.
 
+## Cloud outbound-request protection
+
+When `AIRBYTE_EDITION` or the legacy `DEPLOYMENT_MODE` is `cloud`, the server
+installs its outbound Requests filter during application startup. It rejects
+non-HTTPS URLs, non-global IP addresses, configured destination suffixes, and
+the exact Airbyte public service names maintained in the CDK. It normalizes IDNA
+and trailing dots, checks CNAME targets through a TTL-aware DNS cache, and
+rechecks every Requests redirect. A hostname not already in that cache adds a
+CNAME lookup before connection setup.
+
+Deployments can add comma-separated destinations without replacing the built-in
+manifest-server policy:
+
+- `AIRBYTE_SSRF_DENY_HOSTS`: exact hostnames.
+- `AIRBYTE_SSRF_DENY_HOST_SUFFIXES`: suffix apexes, matched on DNS-label boundaries.
+- `AIRBYTE_SSRF_DENY_CIDRS`: IPv4 or IPv6 networks. Invalid values fail server startup.
+
+The hostname resolver and urllib3 still resolve separately, so this application
+filter does not eliminate DNS-rebinding or proxy-resolution races. Pair it with
+network egress policy or a proxy that binds validation to connection setup.
+
 ## Request context and log correlation
 
 All five manifest endpoints accept an optional `context` object. Alongside
