@@ -297,3 +297,24 @@ def test_response_to_airbyte_message(
     actual_airbyte_message = format_http_message(response, A_TITLE, A_DESCRIPTION, A_STREAM_NAME)
 
     assert actual_airbyte_message["http"]["response"] == expected_airbyte_message
+
+
+@pytest.mark.parametrize(
+    "header_name",
+    ["Authorization", "authorization", "Proxy-Authorization"],
+)
+def test_credential_request_headers_are_masked(header_name):
+    prepared_request = requests.Request(
+        method="GET",
+        url="https://airbyte.io/",
+        headers={header_name: "Basic c3ludGh1c2VyOlNZTlRIRVRJQw==", "X-Trace": "abc"},
+    ).prepare()
+
+    message = format_http_message(
+        ResponseBuilder().request(prepared_request).build(), A_TITLE, A_DESCRIPTION, A_STREAM_NAME
+    )
+
+    headers = message["http"]["request"]["headers"]
+    assert headers[header_name] == "****"
+    assert headers["X-Trace"] == "abc"
+    assert "c3ludGh1c2VyOlNZTlRIRVRJQw==" not in str(message)

@@ -2240,3 +2240,24 @@ def test_user_defined_backoff_past_the_deadline_stops_instead_of_sleeping():
     assert time.monotonic() - started < 5
     assert "ran out of time" in exc_info.value.message
     assert mocked_session.send.call_count == 1
+
+
+def test_debug_log_of_outbound_request_masks_authorization_header():
+    mocked_session = requests.Session()
+    mocked_session.send = _session_with_200().send
+    logger = MagicMock()
+    http_client = HttpClient(name="test", logger=logger, session=mocked_session)
+
+    http_client.send_request(
+        http_method="get",
+        url="https://airbyte.io",
+        request_kwargs={},
+        headers={"Authorization": "Basic c3ludGh1c2VyOlNZTlRIRVRJQw==", "X-Trace": "abc"},
+    )
+
+    debug_call = next(
+        c for c in logger.debug.call_args_list if c.args[0] == "Making outbound API request"
+    )
+    logged_headers = debug_call.kwargs["extra"]["headers"]
+    assert logged_headers["Authorization"] == "****"
+    assert logged_headers["X-Trace"] == "abc"

@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+import logging
+
 import pytest
 import requests
 
@@ -41,3 +43,15 @@ def test_xml_decoder(requests_mock, response_body, expected):
     requests_mock.register_uri("GET", "https://airbyte.io/", text=response_body)
     response = requests.get("https://airbyte.io/")
     assert next(XmlDecoder(parameters={}).decode(response)) == expected
+
+
+def test_xml_decoder_does_not_log_malformed_body(requests_mock, caplog):
+    body = "<user><ssn>123-45-6789</ssn>"
+    requests_mock.register_uri("GET", "https://airbyte.io/", text=body)
+    response = requests.get("https://airbyte.io/")
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        assert next(XmlDecoder(parameters={}).decode(response)) == {}
+
+    assert "123-45-6789" not in caplog.text
+    assert f"body_length={len(body)}" in caplog.text

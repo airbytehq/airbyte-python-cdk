@@ -93,6 +93,7 @@ class XmlDecoder(Decoder):
                 yield from body_json
         except ExpatError as exc:
             logger.warning(
-                f"Response cannot be parsed from XML: {response.status_code=}, {response.text=}, {exc=}"
+                f"Response cannot be parsed from XML: status_code={response.status_code}, "
+                f"body_length={len(body_xml)}, error={exc!r}"
             )
             yield {}
