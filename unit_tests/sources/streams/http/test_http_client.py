@@ -769,14 +769,16 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     assert second_response.json()["test"] == "second response"
 
 
-def test_streaming_requests_do_not_read_or_write_cache(requests_mock, tmp_path, monkeypatch):
+def test_streaming_requests_can_opt_out_of_cache(requests_mock, tmp_path, monkeypatch):
     monkeypatch.setenv(ENV_REQUEST_CACHE_PATH, str(tmp_path))
     http_client = HttpClient(name="streaming", logger=MagicMock(), use_cache=True)
     url = "https://example.com/file"
     endpoint = requests_mock.get(url, [{"text": "first"}, {"text": "second"}, {"text": "third"}])
 
     def fetch(stream: bool) -> str:
-        _, response = http_client.send_request("GET", url, request_kwargs={"stream": stream})
+        _, response = http_client.send_request(
+            "GET", url, request_kwargs={"stream": stream}, bypass_cache=stream
+        )
         with response:
             if stream:
                 assert not response._content_consumed

@@ -62,6 +62,7 @@ def test_file_at_byte_limit_is_staged(
     assert (tmp_path / "attachments/attachment").read_bytes() == b"abcd"
     assert record.file_reference.file_size_bytes == 4
     assert uploader.requester.send_request.call_args.kwargs["stream_response"] is True
+    assert uploader.requester.send_request.call_args.kwargs["bypass_cache"] is True
     response.__exit__.assert_called_once()
 
 

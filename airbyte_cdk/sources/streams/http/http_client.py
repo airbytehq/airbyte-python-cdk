@@ -469,12 +469,6 @@ class HttpClient:
         if self._request_timeout is not None and "timeout" not in request_kwargs:
             request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
 
-        if request_kwargs.get("stream") and isinstance(self._session, requests_cache.CacheMixin):
-            cache_control = request.headers.get("Cache-Control")
-            request.headers["Cache-Control"] = (
-                f"{cache_control}, no-store" if cache_control else "no-store"
-            )
-
         try:
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
@@ -877,6 +871,8 @@ class HttpClient:
         dedupe_query_params: bool = False,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        *,
+        bypass_cache: bool = False,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
@@ -891,6 +887,12 @@ class HttpClient:
             json=json,
             data=data,
         )
+
+        if bypass_cache and isinstance(self._session, requests_cache.CacheMixin):
+            cache_control = request.headers.get("Cache-Control")
+            request.headers["Cache-Control"] = (
+                f"{cache_control}, no-store" if cache_control else "no-store"
+            )
 
         env_settings = self._session.merge_environment_settings(
             url=request.url,

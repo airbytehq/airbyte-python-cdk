@@ -466,6 +466,7 @@ class HttpRequester(Requester):
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         *,
         stream_response: Optional[bool] = None,
+        bypass_cache: bool = False,
     ) -> Optional[requests.Response]:
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
@@ -493,6 +494,7 @@ class HttpRequester(Requester):
             dedupe_query_params=True,
             log_formatter=log_formatter,
             exit_on_rate_limit=self._exit_on_rate_limit,
+            bypass_cache=bypass_cache,
         )
 
         return response

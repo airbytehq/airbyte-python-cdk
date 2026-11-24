@@ -15,6 +15,15 @@ from requests import PreparedRequest
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CsvDecoder,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    HttpRequester as HttpRequesterModel,
+)
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers import HttpResponseFilter
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
     ConstantBackoffStrategy,
@@ -34,6 +43,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
 )
 from airbyte_cdk.sources.types import Config
+from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -75,6 +85,28 @@ def http_requester_factory():
         )
 
     return factory
+
+
+def test_streaming_csv_requester_still_uses_cache(requests_mock, tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_REQUEST_CACHE_PATH, str(tmp_path))
+    url = "https://example.com/records.csv"
+    endpoint = requests_mock.get(url, text="id\n1\n")
+    factory = ModelToComponentFactory()
+    decoder = factory.create_csv_decoder(CsvDecoder(type="CsvDecoder"), config={})
+    requester = factory.create_http_requester(
+        HttpRequesterModel(type="HttpRequester", url=url, use_cache=True),
+        config={},
+        decoder=decoder,
+        name="cached_csv",
+    )
+
+    assert requester.stream_response
+    first = requester.send_request()
+    second = requester.send_request()
+
+    assert not first.from_cache
+    assert second.from_cache
+    assert endpoint.call_count == 1
 
 
 def test_http_requester():

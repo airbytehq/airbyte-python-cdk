@@ -87,7 +87,9 @@ class DefaultFileUploader(FileUploader):
             partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
         )
         if isinstance(self.requester, HttpRequester):
-            response = self.requester.send_request(stream_slice=stream_slice, stream_response=True)
+            response = self.requester.send_request(
+                stream_slice=stream_slice, stream_response=True, bypass_cache=True
+            )
         else:
             response = self.requester.send_request(stream_slice=stream_slice)
         if response is None:
