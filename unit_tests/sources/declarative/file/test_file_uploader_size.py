@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 
+from io import BytesIO
 from pathlib import Path
 from typing import Iterator
 from unittest.mock import MagicMock, Mock, call
@@ -7,10 +8,15 @@ from unittest.mock import MagicMock, Mock, call
 import pytest
 from requests import Response
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
+from requests_mock import Mocker
 from urllib3.exceptions import IncompleteRead, ProtocolError
+from urllib3.response import HTTPResponse
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
+from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import (
+    DefaultErrorHandler,
+)
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     DefaultFileUploader,
     LocalFileSystemFileWriter,
@@ -93,6 +99,57 @@ def test_counts_body_bytes_and_discards_partial_file(
     assert not record.file_reference
     assert list((tmp_path / "attachments").iterdir()) == []
     response.__exit__.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("max_retries", "status_codes", "error_message", "body_restarts"),
+    [
+        (1, [503, 200], "source connection does not deliver the complete file", 0),
+        (2, [503, 503, 200], "source connection does not deliver the complete file", 0),
+        (2, [503, 200, 503], "Exhausted available request attempts", 1),
+    ],
+)
+def test_http_and_body_retries_share_attachment_attempt_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    uploader: DefaultFileUploader,
+    record: Record,
+    requests_mock: Mocker,
+    retry_sleep: Mock,
+    max_retries: int,
+    status_codes: list[int],
+    error_message: str,
+    body_restarts: int,
+) -> None:
+    monkeypatch.setattr("time.sleep", Mock())
+    url = "https://example.com/attachment"
+    incomplete_response = HTTPResponse(
+        body=BytesIO(b"ab"), headers={"Content-Length": "4"}, status=200, preload_content=False
+    )
+    endpoint = requests_mock.get(
+        url,
+        [
+            {"raw": incomplete_response} if status == 200 else {"status_code": status}
+            for status in status_codes
+        ]
+        + [{"content": b"abcd"}],
+    )
+    uploader.requester = HttpRequester(
+        name="attachment",
+        url=url,
+        config={},
+        parameters={},
+        error_handler=DefaultErrorHandler(config={}, parameters={}, max_retries=max_retries),
+    )
+
+    with pytest.raises(AirbyteTracedException, match=error_message) as error:
+        uploader.upload(record)
+
+    assert error.value.failure_type == FailureType.transient_error
+    assert endpoint.call_count == max_retries + 1
+    assert retry_sleep.call_count == body_restarts
+    assert not record.file_reference
+    assert list((tmp_path / "attachments").iterdir()) == []
 
 
 def test_oversized_content_length_does_not_read_body(

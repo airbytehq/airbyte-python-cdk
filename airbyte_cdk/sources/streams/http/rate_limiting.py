@@ -72,7 +72,7 @@ def default_backoff_handler(
 
 
 def http_client_default_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[int] = None, **kwargs: Any
+    max_tries: Optional[int], max_time: Optional[float] = None, **kwargs: Any
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -84,16 +84,11 @@ def http_client_default_backoff_handler(
             f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
 
-    def should_give_up(exc: Exception) -> bool:
-        # If made it here, the ResponseAction was RETRY and therefore should not give up
-        return False
-
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.expo,
         TRANSIENT_EXCEPTIONS,
         jitter=None,
         on_backoff=log_retry_attempt,
-        giveup=should_give_up,
         max_tries=max_tries,
         max_time=max_time,
         **kwargs,
@@ -101,7 +96,7 @@ def http_client_default_backoff_handler(
 
 
 def user_defined_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[int] = None, **kwargs: Any
+    max_tries: Optional[int], max_time: Optional[float] = None, **kwargs: Any
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()

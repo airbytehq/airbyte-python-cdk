@@ -24,6 +24,7 @@ from airbyte_cdk.sources.declarative.partition_routers.substream_partition_route
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester, Requester
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
+from airbyte_cdk.sources.streams.http.http_client import HttpRetryBudget
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -139,19 +140,20 @@ class DefaultFileUploader(FileUploader):
         self, full_path: Path, stream_slice: StreamSlice, expected_type: Optional[str]
     ) -> int:
         retries = self._download_retries()
+        retry_budget = HttpRetryBudget()
         attempt = 1
         while True:
             try:
-                return self._download_once(full_path, stream_slice, expected_type)
+                return self._download_once(full_path, stream_slice, expected_type, retry_budget)
             except _AttachmentReadError as error:
-                if attempt > retries:
+                delay = 2 ** (attempt - 1)
+                if attempt > retries or not retry_budget.can_retry(delay):
                     raise AirbyteTracedException(
                         message="The attachment download fails because the source connection does not deliver the complete file.",
                         internal_message=f"Attachment body read retry budget exhausted. Download attempts: {attempt}.",
                         failure_type=FailureType.transient_error,
                         exception=error.__cause__,
                     ) from error
-                delay = 2 ** (attempt - 1)
                 logger.info("Attachment download interrupted; restarting in %s second(s).", delay)
                 sleep(delay)
                 attempt += 1
@@ -167,11 +169,18 @@ class DefaultFileUploader(FileUploader):
         return MAX_DOWNLOAD_RETRIES
 
     def _download_once(
-        self, full_path: Path, stream_slice: StreamSlice, expected_type: Optional[str]
+        self,
+        full_path: Path,
+        stream_slice: StreamSlice,
+        expected_type: Optional[str],
+        retry_budget: HttpRetryBudget,
     ) -> int:
         if isinstance(self.requester, HttpRequester):
             response = self.requester.send_request(
-                stream_slice=stream_slice, stream_response=True, bypass_cache=True
+                stream_slice=stream_slice,
+                stream_response=True,
+                bypass_cache=True,
+                retry_budget=retry_budget,
             )
         else:
             response = self.requester.send_request(stream_slice=stream_slice)
