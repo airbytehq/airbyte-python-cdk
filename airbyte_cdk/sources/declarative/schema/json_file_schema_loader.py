@@ -2,7 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import importlib.util
 import json
+import os
 import pkgutil
 import sys
 from dataclasses import InitVar, dataclass, field
@@ -27,6 +29,27 @@ def _default_file_path() -> str:
     # If we are not in a source_ module, the most likely scenario is we're processing a manifest from the connector builder
     # server which does not require a json schema to be defined.
     return "./{{parameters['name']}}.json"
+
+
+def _ensure_path_within_package(resource: str, schema_path: str, json_schema_path: str) -> None:
+    """Reject schema paths that resolve outside the directory of the `resource` package."""
+    spec = importlib.util.find_spec(resource) if resource else None
+    # A plain module (e.g. `os`) has an origin too, but its directory is not a package of its own.
+    if spec is None or not spec.origin or not spec.submodule_search_locations:
+        raise ValueError(
+            f"Schema file path '{json_schema_path}' does not start with an installed package. "
+            "JsonFileSchemaLoader can only read schema files inside a package; "
+            "use a path such as '<package>/schemas/<stream>.json'."
+        )
+    package_dir = os.path.realpath(os.path.dirname(spec.origin))
+    # Split on "/" like pkgutil.get_data, so a doubled slash stays inside the package.
+    target = os.path.realpath(os.path.join(package_dir, *schema_path.split("/")))
+    if os.path.commonpath([package_dir, target]) != package_dir:
+        raise ValueError(
+            f"Schema file path '{json_schema_path}' points outside the '{resource}' package. "
+            "JsonFileSchemaLoader can only read schema files inside that package; "
+            "use a path such as '<package>/schemas/<stream>.json'."
+        )
 
 
 @dataclass
@@ -55,6 +78,7 @@ class JsonFileSchemaLoader(ResourceSchemaLoader, SchemaLoader):
         # this would require that we find a creative solution to store or retrieve source_name in here since the files are mounted there
         json_schema_path = self._get_json_filepath()
         resource, schema_path = self.extract_resource_and_schema_path(json_schema_path)
+        _ensure_path_within_package(resource, schema_path, json_schema_path)
         raw_json_file = pkgutil.get_data(resource, schema_path)
 
         if not raw_json_file:
