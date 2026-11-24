@@ -400,6 +400,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             is `None` when the OAuth provider omits it from the response.
         """
         response_json = self._make_handled_request()
+        # Without this a response that carries no access token would be written to the config as a
+        # null access token and saved by the platform.
+        self._ensure_access_token_in_response(response_json)
         return (
             self._extract_access_token(response_json),
             self._extract_token_expiry_date(response_json),

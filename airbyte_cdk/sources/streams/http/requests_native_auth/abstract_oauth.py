@@ -474,6 +474,15 @@ class AbstractOauth2Authenticator(AuthBase):
 
             response_json = response.json()
 
+            if self._is_refresh_token_error_response(response, response_json):
+                # Some providers report a rejected refresh token in the body of a 2xx response.
+                # Raising here sends it down the same path as an error status.
+                self._log_response(response)
+                raise requests.exceptions.HTTPError(
+                    f"Token refresh response with HTTP {response.status_code} reports an error.",
+                    response=response,
+                )
+
             try:
                 # extract the access token and add to secrets to avoid logging the raw value
                 access_key = self._extract_access_token(response_json)
@@ -522,6 +531,22 @@ class AbstractOauth2Authenticator(AuthBase):
                 internal_message=f"Unexpected error during OAuth token refresh: {e}",
                 failure_type=FailureType.system_error,
             ) from e
+
+    def _is_refresh_token_error_response(
+        self, response: requests.Response, response_content: Any
+    ) -> bool:
+        """
+        Whether a successful (2xx) token response is the provider rejecting the refresh token.
+
+        Uses the same `refresh_token_error_*` configuration as an error status does, so nothing
+        changes unless a 2xx status is listed in `refresh_token_error_status_codes`.
+        """
+        return (
+            isinstance(response_content, Mapping)
+            and response_content.get(self._refresh_token_error_key)
+            in self._refresh_token_error_values
+            and response.status_code in self._refresh_token_error_status_codes
+        )
 
     def _ensure_access_token_in_response(self, response_data: Mapping[str, Any]) -> None:
         """

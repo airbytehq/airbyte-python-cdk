@@ -473,7 +473,7 @@ class RefreshTokenUpdater(BaseModel):
     )
     refresh_token_error_status_codes: Optional[List[int]] = Field(
         [],
-        description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error",
+        description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error. A 2xx status can be listed for a provider that reports the error in the body of a successful response",
         examples=[[400, 500]],
         title="(Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Status Codes",
     )
@@ -2232,7 +2232,7 @@ class OAuthAuthenticator(BaseModel):
     )
     refresh_token_error_status_codes: Optional[List[int]] = Field(
         None,
-        description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error",
+        description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error. A 2xx status can be listed for a provider that reports the error in the body of a successful response",
         examples=[[400, 500]],
         title="Refresh Token Error Status Codes",
     )
