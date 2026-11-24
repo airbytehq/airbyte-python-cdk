@@ -111,8 +111,11 @@ The manifest server requires JWT bearer token authentication by default:
 Set the environment variable to enable authentication:
 
 ```bash
-export AB_JWT_SIGNATURE_SECRET="your-jwt-secret-key"
+export AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET="a-key-only-the-manifest-server-and-its-callers-hold"
 ```
+
+`AB_JWT_SIGNATURE_SECRET`, the key shared by Airbyte services, is used when
+`AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET` is not set.
 
 ### Usage
 
@@ -125,9 +128,9 @@ curl -H "Authorization: Bearer <your-jwt-token>" \
 
 ### Behavior
 
-- **Without `AB_JWT_SIGNATURE_SECRET`**: All requests are rejected with `503`
-- **Without `AB_JWT_SIGNATURE_SECRET` and with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`**: All requests pass through (local development only)
-- **With `AB_JWT_SIGNATURE_SECRET`**: Requires valid JWT bearer token using HS256 algorithm
+- **Without a signing key**: All requests are rejected with `503`
+- **Without a signing key and with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`**: All requests pass through (local development only)
+- **With a signing key**: Requires a valid HS256 JWT bearer token with an `exp` claim. A token whose `aud` claim does not include `airbyte-manifest-server` is rejected. Set `AB_MANIFEST_SERVER_JWT_REQUIRE_AUDIENCE=true` to also reject tokens without an `aud` claim.
 
 ## OpenAPI Specification
 
