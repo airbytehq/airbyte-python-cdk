@@ -55,6 +55,8 @@ def test_leading_slash_is_stripped_before_checking_extension(
             None,
         ),
         ("file", "image/png", PNG_PREFIX, None, ["image/png"], None),
+        ("file.tif", "image/tiff", b"II+\x00", ["tif"], ["image/tiff"], None),
+        ("file.tiff", "image/tiff", b"MM\x00+", ["tiff"], ["image/tiff"], None),
         ("file", "", b"an opaque attachment", None, None, None),
         ("file", "", PNG_PREFIX, ["png"], None, "missing or disallowed extension"),
         ("file.pdf", "application/pdf", PDF_PREFIX, ["png"], None, "disallowed extension"),

@@ -13,7 +13,7 @@ _SIGNATURES = {
     "image/gif": (b"GIF87a", b"GIF89a"),
     "image/jpeg": (b"\xff\xd8\xff",),
     "image/png": (b"\x89PNG\r\n\x1a\n",),
-    "image/tiff": (b"II*\x00", b"MM\x00*"),
+    "image/tiff": (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"),
 }
 _EXTENSION_TYPES = {
     "gif": "image/gif",
