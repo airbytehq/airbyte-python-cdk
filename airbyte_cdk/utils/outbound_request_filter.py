@@ -164,9 +164,27 @@ def _reject_blocked_ip(
     if (
         not address.is_global
         or address.is_multicast
-        or any(address in network for network in policy.blocked_networks)
+        or any(_address_is_in_network(address, network) for network in policy.blocked_networks)
     ):
         _raise_blocked_destination(str(address), "address")
+
+
+def _address_is_in_network(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    network: ipaddress.IPv4Network | ipaddress.IPv6Network,
+) -> bool:
+    if isinstance(address, ipaddress.IPv4Address):
+        return isinstance(network, ipaddress.IPv4Network) and address in network
+
+    if isinstance(network, ipaddress.IPv6Network) and address in network:
+        return True
+
+    mapped_address = address.ipv4_mapped
+    return (
+        mapped_address is not None
+        and isinstance(network, ipaddress.IPv4Network)
+        and mapped_address in network
+    )
 
 
 def _raise_blocked_destination(destination: str, kind: str) -> None:

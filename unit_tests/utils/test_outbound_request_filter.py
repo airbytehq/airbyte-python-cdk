@@ -154,18 +154,55 @@ def test_idna_hostnames_are_normalized_for_policy_matching(monkeypatch):
     assert _normalize_hostname("BÜCHER.EXAMPLE.") == "xn--bcher-kva.example"
 
 
-def test_configured_public_cidr_is_rejected(mocker, monkeypatch):
-    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", "35.1.2.3/32")
+@pytest.mark.parametrize(
+    ("cidr", "address"),
+    [
+        ("35.1.2.3/32", "35.1.2.3"),
+        ("2001:4860:4860::8888/128", "2001:4860:4860::8888"),
+    ],
+)
+def test_configured_public_cidr_is_rejected(mocker, monkeypatch, cidr, address):
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", cidr)
     mocker.patch(
         "airbyte_cdk.utils.outbound_request_filter.socket.getaddrinfo",
-        return_value=_address_info("35.1.2.3"),
+        return_value=_address_info(address),
     )
     init_internal_request_filter(cloud_outbound_request_policy())
 
     with pytest.raises(AirbyteTracedException) as exc_info:
         Session().send(_request("https://public-lb.example/"))
     assert exc_info.value.internal_message
-    assert "35.1.2.3" in exc_info.value.internal_message
+    assert address in exc_info.value.internal_message
+
+
+def test_mapped_public_ipv6_is_checked_against_ipv4_deny_network(mocker, monkeypatch):
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", "35.1.2.3/32")
+    underlying_send = mocker.patch("requests.adapters.HTTPAdapter.send", return_value=Response())
+    mocker.patch(
+        "airbyte_cdk.utils.outbound_request_filter.socket.getaddrinfo",
+        return_value=_address_info("::ffff:35.1.2.3"),
+    )
+    init_internal_request_filter(cloud_outbound_request_policy())
+
+    with pytest.raises(AirbyteTracedException):
+        Session().send(_request("https://[::ffff:35.1.2.3]/"))
+
+    underlying_send.assert_not_called()
+
+
+def test_unrelated_mapped_public_ipv6_remains_allowed(mocker, monkeypatch):
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", "35.1.2.3/32")
+    underlying_send = mocker.patch("requests.adapters.HTTPAdapter.send", return_value=Response())
+    mocker.patch(
+        "airbyte_cdk.utils.outbound_request_filter.socket.getaddrinfo",
+        return_value=_address_info("::ffff:35.1.2.4"),
+    )
+    init_internal_request_filter(cloud_outbound_request_policy())
+
+    response = Session().send(_request("https://[::ffff:35.1.2.4]/"))
+
+    assert isinstance(response, Response)
+    underlying_send.assert_called_once()
 
 
 def test_invalid_configured_cidr_fails_policy_construction(monkeypatch):
