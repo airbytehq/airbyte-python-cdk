@@ -72,7 +72,10 @@ def default_backoff_handler(
 
 
 def http_client_default_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[float] = None, **kwargs: Any
+    max_tries: Optional[int],
+    max_time: Optional[float] = None,
+    before_wait: Optional[Callable[[float], None]] = None,
+    **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -83,6 +86,9 @@ def http_client_default_backoff_handler(
         logger.info(
             f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
+
+        if before_wait is not None:
+            before_wait(details["wait"])
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.expo,
@@ -96,7 +102,10 @@ def http_client_default_backoff_handler(
 
 
 def user_defined_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[float] = None, **kwargs: Any
+    max_tries: Optional[int],
+    max_time: Optional[float] = None,
+    before_wait: Optional[Callable[[float], None]] = None,
+    **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -111,6 +120,8 @@ def user_defined_backoff_handler(
                 logger.info(
                     f"UserDefinedBackoffException: Rate limit exceeded. Retrying in {sleep_time} seconds."
                 )
+            if before_wait is not None:
+                before_wait(sleep_time)
             time.sleep(sleep_time)
 
     def log_give_up(details: Mapping[str, Any]) -> None:
@@ -140,6 +151,7 @@ def user_defined_backoff_handler(
 
 
 def rate_limit_default_backoff_handler(
+    before_wait: Optional[Callable[[float], None]] = None,
     **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
@@ -151,6 +163,9 @@ def rate_limit_default_backoff_handler(
         logger.info(
             f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
+
+        if before_wait is not None:
+            before_wait(details["wait"])
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.expo,

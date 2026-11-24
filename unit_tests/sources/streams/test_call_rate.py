@@ -639,3 +639,41 @@ class TestHttpRequestRegexMatcher:
         assert not matcher(req_bad_path)
         assert not matcher(req_bad_param)
         assert not matcher(req_bad_header)
+
+
+def test_api_budget_timeout_applies_across_acquisition_attempts(mocker):
+    clock = mocker.patch(
+        "airbyte_cdk.sources.streams.call_rate.time.monotonic", side_effect=[0, 0, 2, 2]
+    )
+    sleep = mocker.patch("airbyte_cdk.sources.streams.call_rate.time.sleep")
+    policy = mocker.Mock()
+    request = Request("GET", "https://airbyte.io").prepare()
+    policy.try_acquire.side_effect = CallRateLimitHit(
+        error="rate limited",
+        item=request,
+        weight=1,
+        rate="1",
+        time_to_wait=timedelta(seconds=2),
+    )
+
+    with pytest.raises(CallRateLimitHit):
+        APIBudget(policies=[policy]).acquire_call(request, timeout=3)
+
+    sleep.assert_called_once_with(2)
+    assert policy.try_acquire.call_count == 2
+    assert clock.call_count == 4
+
+
+def test_limiter_recomputes_socket_timeout_after_acquiring_call(mocker):
+    from airbyte_cdk.sources.streams.call_rate import LimiterSession
+
+    mocker.patch("airbyte_cdk.sources.streams.call_rate.time.monotonic", side_effect=[0, 8])
+    budget = mocker.Mock()
+    send = mocker.patch.object(requests.Session, "send")
+    request = Request("GET", "https://airbyte.io").prepare()
+
+    LimiterSession(api_budget=budget, deadline=10).send(request, timeout=(10, 10))
+
+    budget.acquire_call.assert_called_once_with(request, timeout=10)
+    send.assert_called_once_with(request, timeout=(1, 1))
+    budget.update_from_response.assert_called_once_with(request, send.return_value)

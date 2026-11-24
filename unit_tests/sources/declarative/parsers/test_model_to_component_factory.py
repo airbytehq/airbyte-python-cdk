@@ -963,6 +963,53 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
     assert len(partition_router.request_option.field_path) == 2
 
 
+def test_substream_parent_streams_share_the_builder_request_deadline():
+    content = """
+    parent_stream:
+      type: DeclarativeStream
+      name: "parent"
+      primary_key: "id"
+      schema_loader:
+        type: InlineSchemaLoader
+        schema: {}
+      retriever:
+        type: SimpleRetriever
+        requester:
+          type: HttpRequester
+          url_base: "https://airbyte.io"
+          path: "parents"
+        record_selector:
+          type: RecordSelector
+          extractor:
+            type: DpathExtractor
+            field_path: []
+    partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/parent_stream"
+          parent_key: id
+          partition_field: parent_id
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+    deadline = 12345.0
+
+    partition_router = ModelToComponentFactory(
+        emit_connector_builder_messages=True, builder_request_deadline=deadline
+    ).create_component(
+        model_type=SubstreamPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    parent_stream = partition_router.parent_stream_configs[0].stream
+    assert get_retriever(parent_stream).requester._http_client._deadline == deadline
+
+
 def test_create_substream_partition_router():
     content = """
     schema_loader:

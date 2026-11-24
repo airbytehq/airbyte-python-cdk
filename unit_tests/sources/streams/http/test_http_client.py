@@ -20,7 +20,11 @@ from airbyte_cdk.sources.declarative.auth.oauth import DeclarativeOauth2Authenti
 from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
+from airbyte_cdk.sources.streams.call_rate import (
+    CachedLimiterSession,
+    LimiterSession,
+    split_timeout_within_deadline,
+)
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import (
     BackoffStrategy,
@@ -34,7 +38,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
-from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.http_client import (
+    MessageRepresentationAirbyteTracedErrors,
+)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -2150,6 +2156,90 @@ def test_read_timeout_is_retried_then_raises():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_deadline_caps_timeout_when_none_is_configured():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), session=mocked_session, deadline=time.monotonic() + 30
+    )
+
+    http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    connect_timeout, read_timeout = mocked_session.send.call_args.kwargs["timeout"]
+    assert 0 < connect_timeout
+    assert 0 < read_timeout
+    assert connect_timeout + read_timeout <= 30
+
+
+def test_deadline_keeps_shorter_configured_timeout():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+        request_timeout=(5, None),
+        deadline=time.monotonic() + 30,
+    )
+
+    http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    connect_timeout, read_timeout = mocked_session.send.call_args.kwargs["timeout"]
+    assert connect_timeout == 5
+    assert 20 < read_timeout <= 25
+
+
+@pytest.mark.parametrize(
+    "remaining, connect_timeout, read_timeout, expected",
+    [
+        pytest.param(300, None, None, (60, 240), id="defaults_split_the_budget"),
+        pytest.param(300, 5, 10, (5, 10), id="shorter_configured_timeouts_are_kept"),
+        pytest.param(300, 500, 500, (150, 150), id="long_configured_timeouts_are_capped"),
+        pytest.param(10, None, None, (5, 5), id="small_budget_is_shared"),
+    ],
+)
+def test_split_timeout_within_deadline(remaining, connect_timeout, read_timeout, expected):
+    connect, read = split_timeout_within_deadline(remaining, connect_timeout, read_timeout)
+
+    assert (connect, read) == expected
+    assert connect + read <= remaining
+
+
+def test_no_request_is_sent_after_the_deadline():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), session=mocked_session, deadline=time.monotonic() - 1
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    mocked_session.send.assert_not_called()
+
+
+def test_user_defined_backoff_past_the_deadline_stops_instead_of_sleeping():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_response = requests.Response()
+    mocked_response.status_code = 429
+    mocked_session.send.return_value = mocked_response
+    backoff_strategy = MagicMock()
+    backoff_strategy.backoff_time.return_value = 3600
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+        backoff_strategy=backoff_strategy,
+        deadline=time.monotonic() + 30,
+    )
+
+    started = time.monotonic()
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert time.monotonic() - started < 5
+    assert "ran out of time" in exc_info.value.message
+    assert mocked_session.send.call_count == 1
 
 
 def test_debug_log_of_outbound_request_masks_authorization_header():

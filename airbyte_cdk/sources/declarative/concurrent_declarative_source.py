@@ -188,6 +188,7 @@ class ConcurrentDeclarativeSource(Source):
         limits: Optional[TestLimits] = None,
         config_path: Optional[str] = None,
         custom_components_trusted: bool = True,
+        builder_request_deadline: Optional[float] = None,
         **kwargs: Any,
     ) -> None:
         self.logger = logging.getLogger(f"airbyte.{self.name}")
@@ -213,6 +214,7 @@ class ConcurrentDeclarativeSource(Source):
         # incremental streams running in full refresh.
         component_factory = ModelToComponentFactory(
             custom_components_trusted=custom_components_trusted,
+            builder_request_deadline=builder_request_deadline,
             emit_connector_builder_messages=emit_connector_builder_messages,
             message_repository=ConcurrentMessageRepository(queue, message_repository),
             configured_catalog=catalog,

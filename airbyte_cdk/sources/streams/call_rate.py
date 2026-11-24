@@ -10,7 +10,7 @@ import re
 import time
 from datetime import timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Tuple
 from urllib import parse
 
 import requests
@@ -18,6 +18,9 @@ import requests_cache
 from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
 from pyrate_limiter import Rate as PyRateRate
 from pyrate_limiter.exceptions import BucketFullException
+
+from airbyte_cdk.models import FailureType
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 # prevents mypy from complaining about missing session attributes in LimiterMixin
 if TYPE_CHECKING:
@@ -611,11 +614,12 @@ class APIBudget(AbstractAPIBudget):
         :raises: CallRateLimitHit if the call credit cannot be acquired within the timeout
         """
 
+        deadline = time.monotonic() + timeout if timeout is not None else None
         policy = self.get_matching_policy(request)
         endpoint = self._extract_endpoint(request)
         if policy:
             logger.debug(f"Acquiring call for endpoint {endpoint} using policy: {policy}")
-            self._do_acquire(request=request, policy=policy, block=block, timeout=timeout)
+            self._do_acquire(request=request, policy=policy, block=block, deadline=deadline)
         elif self._policies:
             logger.debug(
                 f"No policies matched for endpoint {endpoint} (request: {request}). Allowing call by default."
@@ -630,20 +634,22 @@ class APIBudget(AbstractAPIBudget):
         pass
 
     def _do_acquire(
-        self, request: Any, policy: AbstractCallRatePolicy, block: bool, timeout: Optional[float]
+        self, request: Any, policy: AbstractCallRatePolicy, block: bool, deadline: Optional[float]
     ) -> None:
         """Internal method to try to acquire a call credit.
 
         :param request: the API request
         :param policy: the matching rate-limiting policy
         :param block: indicates whether to block until a call credit is available
-        :param timeout: maximum time to wait if blocking
+        :param deadline: absolute monotonic deadline for waiting
         :raises: CallRateLimitHit if unable to acquire a call credit
         """
         last_exception = None
         endpoint = self._extract_endpoint(request)
         # sometimes we spend all budget before a second attempt, so we have a few more attempts
         for attempt in range(1, self._maximum_attempts_to_acquire):
+            if last_exception is not None and deadline is not None and time.monotonic() >= deadline:
+                raise last_exception
             try:
                 weight = policy.get_weight(request) if isinstance(policy, BaseCallRatePolicy) else 1
                 policy.try_acquire(request, weight=weight)
@@ -651,12 +657,12 @@ class APIBudget(AbstractAPIBudget):
             except CallRateLimitHit as exc:
                 last_exception = exc
                 if block:
-                    if timeout is not None:
-                        time_to_wait = min(timedelta(seconds=timeout), exc.time_to_wait)
-                    else:
-                        time_to_wait = exc.time_to_wait
-                    # Ensure we never sleep for a negative duration.
-                    time_to_wait = max(timedelta(0), time_to_wait)
+                    time_to_wait = max(timedelta(0), exc.time_to_wait)
+                    if (
+                        deadline is not None
+                        and time_to_wait.total_seconds() >= deadline - time.monotonic()
+                    ):
+                        raise
                     logger.debug(
                         f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}). "
                         f"Sleeping for {time_to_wait} on attempt {attempt}."
@@ -727,20 +733,68 @@ class HttpAPIBudget(APIBudget):
         return None
 
 
+_DEADLINE_CONNECT_TIMEOUT_SECONDS = 60.0
+
+
+def split_timeout_within_deadline(
+    remaining: float,
+    connect_timeout: Optional[float] = None,
+    read_timeout: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Return a (connect, read) timeout pair whose sum does not exceed `remaining`.
+
+    Requests applies each value of the pair separately, so both phases share the remaining budget.
+    """
+    connect = min(
+        connect_timeout if connect_timeout is not None else _DEADLINE_CONNECT_TIMEOUT_SECONDS,
+        remaining / 2,
+    )
+    read = remaining - connect
+    return connect, min(read_timeout, read) if read_timeout is not None else read
+
+
+def deadline_exceeded() -> AirbyteTracedException:
+    return AirbyteTracedException(
+        message="The connector operation ran out of time. Try again or reduce the amount of data requested.",
+        failure_type=FailureType.transient_error,
+    )
+
+
+def remaining_time(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise deadline_exceeded()
+    return remaining
+
+
+def cap_request_timeout(deadline: float, timeout: Any) -> Tuple[float, float]:
+    connect, read = timeout if isinstance(timeout, tuple) else (timeout, timeout)
+    return split_timeout_within_deadline(remaining_time(deadline), connect, read)
+
+
 class LimiterMixin(MIXIN_BASE):
     """Mixin class that adds rate-limiting behavior to requests."""
 
     def __init__(
         self,
         api_budget: AbstractAPIBudget,
+        deadline: Optional[float] = None,
         **kwargs: Any,
     ):
         self._api_budget = api_budget
+        self._deadline = deadline
         super().__init__(**kwargs)  # type: ignore # Base Session doesn't take any kwargs
 
     def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:
         """Send a request with rate-limiting."""
-        self._api_budget.acquire_call(request)
+        if self._deadline is None:
+            self._api_budget.acquire_call(request)
+        else:
+            try:
+                self._api_budget.acquire_call(request, timeout=remaining_time(self._deadline))
+            except CallRateLimitHit as exc:
+                raise deadline_exceeded() from exc
+            kwargs["timeout"] = cap_request_timeout(self._deadline, kwargs.get("timeout"))
         response = super().send(request, **kwargs)
         self._api_budget.update_from_response(request, response)
         return response

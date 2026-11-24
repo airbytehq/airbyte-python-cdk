@@ -15,6 +15,8 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     TestLimits,
 )
 
+from ..execution import operation_deadline
+
 SHOULD_NORMALIZE_KEY = "__should_normalize"
 SHOULD_MIGRATE_KEY = "__should_migrate"
 
@@ -85,6 +87,7 @@ def build_source(
         normalize_manifest=should_normalize,
         migrate_manifest=should_migrate,
         emit_connector_builder_messages=True,
+        builder_request_deadline=operation_deadline.get(),
         limits=TestLimits(
             max_pages_per_slice=page_limit or TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
             max_slices=slice_limit or TestLimits.DEFAULT_MAX_SLICES,

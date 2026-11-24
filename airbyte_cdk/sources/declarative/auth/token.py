@@ -4,11 +4,13 @@
 
 import base64
 import logging
+import time
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, MutableMapping, Union
+from typing import Any, Mapping, MutableMapping, Optional, Tuple, Union
 
 import requests
 from cachetools import TTLCache, cached
+from cachetools.keys import hashkey
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.auth.token_provider import TokenProvider
@@ -17,6 +19,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.sources.streams.call_rate import split_timeout_within_deadline
 from airbyte_cdk.sources.types import Config
 
 
@@ -146,8 +149,24 @@ class BasicHttpAuthenticator(DeclarativeAuthenticator):
 cacheSessionTokenAuthenticator: TTLCache[str, str] = TTLCache(maxsize=1000, ttl=86400)
 
 
-@cached(cacheSessionTokenAuthenticator)
-def get_new_session_token(api_url: str, username: str, password: str, response_key: str) -> str:
+def _session_token_cache_key(
+    api_url: str,
+    username: str,
+    password: str,
+    response_key: str,
+    timeout: Optional[Tuple[float, float]] = None,
+) -> Any:
+    return hashkey(api_url, username, password, response_key)
+
+
+@cached(cacheSessionTokenAuthenticator, key=_session_token_cache_key)
+def get_new_session_token(
+    api_url: str,
+    username: str,
+    password: str,
+    response_key: str,
+    timeout: Optional[Tuple[float, float]] = None,
+) -> str:
     """
     This method retrieves session token from api by username and password for SessionTokenAuthenticator.
     It's cashed to avoid a multiple calling by sync and updating session token every stream sync.
@@ -156,6 +175,7 @@ def get_new_session_token(api_url: str, username: str, password: str, response_k
         username: username for auth
         password: password for auth
         response_key: field name in response to retrieve a session token
+        timeout: seconds to wait for the login request, or None to wait indefinitely
 
     Returns:
         session token
@@ -164,6 +184,7 @@ def get_new_session_token(api_url: str, username: str, password: str, response_k
         f"{api_url}",
         headers={"Content-Type": "application/json"},
         json={"username": username, "password": password},
+        timeout=timeout,
     )
     response.raise_for_status()
     if not response.ok:
@@ -206,6 +227,7 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
     login_url: Union[InterpolatedString, str]
     validate_session_url: Union[InterpolatedString, str]
     password: Union[InterpolatedString, str] = ""
+    request_deadline: Optional[float] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._username = InterpolatedString.create(self.username, parameters=parameters)
@@ -239,17 +261,34 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             api_url = f"{self._api_url.eval(self.config)}{self._login_url.eval(self.config)}"
 
             self.logger.info("Using generated session token by username and password")
-            return get_new_session_token(api_url, username, password, session_token_response_key)
+            return get_new_session_token(
+                api_url,
+                username,
+                password,
+                session_token_response_key,
+                timeout=self._timeout_within_deadline(),
+            )
 
         raise ConnectionError(
             "Invalid credentials: session token is not valid or provide username and password"
         )
+
+    def _timeout_within_deadline(self) -> Optional[Tuple[float, float]]:
+        if self.request_deadline is None:
+            return None
+        remaining = self.request_deadline - time.monotonic()
+        if remaining <= 0:
+            raise ConnectionError(
+                "The request ran out of time before the session token could be fetched."
+            )
+        return split_timeout_within_deadline(remaining)
 
     def is_valid_session_token(self) -> bool:
         try:
             response = requests.get(
                 f"{self._api_url.eval(self.config)}{self._validate_session_url.eval(self.config)}",
                 headers={self.auth_header: self._session_token.eval(self.config)},
+                timeout=self._timeout_within_deadline(),
             )
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
