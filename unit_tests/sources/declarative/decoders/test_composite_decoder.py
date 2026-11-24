@@ -5,6 +5,7 @@ import csv
 import gzip
 import io
 import json
+import logging
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO, StringIO
@@ -247,6 +248,22 @@ def test_composite_raw_decoder_jsonline_parser(requests_mock, encoding: str):
     for _ in composite_raw_decoder.decode(response):
         counter += 1
     assert counter == 3
+
+
+def test_jsonline_parser_does_not_log_malformed_line(requests_mock, caplog):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=b'{"id": 1}\n{"ssn": "123-45-6789"\n{"id": 3}\n',
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        records = list(CompositeRawDecoder(parser=JsonLineParser()).decode(response))
+
+    assert records == [{"id": 1}, {"id": 3}]
+    assert "123-45-6789" not in caplog.text
+    assert "Cannot parse line 2" in caplog.text
 
 
 @pytest.mark.parametrize(
