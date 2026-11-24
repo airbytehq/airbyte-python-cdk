@@ -10,7 +10,9 @@ import inspect
 import json
 import logging
 import math
+import os
 import re
+import time
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -761,6 +763,17 @@ _DATETIME_FORMAT_DIRECTIVE_GRANULARITY: List[Tuple[str, datetime.timedelta]] = [
 LOGGER = logging.getLogger(f"airbyte.model_to_component_factory")
 
 
+# The platform stops waiting for a Manifest Server response after 300 s by default
+# (MANIFEST_SERVER_API_READ_TIMEOUT_SECONDS), so requests past that only hold a shared worker.
+_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV = "AIRBYTE_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS"
+_DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS = 300.0
+
+
+def _connector_builder_request_deadline_seconds() -> float:
+    value = os.environ.get(_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV)
+    return float(value) if value else _DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
+
+
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
 
@@ -786,6 +799,11 @@ class ModelToComponentFactory:
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
+        self._builder_request_deadline = (
+            time.monotonic() + _connector_builder_request_deadline_seconds()
+            if emit_connector_builder_messages
+            else None
+        )
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._message_repository = message_repository or InMemoryMessageRepository(
@@ -3052,6 +3070,7 @@ class ModelToComponentFactory:
             connect_timeout_in_seconds=model.connect_timeout_in_seconds,
             read_timeout_in_seconds=model.read_timeout_in_seconds,
             use_tcp_keepalive=model.use_tcp_keepalive or False,
+            request_deadline=self._builder_request_deadline,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
         )

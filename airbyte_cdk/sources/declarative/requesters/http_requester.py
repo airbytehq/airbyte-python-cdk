@@ -69,6 +69,7 @@ class HttpRequester(Requester):
     connect_timeout_in_seconds: Optional[float] = None
     read_timeout_in_seconds: Optional[float] = None
     use_tcp_keepalive: bool = False
+    request_deadline: Optional[float] = None
     _exit_on_rate_limit: bool = False
     stream_response: bool = False
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
@@ -124,6 +125,7 @@ class HttpRequester(Requester):
                 else None
             ),
             use_tcp_keepalive=self.use_tcp_keepalive,
+            deadline=self.request_deadline,
         )
 
     @property

@@ -3,8 +3,10 @@
 #
 
 import logging
+import math
 import os
 import threading
+import time
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -163,7 +165,12 @@ class HttpClient:
         message_repository: Optional[MessageRepository] = None,
         request_timeout: Optional[Union[float, Tuple[Optional[float], Optional[float]]]] = None,
         use_tcp_keepalive: bool = False,
+        deadline: Optional[float] = None,
     ):
+        """
+        `deadline` is a `time.monotonic()` timestamp. When set, no attempt starts after it, each
+        attempt's timeout is capped at the time left, and retries stop waiting once it passes.
+        """
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
         if session:
@@ -204,6 +211,7 @@ class HttpClient:
         self._message_repository = message_repository
         self._authenticator_update_failed = False
         self._request_timeout = request_timeout
+        self._deadline = deadline
 
     @property
     def cache_filename(self) -> str:
@@ -348,6 +356,8 @@ class HttpClient:
         max_retries = self._max_retries
         max_tries = max(0, max_retries) + 1
         max_time = self._max_time
+        if self._deadline is not None:
+            max_time = min(max_time, max(0, math.ceil(self._deadline - time.monotonic())))
 
         user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
             self._send
@@ -444,6 +454,25 @@ class HttpClient:
                     "Authenticator failed to update quota state from response", exc_info=True
                 )
 
+    def _timeout_within_deadline(self, request_kwargs: Mapping[str, Any]) -> Tuple[float, float]:
+        assert self._deadline is not None
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise AirbyteTracedException(
+                message="The request was not sent because the test read ran out of time. Reduce the number of pages, slices or records requested, or set a shorter timeout on the requester.",
+                internal_message=f"Request deadline passed for stream {self._name}.",
+                failure_type=FailureType.transient_error,
+                stream_descriptor=StreamDescriptor(name=self._name),
+            )
+        timeout = request_kwargs.get("timeout")
+        connect_timeout, read_timeout = (
+            timeout if isinstance(timeout, tuple) else (timeout, timeout)
+        )
+        return (
+            min(connect_timeout, remaining) if connect_timeout is not None else remaining,
+            min(read_timeout, remaining) if read_timeout is not None else remaining,
+        )
+
     def _send(
         self,
         request: requests.PreparedRequest,
@@ -468,6 +497,11 @@ class HttpClient:
 
         if self._request_timeout is not None and "timeout" not in request_kwargs:
             request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
+        if self._deadline is not None:
+            request_kwargs = {
+                **request_kwargs,
+                "timeout": self._timeout_within_deadline(request_kwargs),
+            }
 
         try:
             response = self._session.send(request, **request_kwargs)

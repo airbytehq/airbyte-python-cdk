@@ -2150,3 +2150,46 @@ def test_read_timeout_is_retried_then_raises():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_deadline_caps_timeout_when_none_is_configured():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), session=mocked_session, deadline=time.monotonic() + 30
+    )
+
+    http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    connect_timeout, read_timeout = mocked_session.send.call_args.kwargs["timeout"]
+    assert 0 < connect_timeout <= 30
+    assert 0 < read_timeout <= 30
+
+
+def test_deadline_keeps_shorter_configured_timeout():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+        request_timeout=(5, None),
+        deadline=time.monotonic() + 30,
+    )
+
+    http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    connect_timeout, read_timeout = mocked_session.send.call_args.kwargs["timeout"]
+    assert connect_timeout == 5
+    assert 25 < read_timeout <= 30
+
+
+def test_no_request_is_sent_after_the_deadline():
+    mocked_session = _session_with_200()
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), session=mocked_session, deadline=time.monotonic() - 1
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    mocked_session.send.assert_not_called()
