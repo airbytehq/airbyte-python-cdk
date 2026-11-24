@@ -5,6 +5,7 @@
 import dataclasses
 
 import pytest
+from pydantic.v1 import ValidationError
 
 from airbyte_cdk.models import (
     AdvancedAuth as model_advanced_auth,
@@ -15,6 +16,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models import (
     ConnectorSpecification as model_connector_spec,
 )
+from airbyte_cdk.models import ConnectorSpecificationSerializer
 from airbyte_cdk.models import (
     OAuthConfigSpecification as model_declarative_oauth_spec,
 )
@@ -36,8 +38,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OauthConnectorInputSpecification as component_declarative_oauth_connector_input_spec,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     State as component_declarative_oauth_state,
+)
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.spec.spec import ConfigMigration
 from airbyte_cdk.sources.declarative.spec.spec import Spec as component_spec
@@ -315,3 +321,44 @@ def test_protocol_override_fields_in_sync(
         f"Upstream protocol added fields {missing} to {upstream_class_name} "
         f"that are missing from the airbyte_protocol.py override. Update the override to match."
     )
+
+
+def test_given_optional_extract_output_when_serializing_the_spec_then_it_is_kept() -> None:
+    """`optional_extract_output` is read by the platform OAuth handler, so it must survive both the
+    component model and the protocol dataclass the spec is serialized through."""
+    spec = ModelToComponentFactory().create_component(
+        SpecModel,
+        {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "advanced_auth": {
+                "auth_flow_type": "oauth2.0",
+                "oauth_config_specification": {
+                    "oauth_connector_input_specification": {
+                        "consent_url": "https://domain.host.com/oauth/authorize",
+                        "access_token_url": "https://domain.host.com/oauth/token",
+                        "extract_output": ["access_token"],
+                        "optional_extract_output": ["refresh_token", "expires_in"],
+                    },
+                },
+            },
+        },
+        {},
+    )
+
+    serialized_spec = ConnectorSpecificationSerializer.dump(spec.generate_spec())
+
+    oauth_input = serialized_spec["advanced_auth"]["oauth_config_specification"][
+        "oauth_connector_input_specification"
+    ]
+    assert oauth_input["extract_output"] == ["access_token"]
+    assert oauth_input["optional_extract_output"] == ["refresh_token", "expires_in"]
+
+
+def test_given_optional_extract_output_that_is_not_a_list_then_the_spec_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="optional_extract_output"):
+        component_declarative_oauth_connector_input_spec(
+            consent_url="https://domain.host.com/oauth/authorize",
+            access_token_url="https://domain.host.com/oauth/token",
+            optional_extract_output="refresh_token",
+        )
