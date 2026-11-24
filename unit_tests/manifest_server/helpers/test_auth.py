@@ -171,19 +171,102 @@ class TestVerifyJwtToken:
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Invalid token"
 
-    def test_token_without_required_claims_passes(self):
-        """Test that tokens without standard claims still pass if signature is valid."""
+    def test_token_without_expiry_raises_401(self):
+        """A token with a valid signature but no expiry would never expire, so it is rejected."""
         secret = "test-secret"
-        minimal_payload = {"custom": "data"}  # No exp, iat, sub etc.
-        minimal_token = jwt.encode(minimal_payload, secret, algorithm="HS256")
+        never_expiring_token = jwt.encode({"custom": "data"}, secret, algorithm="HS256")
 
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
-            minimal_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", credentials=minimal_token
-            )
+            with pytest.raises(HTTPException) as exc_info:
+                verify_jwt_token(
+                    HTTPAuthorizationCredentials(scheme="Bearer", credentials=never_expiring_token)
+                )
 
-            # Should not raise any exception - we only verify signature
-            verify_jwt_token(minimal_credentials)
+        assert exc_info.value.status_code == 401
+
+
+def _token(secret, **claims):
+    payload = {"exp": datetime.now(timezone.utc) + timedelta(minutes=5), **claims}
+    return HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret, algorithm="HS256")
+    )
+
+
+@pytest.mark.parametrize(
+    "audience",
+    [
+        pytest.param("airbyte-server", id="other_service"),
+        pytest.param(["airbyte-server", "airbyte-workload-api"], id="other_services"),
+    ],
+)
+def test_token_for_another_audience_raises_401(audience):
+    with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": "shared"}):
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(_token("shared", aud=audience))
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "audience",
+    [
+        pytest.param("airbyte-manifest-server", id="manifest_server"),
+        pytest.param(["airbyte-server", "airbyte-manifest-server"], id="list_with_manifest_server"),
+    ],
+)
+def test_token_for_the_manifest_server_passes(audience):
+    with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": "shared"}):
+        verify_jwt_token(_token("shared", aud=audience))
+
+
+def test_token_without_audience_passes_unless_audience_is_required():
+    with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": "shared"}):
+        verify_jwt_token(_token("shared"))
+
+    with patch.dict(
+        os.environ,
+        {"AB_JWT_SIGNATURE_SECRET": "shared", "AB_MANIFEST_SERVER_JWT_REQUIRE_AUDIENCE": "true"},
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(_token("shared"))
+        verify_jwt_token(_token("shared", aud="airbyte-manifest-server"))
+
+    assert exc_info.value.status_code == 401
+
+
+def test_dedicated_signing_key_replaces_the_shared_key():
+    """With its own key set, the manifest server no longer accepts tokens signed with the shared key."""
+    env = {
+        "AB_JWT_SIGNATURE_SECRET": "shared",
+        "AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET": "manifest-server-only",
+    }
+    with patch.dict(os.environ, env):
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(_token("shared", aud="airbyte-manifest-server"))
+        verify_jwt_token(_token("manifest-server-only", aud="airbyte-manifest-server"))
+
+    assert exc_info.value.status_code == 401
+
+
+def test_dedicated_signing_key_with_whitespace_is_used_as_is():
+    secret = " manifest-server-only\n"
+    with patch.dict(os.environ, {"AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET": secret}):
+        verify_jwt_token(_token(secret))
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(_token(secret.strip()))
+
+    assert exc_info.value.status_code == 401
+
+
+def test_dedicated_signing_key_alone_enables_authentication():
+    with patch.dict(
+        os.environ, {"AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET": "manifest-server-only"}
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(None)
+        verify_jwt_token(_token("manifest-server-only"))
+
+    assert exc_info.value.status_code == 401
 
 
 def test_secret_with_surrounding_whitespace_is_used_as_is():
