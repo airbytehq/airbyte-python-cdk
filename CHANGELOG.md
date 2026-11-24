@@ -6,7 +6,7 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 ## 6.5.3
 
-Bugfix: File transfer syncs now fail early if the shared staging directory is unavailable.
+Bugfix: File transfer syncs now fail early if the shared staging directory is unavailable. Declarative file uploads also reject paths and symlinks that escape that directory.
 
 ## 6.5.2
 
