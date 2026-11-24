@@ -384,3 +384,6 @@ def test_template_caches_are_bounded():
     assert (
         JinjaInterpolation._find_undeclared_variables.cache_info().currsize <= _TEMPLATE_CACHE_SIZE
     )
+
+    # The first template has been evicted; rendering it again must compile it afresh.
+    assert interpolation.eval("{{ config['key'] }}-0", config={"key": "other"}) == "other-0"
