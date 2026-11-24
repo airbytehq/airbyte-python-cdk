@@ -226,3 +226,20 @@ This requires the `ddtrace` dependency, which is included in the `manifest-serve
 # Run with Datadog tracing enabled
 DD_ENABLED=true manifest-server start
 ```
+
+## Manifest operation limits
+
+Manifest Server runs test reads, checks, discovery, and full manifest resolution in
+supervised processes. The server stops expired operations, reaps their workers, and
+removes their temporary files. Configure the limits before starting the server.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `AIRBYTE_MANIFEST_SERVER_OPERATION_TIMEOUT_SECONDS` | 295 | Maximum execution time for a manifest operation, in seconds. |
+| `AIRBYTE_MANIFEST_SERVER_CHECK_TIMEOUT_SECONDS` | 55 | Execution time for connection checks, capped by the operation timeout. |
+| `AIRBYTE_MANIFEST_SERVER_MAX_ACTIVE_OPERATIONS` | 4 | Maximum active manifest operations per server process. |
+
+The server returns HTTP 503 with `Retry-After` when every slot is busy. Set the
+execution time below the caller's timeout to leave time for cleanup and the
+response. Input and result messages between the server and a worker are limited
+to 32 MiB.

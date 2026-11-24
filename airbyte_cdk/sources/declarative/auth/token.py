@@ -19,7 +19,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
-from airbyte_cdk.sources.streams.http.http_client import split_timeout_within_deadline
+from airbyte_cdk.sources.streams.call_rate import split_timeout_within_deadline
 from airbyte_cdk.sources.types import Config
 
 

@@ -16,6 +16,7 @@ from airbyte_cdk.manifest_server.helpers import tracing
 from airbyte_cdk.manifest_server.helpers.tracing import with_request_context
 from airbyte_cdk.models import AirbyteConnectionStatus, ConnectorSpecification, Status
 
+pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
 
 @pytest.mark.parametrize(
     "context,prefix",

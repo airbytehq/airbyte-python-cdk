@@ -3,7 +3,6 @@
 #
 
 import logging
-import math
 import os
 import threading
 import time
@@ -27,7 +26,14 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
 from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.streams.call_rate import APIBudget, CachedLimiterSession, LimiterSession
+from airbyte_cdk.sources.streams.call_rate import (
+    APIBudget,
+    CachedLimiterSession,
+    LimiterSession,
+    cap_request_timeout,
+    deadline_exceeded,
+    remaining_time,
+)
 from airbyte_cdk.sources.streams.http.error_handlers import (
     BackoffStrategy,
     DefaultBackoffStrategy,
@@ -137,26 +143,6 @@ def _as_auxiliary_request_log(
     return log_message
 
 
-_DEADLINE_CONNECT_TIMEOUT_SECONDS = 60.0
-
-
-def split_timeout_within_deadline(
-    remaining: float,
-    connect_timeout: Optional[float] = None,
-    read_timeout: Optional[float] = None,
-) -> Tuple[float, float]:
-    """Return a (connect, read) timeout pair whose sum does not exceed `remaining`.
-
-    Requests applies each value of the pair separately, so both phases share the remaining budget.
-    """
-    connect = min(
-        connect_timeout if connect_timeout is not None else _DEADLINE_CONNECT_TIMEOUT_SECONDS,
-        remaining / 2,
-    )
-    read = remaining - connect
-    return connect, min(read_timeout, read) if read_timeout is not None else read
-
-
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
@@ -192,6 +178,8 @@ class HttpClient:
         attempt's timeout is capped at the time left, and retries stop waiting once it passes.
         """
         self._name = name
+        self._deadline = deadline
+        self._session_manages_deadline = session is None
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
         if session:
             self._session = session
@@ -231,7 +219,6 @@ class HttpClient:
         self._message_repository = message_repository
         self._authenticator_update_failed = False
         self._request_timeout = request_timeout
-        self._deadline = deadline
 
     @property
     def cache_filename(self) -> str:
@@ -271,10 +258,11 @@ class HttpClient:
                 cache_name=sqlite_path,
                 backend=backend,
                 api_budget=self._api_budget,
+                deadline=self._deadline,
                 match_headers=True,
             )
         else:
-            return LimiterSession(api_budget=self._api_budget)
+            return LimiterSession(api_budget=self._api_budget, deadline=self._deadline)
 
     def clear_cache(self) -> None:
         """
@@ -375,20 +363,15 @@ class HttpClient:
 
         max_retries = self._max_retries
         max_tries = max(0, max_retries) + 1
-        max_time = self._max_time
-        if self._deadline is not None:
-            max_time = min(max_time, max(0, math.ceil(self._deadline - time.monotonic())))
-
-        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
-            self._send
-        )
-        rate_limit_backoff_handler = (
-            rate_limit_default_backoff_handler(max_tries=max_tries)
-            if self._deadline is None
-            else rate_limit_default_backoff_handler(max_tries=max_tries, max_time=max_time)
+        before_wait = self._check_retry_wait if self._deadline is not None else None
+        user_backoff_handler = user_defined_backoff_handler(
+            max_tries=max_tries, max_time=self._max_time, before_wait=before_wait
+        )(self._send)
+        rate_limit_backoff_handler = rate_limit_default_backoff_handler(
+            max_tries=max_tries, before_wait=before_wait
         )
         backoff_handler = http_client_default_backoff_handler(
-            max_tries=max_tries, max_time=max_time
+            max_tries=max_tries, max_time=self._max_time, before_wait=before_wait
         )
         # backoff handlers wrap _send, so it will always return a response -- except when all retries are exhausted
         try:
@@ -478,24 +461,10 @@ class HttpClient:
                     "Authenticator failed to update quota state from response", exc_info=True
                 )
 
-    def _deadline_exceeded_error(self) -> AirbyteTracedException:
-        return AirbyteTracedException(
-            message="The test read ran out of time before the next request to the API. Reduce the number of pages, slices or records requested, or set a shorter timeout on the requester.",
-            internal_message=f"Request deadline passed for stream {self._name}.",
-            failure_type=FailureType.transient_error,
-            stream_descriptor=StreamDescriptor(name=self._name),
-        )
-
-    def _timeout_within_deadline(self, request_kwargs: Mapping[str, Any]) -> Tuple[float, float]:
+    def _check_retry_wait(self, seconds: float) -> None:
         assert self._deadline is not None
-        remaining = self._deadline - time.monotonic()
-        if remaining <= 0:
-            raise self._deadline_exceeded_error()
-        timeout = request_kwargs.get("timeout")
-        connect_timeout, read_timeout = (
-            timeout if isinstance(timeout, tuple) else (timeout, timeout)
-        )
-        return split_timeout_within_deadline(remaining, connect_timeout, read_timeout)
+        if seconds >= remaining_time(self._deadline):
+            raise deadline_exceeded()
 
     def _send(
         self,
@@ -504,6 +473,8 @@ class HttpClient:
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
     ) -> requests.Response:
+        if self._deadline is not None:
+            remaining_time(self._deadline)
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
         else:
@@ -521,10 +492,10 @@ class HttpClient:
 
         if self._request_timeout is not None and "timeout" not in request_kwargs:
             request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
-        if self._deadline is not None:
+        if self._deadline is not None and not self._session_manages_deadline:
             request_kwargs = {
                 **request_kwargs,
-                "timeout": self._timeout_within_deadline(request_kwargs),
+                "timeout": cap_request_timeout(self._deadline, request_kwargs.get("timeout")),
             }
 
         try:
@@ -881,13 +852,6 @@ class HttpClient:
                 error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and not exit_on_rate_limit
             )
-
-            if (
-                user_defined_backoff_time
-                and self._deadline is not None
-                and time.monotonic() + user_defined_backoff_time >= self._deadline
-            ):
-                raise self._deadline_exceeded_error()
 
             if user_defined_backoff_time:
                 raise UserDefinedBackoffException(

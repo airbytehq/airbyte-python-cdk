@@ -14,7 +14,7 @@ import requests
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
-from airbyte_cdk.sources.streams.call_rate import RequestMatcher
+from airbyte_cdk.sources.streams.call_rate import RequestMatcher, deadline_exceeded, remaining_time
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import HttpStatusErrorHandler
 from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
@@ -391,6 +391,8 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                         quota.name,
                     )
                     self._budget_logged = True
+                if self._deadline is not None and budget_delay >= remaining_time(self._deadline):
+                    raise deadline_exceeded()
                 time.sleep(budget_delay)
             return token
 

@@ -3,7 +3,7 @@ import json
 import logging
 import uuid
 from dataclasses import asdict
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import jsonschema
 import pydantic
@@ -36,6 +36,7 @@ from ..api_models import (
 )
 from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
+from ..execution import run_operation
 from ..helpers.auth import verify_jwt_token
 from ..helpers.tracing import with_request_context
 
@@ -65,9 +66,7 @@ def _error_detail(action: str, exc: Exception) -> str:
         return filter_secrets(f"{action}: {exc}")
 
     error_id = uuid.uuid4().hex
-    logger.error(
-        filter_secrets(f"{action} (error id {error_id}): {type(exc).__name__}: {exc}"), exc_info=exc
-    )
+    logger.error(filter_secrets(f"{action} (error id {error_id}): {type(exc).__name__}: {exc}"))
     return f"{action}: an internal error occurred (error id {error_id}). The details are in the manifest server logs."
 
 
@@ -117,6 +116,12 @@ router = APIRouter(
 )
 @with_request_context
 def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
+    """Test reading from a specific stream in the manifest."""
+    return run_operation("test_read", request, StreamReadResponse)
+
+
+@with_request_context
+def _test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     """
     Test reading from a specific stream in the manifest.
     """
@@ -176,6 +181,12 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
 )
 @with_request_context
 def check(request: CheckRequest) -> CheckResponse:
+    """Check configuration against a manifest."""
+    return run_operation("check", request, CheckResponse)
+
+
+@with_request_context
+def _check(request: CheckRequest) -> CheckResponse:
     """Check configuration against a manifest"""
     try:
         source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
@@ -195,6 +206,12 @@ def check(request: CheckRequest) -> CheckResponse:
 )
 @with_request_context
 def discover(request: DiscoverRequest) -> DiscoverResponse:
+    """Discover streams from a manifest."""
+    return run_operation("discover", request, DiscoverResponse)
+
+
+@with_request_context
+def _discover(request: DiscoverRequest) -> DiscoverResponse:
     """Discover streams from a manifest"""
     try:
         source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
@@ -238,6 +255,12 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
 )
 @with_request_context
 def full_resolve(request: FullResolveRequest) -> ManifestResponse:
+    """Fully resolve a manifest, including dynamic streams."""
+    return run_operation("full_resolve", request, ManifestResponse)
+
+
+@with_request_context
+def _full_resolve(request: FullResolveRequest) -> ManifestResponse:
     """
     Fully resolve a manifest, including dynamic streams.
 
@@ -266,3 +289,14 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
         raise HTTPException(
             status_code=400, detail=_error_detail("Error full resolving manifest", exc)
         )
+
+
+# The worker accepts only these predefined operations and validates all operation inputs.
+WORKER_OPERATIONS: dict[
+    str, tuple[type[pydantic.BaseModel], Callable[[Any], pydantic.BaseModel]]
+] = {
+    "test_read": (StreamTestReadRequest, _test_read),
+    "check": (CheckRequest, _check),
+    "discover": (DiscoverRequest, _discover),
+    "full_resolve": (FullResolveRequest, _full_resolve),
+}

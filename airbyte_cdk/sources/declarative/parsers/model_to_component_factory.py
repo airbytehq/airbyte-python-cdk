@@ -10,9 +10,7 @@ import inspect
 import json
 import logging
 import math
-import os
 import re
-import time
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -763,30 +761,6 @@ _DATETIME_FORMAT_DIRECTIVE_GRANULARITY: List[Tuple[str, datetime.timedelta]] = [
 LOGGER = logging.getLogger(f"airbyte.model_to_component_factory")
 
 
-# The platform stops waiting for a Manifest Server response after 300 s by default
-# (MANIFEST_SERVER_API_READ_TIMEOUT_SECONDS), so requests past that only hold a shared worker.
-_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV = "AIRBYTE_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS"
-_DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS = 300.0
-
-
-def _connector_builder_request_deadline_seconds() -> float:
-    value = os.environ.get(_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV)
-    if not value:
-        return _DEFAULT_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
-    try:
-        seconds = float(value)
-    except ValueError:
-        seconds = math.nan
-    if not math.isfinite(seconds) or seconds <= 0:
-        raise ValueError(
-            f"{_CONNECTOR_BUILDER_REQUEST_DEADLINE_ENV} must be a positive number of seconds, got {value!r}."
-        )
-    return seconds
-
-
-_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS = _connector_builder_request_deadline_seconds()
-
-
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
 
@@ -813,10 +787,6 @@ class ModelToComponentFactory:
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
-        if builder_request_deadline is None and emit_connector_builder_messages:
-            builder_request_deadline = (
-                time.monotonic() + _CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
-            )
         self._builder_request_deadline = builder_request_deadline
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
@@ -2064,8 +2034,7 @@ class ModelToComponentFactory:
             if split[0] == "source_declarative_manifest":
                 # During testing, the modules containing the custom components are not moved to source_declarative_manifest. In order to run the test, add the source folder to your PYTHONPATH or add it runtime using sys.path.append
                 try:
-                    import os
-
+                    
                     module_name_with_source_declarative_manifest = ".".join(split[1:-1])
                     module_ref = importlib.import_module(
                         module_name_with_source_declarative_manifest

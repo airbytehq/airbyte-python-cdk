@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from airbyte_cdk.connector_builder.models import StreamRead as CDKStreamRead
 from airbyte_cdk.manifest_server.app import app
 
+pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
+
 client = TestClient(app)
 
 

@@ -20,7 +20,11 @@ from airbyte_cdk.sources.declarative.auth.oauth import DeclarativeOauth2Authenti
 from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
+from airbyte_cdk.sources.streams.call_rate import (
+    CachedLimiterSession,
+    LimiterSession,
+    split_timeout_within_deadline,
+)
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import (
     BackoffStrategy,
@@ -36,7 +40,6 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 )
 from airbyte_cdk.sources.streams.http.http_client import (
     MessageRepresentationAirbyteTracedErrors,
-    split_timeout_within_deadline,
 )
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,

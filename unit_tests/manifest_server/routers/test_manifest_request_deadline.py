@@ -1,110 +1,81 @@
-import socket
-import threading
+import os
+import subprocess
+import sys
 import time
-from unittest.mock import patch
+from pathlib import Path
+from threading import BoundedSemaphore
 
 import pytest
 from fastapi.testclient import TestClient
 
+from airbyte_cdk.manifest_server import execution
 from airbyte_cdk.manifest_server.app import app
 
 client = TestClient(app)
+MANIFEST = {
+    "version": "6.0.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": []},
+    "streams": [],
+}
 
 
-@pytest.fixture
-def stalled_server_url():
-    """A server that accepts connections and never sends a response."""
-    server = socket.socket()
-    server.bind(("127.0.0.1", 0))
-    server.listen()
-    connections = []
-    stop = threading.Event()
+def test_full_resolve_uses_supervised_worker():
+    response = client.post("/v1/manifest/full_resolve", json={"manifest": MANIFEST, "config": {}})
 
-    def accept_forever():
-        server.settimeout(0.1)
-        while not stop.is_set():
-            try:
-                connections.append(server.accept()[0])
-            except socket.timeout:
-                continue
-
-    thread = threading.Thread(target=accept_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{server.getsockname()[1]}"
-    stop.set()
-    thread.join()
-    for connection in connections:
-        connection.close()
-    server.close()
+    assert response.status_code == 200, response.json()
+    assert response.json() == {"manifest": MANIFEST}
 
 
-def _manifest(url_base):
-    return {
-        "version": "6.48.15",
-        "type": "DeclarativeSource",
-        "check": {"type": "CheckStream", "stream_names": ["items"]},
-        "spec": {
-            "type": "Spec",
-            "connection_specification": {"type": "object", "properties": {}},
-        },
-        "streams": [
-            {
-                "type": "DeclarativeStream",
-                "name": "items",
-                "primary_key": [],
-                "retriever": {
-                    "type": "SimpleRetriever",
-                    "requester": {
-                        "type": "HttpRequester",
-                        "url_base": url_base,
-                        "path": "/items",
-                        "http_method": "GET",
-                    },
-                    "record_selector": {
-                        "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
-                    },
-                },
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {"type": "object", "properties": {}},
-                },
-            }
-        ],
-    }
+def test_deadline_reaps_worker_cleans_scratch_and_releases_slot(monkeypatch):
+    process_factory = subprocess.Popen
+    workers = []
 
+    def start_worker(command, **kwargs):
+        if not workers:
+            command = [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; import time; Path('files/partial').touch(); time.sleep(30)",
+            ]
+        process = process_factory(command, **kwargs)
+        workers.append((process, Path(kwargs["cwd"])))
+        return process
 
-@patch(
-    "airbyte_cdk.sources.declarative.parsers.model_to_component_factory._CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS",
-    2.0,
-)
-def test_test_read_against_stalled_api_ends_at_the_deadline(stalled_server_url):
+    monkeypatch.setattr(execution.subprocess, "Popen", start_worker)
+    monkeypatch.setattr(execution, "_operation_timeout", 0.5)
+    monkeypatch.setattr(execution, "_slots", BoundedSemaphore(1))
+
     started = time.monotonic()
-    response = client.post(
-        "/v1/manifest/test_read",
-        json={"manifest": _manifest(stalled_server_url), "config": {}, "stream_name": "items"},
-    )
-    elapsed = time.monotonic() - started
+    response = client.post("/v1/manifest/full_resolve", json={"manifest": MANIFEST, "config": {}})
 
-    assert response.status_code == 200
-    errors = [log["message"] for log in response.json()["logs"] if log["level"] == "ERROR"]
-    assert any("Read timed out" in message for message in errors), errors
-    assert elapsed < 15
+    assert time.monotonic() - started < 3
+    assert response.status_code == 400
+    assert "ran out of time" in response.json()["detail"]
+    process, scratch = workers[0]
+    assert process.returncode is not None and process.returncode < 0
+    with pytest.raises(ChildProcessError):
+        os.waitpid(process.pid, os.WNOHANG)
+    assert not scratch.exists()
+
+    monkeypatch.setattr(execution, "_operation_timeout", 10)
+    response = client.post("/v1/manifest/full_resolve", json={"manifest": MANIFEST, "config": {}})
+    assert response.status_code == 200, response.json()
 
 
-@pytest.mark.parametrize("value", ["abc", "inf", "nan", "0", "-5"])
+def test_busy_server_rejects_work_before_spawning(monkeypatch):
+    slots = BoundedSemaphore(1)
+    slots.acquire()
+    monkeypatch.setattr(execution, "_slots", slots)
+
+    response = client.post("/v1/manifest/full_resolve", json={"manifest": MANIFEST, "config": {}})
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "1"
+
+
+@pytest.mark.parametrize("value", ["", "abc", "inf", "nan", "0", "-5"])
 def test_invalid_deadline_override_is_rejected(monkeypatch, value):
-    from airbyte_cdk.sources.declarative.parsers import model_to_component_factory
-
-    monkeypatch.setenv("AIRBYTE_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS", value)
-
-    with pytest.raises(ValueError, match="must be a positive number of seconds"):
-        model_to_component_factory._connector_builder_request_deadline_seconds()
-
-
-def test_deadline_override_is_read(monkeypatch):
-    from airbyte_cdk.sources.declarative.parsers import model_to_component_factory
-
-    monkeypatch.setenv("AIRBYTE_CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS", "120")
-
-    assert model_to_component_factory._connector_builder_request_deadline_seconds() == 120.0
+    monkeypatch.setenv(execution._OPERATION_TIMEOUT_ENV, value)
+    with pytest.raises(ValueError, match="must be a finite positive number"):
+        execution._seconds(execution._OPERATION_TIMEOUT_ENV, 295)

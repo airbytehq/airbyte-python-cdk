@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from airbyte_cdk.manifest_server.app import app
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
+
 client = TestClient(app)
 
 INTERNAL_MARKER = "/var/run/secrets/kubernetes.io/serviceaccount/token"
