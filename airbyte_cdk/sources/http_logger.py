@@ -2,11 +2,14 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Optional, Union
+from typing import Dict, Mapping, Optional, Union
 
 import requests
 
 from airbyte_cdk.sources.message import LogMessage
+
+_CREDENTIAL_HEADERS = frozenset({"authorization", "proxy-authorization"})
+_MASKED_HEADER_VALUE = "****"
 
 
 def format_http_message(
@@ -29,7 +32,7 @@ def format_http_message(
                 "body": {
                     "content": _normalize_body_string(request.body),
                 },
-                "headers": dict(request.headers),
+                "headers": _mask_credential_headers(request.headers),
             },
             "response": {
                 "body": {
@@ -53,3 +56,10 @@ def format_http_message(
 
 def _normalize_body_string(body_str: Optional[Union[str, bytes]]) -> Optional[str]:
     return body_str.decode() if isinstance(body_str, (bytes, bytearray)) else body_str
+
+
+def _mask_credential_headers(headers: Mapping[str, str]) -> Dict[str, str]:
+    return {
+        name: _MASKED_HEADER_VALUE if name.lower() in _CREDENTIAL_HEADERS else value
+        for name, value in headers.items()
+    }
