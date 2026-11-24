@@ -18,6 +18,31 @@ PNG_PREFIX = b"\x89PNG\r\n\x1a\n"
 PDF_PREFIX = b"%PDF-"
 
 
+def test_leading_slash_is_stripped_before_checking_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.retrievers.file_uploader.default_file_uploader.get_files_directory",
+        lambda: str(tmp_path),
+    )
+    response = Mock(spec=Response, content=PDF_PREFIX, headers={"Content-Type": "application/pdf"})
+    record = Record(data={}, stream_name="attachments")
+    uploader = DefaultFileUploader(
+        requester=Mock(**{"send_request.return_value": response}),
+        download_target_extractor=Mock(**{"extract_records.return_value": ["/attachment"]}),
+        config={},
+        file_writer=LocalFileSystemFileWriter(),
+        parameters={},
+        filename_extractor="/doc.pdf",
+        allowed_extensions=["pdf"],
+    )
+
+    uploader.upload(record)
+
+    assert (tmp_path / "attachments" / "doc.pdf").read_bytes() == PDF_PREFIX
+    assert record.file_reference.source_file_relative_path == "attachments/doc.pdf"
+
+
 @pytest.mark.parametrize(
     ("filename", "declared_type", "content", "extensions", "media_types", "error_message"),
     [

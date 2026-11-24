@@ -79,6 +79,7 @@ class DefaultFileUploader(FileUploader):
             if self.filename_extractor
             else str(uuid.uuid4())
         )
+        file_name = file_name.lstrip("/")
         expected_type = (
             self._file_type_policy.expected_type_from_filename(file_name)
             if self._file_type_policy
@@ -95,7 +96,6 @@ class DefaultFileUploader(FileUploader):
                 content, response.headers.get("Content-Type", ""), expected_type
             )
 
-        file_name = file_name.lstrip("/")
         file_relative_path = Path(record.stream_name) / Path(file_name)
 
         full_path = files_directory / file_relative_path
