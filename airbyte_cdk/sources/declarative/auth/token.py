@@ -6,7 +6,7 @@ import base64
 import logging
 import time
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any, Mapping, MutableMapping, Optional, Tuple, Union
 
 import requests
 from cachetools import TTLCache, cached
@@ -19,6 +19,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.sources.streams.http.http_client import split_timeout_within_deadline
 from airbyte_cdk.sources.types import Config
 
 
@@ -153,7 +154,7 @@ def _session_token_cache_key(
     username: str,
     password: str,
     response_key: str,
-    timeout: Optional[float] = None,
+    timeout: Optional[Tuple[float, float]] = None,
 ) -> Any:
     return hashkey(api_url, username, password, response_key)
 
@@ -164,7 +165,7 @@ def get_new_session_token(
     username: str,
     password: str,
     response_key: str,
-    timeout: Optional[float] = None,
+    timeout: Optional[Tuple[float, float]] = None,
 ) -> str:
     """
     This method retrieves session token from api by username and password for SessionTokenAuthenticator.
@@ -272,7 +273,7 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             "Invalid credentials: session token is not valid or provide username and password"
         )
 
-    def _timeout_within_deadline(self) -> Optional[float]:
+    def _timeout_within_deadline(self) -> Optional[Tuple[float, float]]:
         if self.request_deadline is None:
             return None
         remaining = self.request_deadline - time.monotonic()
@@ -280,7 +281,7 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             raise ConnectionError(
                 "The request ran out of time before the session token could be fetched."
             )
-        return remaining
+        return split_timeout_within_deadline(remaining)
 
     def is_valid_session_token(self) -> bool:
         try:

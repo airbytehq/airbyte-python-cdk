@@ -137,6 +137,26 @@ def _as_auxiliary_request_log(
     return log_message
 
 
+_DEADLINE_CONNECT_TIMEOUT_SECONDS = 60.0
+
+
+def split_timeout_within_deadline(
+    remaining: float,
+    connect_timeout: Optional[float] = None,
+    read_timeout: Optional[float] = None,
+) -> Tuple[float, float]:
+    """Return a (connect, read) timeout pair whose sum does not exceed `remaining`.
+
+    Requests applies each value of the pair separately, so both phases share the remaining budget.
+    """
+    connect = min(
+        connect_timeout if connect_timeout is not None else _DEADLINE_CONNECT_TIMEOUT_SECONDS,
+        remaining / 2,
+    )
+    read = remaining - connect
+    return connect, min(read_timeout, read) if read_timeout is not None else read
+
+
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
@@ -475,10 +495,7 @@ class HttpClient:
         connect_timeout, read_timeout = (
             timeout if isinstance(timeout, tuple) else (timeout, timeout)
         )
-        return (
-            min(connect_timeout, remaining) if connect_timeout is not None else remaining,
-            min(read_timeout, remaining) if read_timeout is not None else remaining,
-        )
+        return split_timeout_within_deadline(remaining, connect_timeout, read_timeout)
 
     def _send(
         self,

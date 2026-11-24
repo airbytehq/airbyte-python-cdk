@@ -222,7 +222,10 @@ def test_session_token_requests_are_bounded_by_the_request_deadline(requests_moc
     token = _legacy_authenticator(request_deadline=time.monotonic() + 30).token
 
     assert token == "some session id"
-    assert 0 < requests_mock.request_history[0].timeout <= 30
+    connect_timeout, read_timeout = requests_mock.request_history[0].timeout
+    assert 0 < connect_timeout
+    assert 0 < read_timeout
+    assert connect_timeout + read_timeout <= 30
 
 
 def test_session_token_request_is_not_sent_after_the_request_deadline(requests_mock):
@@ -240,7 +243,7 @@ def test_session_token_cache_ignores_the_timeout(requests_mock):
     requests_mock.post(f"{config['instance_api_url']}session", json={"id": "some session id"})
     url = f"{config['instance_api_url']}session"
 
-    get_new_session_token(url, username, password, session_token_response_key, timeout=10)
-    get_new_session_token(url, username, password, session_token_response_key, timeout=5)
+    get_new_session_token(url, username, password, session_token_response_key, timeout=(5, 5))
+    get_new_session_token(url, username, password, session_token_response_key, timeout=(1, 1))
 
     assert requests_mock.call_count == 1
