@@ -6,7 +6,9 @@ import logging
 import os
 import threading
 import urllib
+from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import orjson
@@ -133,6 +135,21 @@ def _as_auxiliary_request_log(
             if description is not None:
                 http["description"] = description
     return log_message
+
+
+@dataclass
+class HttpRetryBudget:
+    remaining_attempts: Optional[int] = None
+    deadline: Optional[float] = None
+
+    def can_retry(self, delay: float = 0) -> bool:
+        return (self.remaining_attempts is None or self.remaining_attempts > 0) and (
+            self.deadline is None or monotonic() + delay < self.deadline
+        )
+
+    def should_give_up(self, error: Exception) -> bool:
+        delay = error.backoff + 1 if isinstance(error, UserDefinedBackoffException) else 0
+        return not self.can_retry(delay)
 
 
 class HttpClient:
@@ -333,6 +350,7 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        retry_budget: Optional[HttpRetryBudget] = None,
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -347,14 +365,34 @@ class HttpClient:
 
         max_retries = self._max_retries
         max_tries = max(0, max_retries) + 1
-        max_time = self._max_time
+        max_time: float = self._max_time
+        retry_options: Dict[str, Any] = {}
+        send = self._send
+        if retry_budget is not None:
+            if retry_budget.remaining_attempts is None:
+                retry_budget.remaining_attempts = max_tries
+                retry_budget.deadline = monotonic() + max_time
+            if retry_budget.deadline is not None:
+                max_time = max(0, retry_budget.deadline - monotonic())
+            retry_options["giveup"] = retry_budget.should_give_up
 
-        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
-            self._send
+            def send_with_budget(*args: Any, **kwargs: Any) -> requests.Response:
+                assert retry_budget.remaining_attempts is not None
+                retry_budget.remaining_attempts -= 1
+                return self._send(*args, **kwargs)
+
+            send = send_with_budget
+
+        user_backoff_handler = user_defined_backoff_handler(
+            max_tries=max_tries, max_time=max_time, **retry_options
+        )(send)
+        rate_limit_backoff_handler = rate_limit_default_backoff_handler(
+            max_tries=max_tries,
+            **retry_options,
+            **({"max_time": max_time} if retry_budget is not None else {}),
         )
-        rate_limit_backoff_handler = rate_limit_default_backoff_handler(max_tries=max_tries)
         backoff_handler = http_client_default_backoff_handler(
-            max_tries=max_tries, max_time=max_time
+            max_tries=max_tries, max_time=max_time, **retry_options
         )
         # backoff handlers wrap _send, so it will always return a response -- except when all retries are exhausted
         try:
@@ -873,6 +911,7 @@ class HttpClient:
         exit_on_rate_limit: Optional[bool] = False,
         *,
         bypass_cache: bool = False,
+        retry_budget: Optional[HttpRetryBudget] = None,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
@@ -908,6 +947,7 @@ class HttpClient:
             request_kwargs=request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
+            retry_budget=retry_budget,
         )
 
         return request, response

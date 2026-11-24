@@ -7,9 +7,12 @@ import logging
 import uuid
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
+from time import sleep
 from typing import Any, Iterable, Mapping, Optional, Sequence, Union
 
 from requests import Response
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
+from urllib3.exceptions import IncompleteRead, ProtocolError
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference, FailureType
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
@@ -21,6 +24,7 @@ from airbyte_cdk.sources.declarative.partition_routers.substream_partition_route
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester, Requester
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
+from airbyte_cdk.sources.streams.http.http_client import HttpRetryBudget
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -34,6 +38,11 @@ logger = logging.getLogger("airbyte")
 DEFAULT_MAX_FILE_SIZE_BYTES = 1_500_000_000
 BUILDER_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 DOWNLOAD_CHUNK_SIZE_BYTES = 64 * 1024
+MAX_DOWNLOAD_RETRIES = 2
+
+
+class _AttachmentReadError(Exception):
+    pass
 
 
 def _safe_relative_path(value: Any, field_name: str) -> Path:
@@ -114,9 +123,64 @@ class DefaultFileUploader(FileUploader):
         stream_slice = StreamSlice(
             partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
         )
+        file_size_bytes = self._download(full_path, stream_slice, expected_type)
+
+        logger.info("File uploaded successfully")
+        logger.info(f"File url: {str(full_path)}")
+        logger.info(f"File size: {file_size_bytes / 1024} KB")
+        logger.info(f"File relative path: {str(file_relative_path)}")
+
+        record.file_reference = AirbyteRecordMessageFileReference(
+            staging_file_url=str(full_path),
+            source_file_relative_path=str(file_relative_path),
+            file_size_bytes=file_size_bytes,
+        )
+
+    def _download(
+        self, full_path: Path, stream_slice: StreamSlice, expected_type: Optional[str]
+    ) -> int:
+        retries = self._download_retries()
+        retry_budget = HttpRetryBudget()
+        attempt = 1
+        while True:
+            try:
+                return self._download_once(full_path, stream_slice, expected_type, retry_budget)
+            except _AttachmentReadError as error:
+                delay = 2 ** (attempt - 1)
+                if attempt > retries or not retry_budget.can_retry(delay):
+                    raise AirbyteTracedException(
+                        message="The attachment download fails because the source connection does not deliver the complete file.",
+                        internal_message=f"Attachment body read retry budget exhausted. Download attempts: {attempt}.",
+                        failure_type=FailureType.transient_error,
+                        exception=error.__cause__,
+                    ) from error
+                logger.info("Attachment download interrupted; restarting in %s second(s).", delay)
+                sleep(delay)
+                attempt += 1
+
+    def _download_retries(self) -> int:
+        if isinstance(self.requester, HttpRequester):
+            if self.requester.disable_retries:
+                return 0
+            if self.requester.error_handler is not None:
+                configured_retries = self.requester.error_handler.max_retries
+                if configured_retries is not None:
+                    return max(0, min(configured_retries, MAX_DOWNLOAD_RETRIES))
+        return MAX_DOWNLOAD_RETRIES
+
+    def _download_once(
+        self,
+        full_path: Path,
+        stream_slice: StreamSlice,
+        expected_type: Optional[str],
+        retry_budget: HttpRetryBudget,
+    ) -> int:
         if isinstance(self.requester, HttpRequester):
             response = self.requester.send_request(
-                stream_slice=stream_slice, stream_response=True, bypass_cache=True
+                stream_slice=stream_slice,
+                stream_response=True,
+                bypass_cache=True,
+                retry_budget=retry_budget,
             )
         else:
             response = self.requester.send_request(stream_slice=stream_slice)
@@ -131,18 +195,7 @@ class DefaultFileUploader(FileUploader):
                 chunks = self._file_type_policy.validate_stream(
                     chunks, expected_type, declared_type
                 )
-            file_size_bytes = self.file_writer.write(full_path, chunks)
-
-        logger.info("File uploaded successfully")
-        logger.info(f"File url: {str(full_path)}")
-        logger.info(f"File size: {file_size_bytes / 1024} KB")
-        logger.info(f"File relative path: {str(file_relative_path)}")
-
-        record.file_reference = AirbyteRecordMessageFileReference(
-            staging_file_url=str(full_path),
-            source_file_relative_path=str(file_relative_path),
-            file_size_bytes=file_size_bytes,
-        )
+            return self.file_writer.write(full_path, chunks)
 
     def _bounded_chunks(self, response: Response) -> Iterable[bytes]:
         content_length = response.headers.get("Content-Length", "")
@@ -153,12 +206,25 @@ class DefaultFileUploader(FileUploader):
                 raise self._file_size_error()
 
         size = 0
-        for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE_BYTES):
+        for chunk in self._body_chunks(response):
             size += len(chunk)
             if size > self.max_file_size_bytes:
                 raise self._file_size_error()
             if chunk:
                 yield chunk
+
+    @staticmethod
+    def _body_chunks(response: Response) -> Iterable[bytes]:
+        try:
+            yield from response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE_BYTES)
+        except (
+            ChunkedEncodingError,
+            ConnectionError,
+            ReadTimeout,
+            ProtocolError,
+            IncompleteRead,
+        ) as error:
+            raise _AttachmentReadError from error
 
     def _file_size_error(self) -> AirbyteTracedException:
         return AirbyteTracedException(
