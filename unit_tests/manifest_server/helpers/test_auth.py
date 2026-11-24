@@ -6,19 +6,71 @@ import jwt
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.testclient import TestClient
 
+from airbyte_cdk.manifest_server.app import app
 from airbyte_cdk.manifest_server.helpers.auth import verify_jwt_token
 
 
 class TestVerifyJwtToken:
     """Test cases for JWT token verification."""
 
-    def test_no_secret_allows_all_requests(self):
-        """Test that when AB_JWT_SIGNATURE_SECRET is not set, all requests pass through."""
-        with patch.dict(os.environ, {}, clear=True):
-            # Should not raise any exception
+    @pytest.mark.parametrize(
+        "env",
+        [
+            pytest.param({}, id="secret_unset"),
+            pytest.param({"AB_JWT_SIGNATURE_SECRET": ""}, id="secret_empty"),
+            pytest.param({"AB_JWT_SIGNATURE_SECRET": "  \n"}, id="secret_whitespace_only"),
+            pytest.param(
+                {"AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED": "false"},
+                id="secret_unset_opt_out_false",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "credentials",
+        [
+            pytest.param(None, id="no_token"),
+            pytest.param(
+                HTTPAuthorizationCredentials(scheme="Bearer", credentials="any-token"),
+                id="arbitrary_token",
+            ),
+        ],
+    )
+    def test_no_secret_rejects_requests(self, env, credentials):
+        """Without AB_JWT_SIGNATURE_SECRET, requests are rejected instead of allowed through."""
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(HTTPException) as exc_info:
+                verify_jwt_token(credentials)
+
+        assert exc_info.value.status_code == 503
+        assert "AB_JWT_SIGNATURE_SECRET" in exc_info.value.detail
+
+    @pytest.mark.parametrize("opt_out_value", ["true", "TRUE"])
+    def test_no_secret_with_explicit_opt_out_allows_requests(self, opt_out_value):
+        """Running without authentication requires an explicit opt-out."""
+        with patch.dict(
+            os.environ,
+            {"AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED": opt_out_value},
+            clear=True,
+        ):
             verify_jwt_token(None)
             verify_jwt_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="any-token"))
+
+    def test_opt_out_is_ignored_when_secret_is_set(self):
+        """A configured secret is always enforced, even if the opt-out is set."""
+        with patch.dict(
+            os.environ,
+            {
+                "AB_JWT_SIGNATURE_SECRET": "test-secret",
+                "AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED": "true",
+            },
+            clear=True,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                verify_jwt_token(None)
+
+        assert exc_info.value.status_code == 401
 
     def test_missing_credentials_with_secret_raises_401(self):
         """Test that missing credentials raise 401 when secret is configured."""
@@ -119,13 +171,6 @@ class TestVerifyJwtToken:
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Invalid token"
 
-    def test_empty_secret_allows_all_requests(self):
-        """Test that empty secret string allows all requests."""
-        with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": ""}):
-            # Should not raise any exception
-            verify_jwt_token(None)
-            verify_jwt_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="any-token"))
-
     def test_token_without_required_claims_passes(self):
         """Test that tokens without standard claims still pass if signature is valid."""
         secret = "test-secret"
@@ -139,3 +184,43 @@ class TestVerifyJwtToken:
 
             # Should not raise any exception - we only verify signature
             verify_jwt_token(minimal_credentials)
+
+
+def test_secret_with_surrounding_whitespace_is_used_as_is():
+    """The platform signs with the exact secret value, so whitespace in it must not be stripped."""
+    secret = " padded-secret\n"
+    payload = {"exp": datetime.now(timezone.utc) + timedelta(hours=1)}
+    exact = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret, algorithm="HS256")
+    )
+    stripped = HTTPAuthorizationCredentials(
+        scheme="Bearer", credentials=jwt.encode(payload, secret.strip(), algorithm="HS256")
+    )
+
+    with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
+        verify_jwt_token(exact)
+        with pytest.raises(HTTPException) as exc_info:
+            verify_jwt_token(stripped)
+
+    assert exc_info.value.status_code == 401
+
+
+MANIFEST_ROUTES = [
+    "/v1/manifest/check",
+    "/v1/manifest/discover",
+    "/v1/manifest/resolve",
+    "/v1/manifest/full_resolve",
+    "/v1/manifest/test_read",
+]
+
+
+@pytest.mark.parametrize("route", MANIFEST_ROUTES)
+def test_manifest_routes_reject_unauthenticated_requests_when_secret_unset(route):
+    """With no AB_JWT_SIGNATURE_SECRET, an unauthenticated caller cannot reach any manifest route."""
+    client = TestClient(app)
+
+    with patch.dict(os.environ, {}, clear=True):
+        response = client.post(route, json={"manifest": {}, "config": {}})
+
+    assert response.status_code == 503
+    assert "AB_JWT_SIGNATURE_SECRET" in response.json()["detail"]

@@ -32,6 +32,8 @@ manifest-server start --port 8080
 python -m airbyte_cdk.manifest_server.cli.run start
 ```
 
+The `/v1/manifest/*` routes reject every request until authentication is configured (see [Authentication](#authentication)). For local development without tokens, start the server with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`.
+
 The server will start on `http://localhost:8000` by default.
 
 ## API Endpoints
@@ -104,7 +106,7 @@ export AIRBYTE_ENABLE_UNSAFE_CODE=true
 
 ## Authentication
 
-The manifest server supports optional JWT bearer token authentication:
+The manifest server requires JWT bearer token authentication by default:
 
 ### Configuration
 
@@ -125,7 +127,8 @@ curl -H "Authorization: Bearer <your-jwt-token>" \
 
 ### Behavior
 
-- **Without `AB_JWT_SIGNATURE_SECRET`**: All requests pass through
+- **Without `AB_JWT_SIGNATURE_SECRET`**: All `/v1/manifest/*` requests are rejected with `503`. `/health` and `/capabilities` stay open, so liveness and readiness probes do not catch a missing secret
+- **Without `AB_JWT_SIGNATURE_SECRET` and with `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true`**: All `/v1/manifest/*` requests pass through (local development only)
 - **With `AB_JWT_SIGNATURE_SECRET`**: Requires valid JWT bearer token using HS256 algorithm
 
 ## OpenAPI Specification

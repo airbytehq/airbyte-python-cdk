@@ -2,6 +2,10 @@
 
 ## Upgrading to the next minor release (unreleased)
 
+### The manifest server rejects requests when `AB_JWT_SIGNATURE_SECRET` is unset
+
+The manifest server's `/v1/manifest/*` routes used to accept every request when `AB_JWT_SIGNATURE_SECRET` was unset or blank. They now return `503`. Set `AB_JWT_SIGNATURE_SECRET` to the secret its callers sign tokens with, or, for local development only, set `AIRBYTE_MANIFEST_SERVER_ALLOW_UNAUTHENTICATED=true` to keep running without authentication. The secret is used exactly as set, including any surrounding whitespace.
+
 ### `test_basic_read` checks the cursor state of a declarative source
 
 For a `ConcurrentDeclarativeSource` (manifest-only connectors and Python sources built on one), `test_basic_read` now checks the cursor state its read emits, without another read. The declarative factory builds the same cursor whatever sync mode the catalog configures, so the full-refresh read emits the state an incremental sync would. A config listed under `basic_read` fails when:
