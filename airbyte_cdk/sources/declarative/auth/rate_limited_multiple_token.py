@@ -132,6 +132,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         max_wait_time: timedelta = timedelta(hours=2),
         budget_reserve_fraction: float = 0.1,
         budget_min_reserve: int = 50,
+        deadline: Optional[float] = None,
     ) -> None:
         if not tokens:
             raise AirbyteTracedException(
@@ -156,6 +157,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         self._max_wait_time = max_wait_time
         self._budget_reserve_fraction = budget_reserve_fraction
         self._budget_min_reserve = budget_min_reserve
+        self._deadline = deadline
 
         self._unavailable_status_codes = set(quota_status_unavailable_status_codes or [])
 
@@ -175,6 +177,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 ),
                 use_cache=False,  # quota values change frequently; never reuse cached responses
                 error_handler=self._quota_status_error_handler(),
+                deadline=deadline,
             )
             for token in self._tokens
         }
@@ -347,6 +350,8 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     now = time.monotonic()
                     if exhaustion_deadline is None:
                         exhaustion_deadline = now + self._max_wait_time.total_seconds()
+                        if self._deadline is not None:
+                            exhaustion_deadline = min(exhaustion_deadline, self._deadline)
                     remaining_budget = exhaustion_deadline - now
                     min_time_to_wait = min(
                         (

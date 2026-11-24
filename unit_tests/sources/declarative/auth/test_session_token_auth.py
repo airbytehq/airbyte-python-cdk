@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import time
+
 import pytest
 from requests.exceptions import HTTPError
 
@@ -195,3 +197,50 @@ def test_get_new_session_token(requests_mock):
         config["session_token_response_key"],
     )
     assert session_token == "some session id"
+
+
+def _legacy_authenticator(**kwargs):
+    return LegacySessionTokenAuthenticator(
+        config=config_username_password,
+        parameters=parameters,
+        api_url=input_instance_api_url,
+        username=input_username,
+        password=input_password,
+        session_token=input_session_token,
+        header=header,
+        session_token_response_key=session_token_response_key,
+        login_url=login_url,
+        validate_session_url=validate_session_url,
+        **kwargs,
+    )
+
+
+def test_session_token_requests_are_bounded_by_the_request_deadline(requests_mock):
+    get_new_session_token.cache_clear()
+    requests_mock.post(f"{config['instance_api_url']}session", json={"id": "some session id"})
+
+    token = _legacy_authenticator(request_deadline=time.monotonic() + 30).token
+
+    assert token == "some session id"
+    assert 0 < requests_mock.request_history[0].timeout <= 30
+
+
+def test_session_token_request_is_not_sent_after_the_request_deadline(requests_mock):
+    get_new_session_token.cache_clear()
+    requests_mock.post(f"{config['instance_api_url']}session", json={"id": "some session id"})
+
+    with pytest.raises(ConnectionError, match="ran out of time"):
+        _ = _legacy_authenticator(request_deadline=time.monotonic() - 1).token
+
+    assert requests_mock.call_count == 0
+
+
+def test_session_token_cache_ignores_the_timeout(requests_mock):
+    get_new_session_token.cache_clear()
+    requests_mock.post(f"{config['instance_api_url']}session", json={"id": "some session id"})
+    url = f"{config['instance_api_url']}session"
+
+    get_new_session_token(url, username, password, session_token_response_key, timeout=10)
+    get_new_session_token(url, username, password, session_token_response_key, timeout=5)
+
+    assert requests_mock.call_count == 1

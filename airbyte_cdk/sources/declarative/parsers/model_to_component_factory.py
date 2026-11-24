@@ -806,17 +806,18 @@ class ModelToComponentFactory:
             Dict[str, RateLimitedMultipleTokenAuthenticator]
         ] = None,
         custom_components_trusted: bool = True,
+        builder_request_deadline: Optional[float] = None,
     ):
         self._init_mappings()
         self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
-        self._builder_request_deadline = (
-            time.monotonic() + _CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
-            if emit_connector_builder_messages
-            else None
-        )
+        if builder_request_deadline is None and emit_connector_builder_messages:
+            builder_request_deadline = (
+                time.monotonic() + _CONNECTOR_BUILDER_REQUEST_DEADLINE_SECONDS
+            )
+        self._builder_request_deadline = builder_request_deadline
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._message_repository = message_repository or InMemoryMessageRepository(
@@ -3964,9 +3965,13 @@ class ModelToComponentFactory:
             **kwargs,
         )
 
-    @staticmethod
     def create_legacy_session_token_authenticator(
-        model: LegacySessionTokenAuthenticatorModel, config: Config, *, url_base: str, **kwargs: Any
+        self,
+        model: LegacySessionTokenAuthenticatorModel,
+        config: Config,
+        *,
+        url_base: str,
+        **kwargs: Any,
     ) -> LegacySessionTokenAuthenticator:
         return LegacySessionTokenAuthenticator(
             api_url=url_base,
@@ -3979,6 +3984,7 @@ class ModelToComponentFactory:
             validate_session_url=model.validate_session_url,
             config=config,
             parameters=model.parameters or {},
+            request_deadline=self._builder_request_deadline,
         )
 
     def create_simple_retriever(
@@ -5411,6 +5417,7 @@ class ModelToComponentFactory:
             # Share the authenticator registry so parent and child streams draw from the
             # same token quota counters
             rate_limited_authenticators=self._rate_limited_authenticators,
+            builder_request_deadline=self._builder_request_deadline,
         )
 
         return substream_factory.create_parent_stream_config(
@@ -5950,6 +5957,7 @@ class ModelToComponentFactory:
             max_wait_time=max_wait_time,
             budget_reserve_fraction=budget_reserve_fraction,
             budget_min_reserve=budget_min_reserve,
+            deadline=self._builder_request_deadline,
         )
         self._rate_limited_authenticators[cache_key] = authenticator
         return authenticator

@@ -127,6 +127,26 @@ def test_raises_transient_error_when_reset_exceeds_max_wait_time(requests_mock):
         authenticator(_prepared_request())
 
 
+def test_exhaustion_wait_stops_at_the_request_deadline(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body(rest_remaining=0))
+    authenticator = _authenticator(deadline=time.monotonic() + 1)
+
+    with patch.object(authenticator, "_sleep_with_heartbeat") as sleep:
+        with pytest.raises(AirbyteTracedException, match="Rate limit is exceeded"):
+            authenticator(_prepared_request())
+
+    sleep.assert_not_called()
+
+
+def test_quota_status_clients_receive_the_request_deadline(requests_mock):
+    deadline = time.monotonic() + 30
+    authenticator = _authenticator(deadline=deadline)
+
+    assert {client._deadline for client in authenticator._token_to_http_client.values()} == {
+        deadline
+    }
+
+
 def test_waits_and_reseeds_when_all_tokens_exhausted(requests_mock):
     responses = iter(
         [
