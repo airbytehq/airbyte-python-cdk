@@ -3,6 +3,7 @@
 #
 import logging
 import os
+import tempfile
 import uuid
 import zlib
 from contextlib import closing
@@ -98,7 +99,7 @@ class ResponseToFileExtractor(RecordExtractor):
         decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
         needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
 
-        tmp_file = str(uuid.uuid4())
+        tmp_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
         with closing(response) as response, open(tmp_file, "wb") as data_file:
             response_encoding = self._get_response_encoding(dict(response.headers or {}))
             for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):

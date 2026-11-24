@@ -127,3 +127,28 @@ def test_response_to_file_extractor_memory_usage(requests_mock, large_events_res
         counter += 1
 
     assert counter == lines_in_response
+
+
+def test_extractor_does_not_write_to_the_working_directory(tmp_path, monkeypatch, requests_mock):
+    read_only_cwd = tmp_path / "app"
+    read_only_cwd.mkdir()
+    read_only_cwd.chmod(0o555)
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    monkeypatch.chdir(read_only_cwd)
+    monkeypatch.setenv("TMPDIR", str(scratch_dir))
+    monkeypatch.setattr("tempfile.tempdir", None)
+    requests_mock.get("https://a-url.com", content=b"id,name\n1,first\n2,second\n")
+
+    try:
+        records = list(
+            ResponseToFileExtractor({}).extract_records(
+                requests.get("https://a-url.com", stream=True)
+            )
+        )
+    finally:
+        read_only_cwd.chmod(0o755)
+
+    assert records == [{"id": "1", "name": "first"}, {"id": "2", "name": "second"}]
+    assert list(read_only_cwd.iterdir()) == []
+    assert list(scratch_dir.iterdir()) == []
