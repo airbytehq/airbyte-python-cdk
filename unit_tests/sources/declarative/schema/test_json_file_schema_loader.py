@@ -151,3 +151,19 @@ def test_symlink_inside_package_pointing_outside_is_rejected(
 
     with pytest.raises(ValueError, match="points outside the 'symlink_test_package' package"):
         loader.get_json_schema()
+
+
+def test_doubled_slash_inside_package_still_loads():
+    loader = JsonFileSchemaLoader(
+        {}, {}, "airbyte_cdk//sources/declarative/declarative_component_schema.yaml"
+    )
+
+    with patch(
+        "airbyte_cdk.sources.declarative.schema.json_file_schema_loader.pkgutil.get_data",
+        return_value=b"{}",
+    ) as get_data:
+        loader.get_json_schema()
+
+    get_data.assert_called_once_with(
+        "airbyte_cdk", "/sources/declarative/declarative_component_schema.yaml"
+    )

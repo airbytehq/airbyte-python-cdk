@@ -42,7 +42,8 @@ def _ensure_path_within_package(resource: str, schema_path: str, json_schema_pat
             "use a path such as '<package>/schemas/<stream>.json'."
         )
     package_dir = os.path.realpath(os.path.dirname(spec.origin))
-    target = os.path.realpath(os.path.join(package_dir, schema_path))
+    # Split on "/" like pkgutil.get_data, so a doubled slash stays inside the package.
+    target = os.path.realpath(os.path.join(package_dir, *schema_path.split("/")))
     if os.path.commonpath([package_dir, target]) != package_dir:
         raise ValueError(
             f"Schema file path '{json_schema_path}' points outside the '{resource}' package. "
