@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from unittest.mock import Mock, patch
 
 import pytest
@@ -661,3 +662,17 @@ class TestManifestRouter:
         assert "Error full resolving manifest:" in data["detail"]
         assert "Missing required field 'streams'" not in data["detail"]
         assert "internal error occurred (error id" in data["detail"]
+
+
+def test_internal_error_log_keeps_stack_trace(caplog):
+    from airbyte_cdk.manifest_server.routers.manifest import _error_detail
+
+    error = OSError("/srv/internal/path is unavailable")
+    try:
+        raise error
+    except OSError as exc:
+        with caplog.at_level(logging.ERROR, logger="airbyte.manifest-server"):
+            detail = _error_detail("Error checking connection", exc)
+
+    assert "/srv/internal/path" not in detail
+    assert caplog.records[-1].exc_info[1] is error

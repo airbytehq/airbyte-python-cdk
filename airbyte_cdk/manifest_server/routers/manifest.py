@@ -66,7 +66,9 @@ def _error_detail(action: str, exc: Exception) -> str:
         return filter_secrets(f"{action}: {exc}")
 
     error_id = uuid.uuid4().hex
-    logger.error(filter_secrets(f"{action} (error id {error_id}): {type(exc).__name__}: {exc}"))
+    logger.error(
+        filter_secrets(f"{action} (error id {error_id}): {type(exc).__name__}: {exc}"), exc_info=exc
+    )
     return f"{action}: an internal error occurred (error id {error_id}). The details are in the manifest server logs."
 
 

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from threading import BoundedSemaphore
@@ -79,3 +80,28 @@ def test_invalid_deadline_override_is_rejected(monkeypatch, value):
     monkeypatch.setenv(execution._OPERATION_TIMEOUT_ENV, value)
     with pytest.raises(ValueError, match="must be a finite positive number"):
         execution._seconds(execution._OPERATION_TIMEOUT_ENV, 295)
+
+
+def test_worker_logs_stack_trace_for_unexpected_errors():
+    with tempfile.TemporaryFile() as result_file:
+        worker = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "airbyte_cdk.manifest_server.operation_worker",
+                "full_resolve",
+                str(result_file.fileno()),
+                str(time.monotonic() + 30),
+            ],
+            input=b"not json",
+            capture_output=True,
+            pass_fds=(result_file.fileno(),),
+            timeout=30,
+        )
+        result_file.seek(0)
+        result = execution.WorkerResult.model_validate_json(result_file.read())
+
+    assert worker.returncode == 0, worker.stderr
+    assert result.status == 500
+    assert "Unexpected exception in Manifest worker for full_resolve" in worker.stderr.decode()
+    assert "Traceback" in worker.stderr.decode()

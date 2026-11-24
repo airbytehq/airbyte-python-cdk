@@ -18,6 +18,7 @@ from airbyte_cdk.models import AirbyteConnectionStatus, ConnectorSpecification, 
 
 pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
 
+
 @pytest.mark.parametrize(
     "context,prefix",
     [

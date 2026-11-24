@@ -32,7 +32,7 @@ def main(operation: str, result_fd: int, deadline: float) -> None:
     except HTTPException as exc:
         result = WorkerResult(status=exc.status_code, payload=filter_secrets(str(exc.detail)))
     except Exception:
-        logger.error("Unexpected exception in Manifest worker for %s", operation)
+        logger.exception("Unexpected exception in Manifest worker for %s", operation)
         result = WorkerResult(status=500, payload="Manifest operation failed to complete.")
 
     encoded = result.model_dump_json().encode()
