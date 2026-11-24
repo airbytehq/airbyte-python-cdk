@@ -4,22 +4,15 @@
 
 import argparse
 import importlib
-import ipaddress
 import json
 import logging
 import os.path
-import socket
 import sys
 import tempfile
-import threading
 from collections import defaultdict
-from functools import wraps
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
-from urllib.parse import urlparse
 
 import orjson
-import requests
-from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
@@ -49,15 +42,15 @@ from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.memory_monitor import MemoryMonitor
+from airbyte_cdk.utils.outbound_request_filter import (
+    cloud_outbound_request_policy,
+    init_internal_request_filter,
+)
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = init_logger("airbyte")
 
-VALID_URL_SCHEMES = ["https"]
-CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
-_INTERNAL_REQUEST_FILTER_MARKER = "_airbyte_internal_request_filter"
-_INTERNAL_REQUEST_FILTER_LOCK = threading.Lock()
 
 
 class AirbyteEntrypoint(object):
@@ -66,7 +59,7 @@ class AirbyteEntrypoint(object):
 
         # Deployment mode is read when instantiating the entrypoint because it is the common path shared by syncs and connector builder test requests
         if is_cloud_environment():
-            _init_internal_request_filter()
+            init_internal_request_filter(cloud_outbound_request_policy())
 
         self.source = source
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
@@ -428,71 +421,6 @@ def launch(source: Source, args: List[str]) -> None:
             # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
             # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
             print(f"{message}\n", end="")
-
-
-def _init_internal_request_filter() -> None:
-    """
-    Wraps the Python requests library to prevent sending requests to internal URL endpoints.
-
-    Long-lived processes such as the manifest server create an entrypoint per request, from concurrent threads, so the
-    wrap is applied once under a lock.
-    """
-    with _INTERNAL_REQUEST_FILTER_LOCK:
-        if not getattr(Session.send, _INTERNAL_REQUEST_FILTER_MARKER, False):
-            _wrap_session_send()
-
-
-def _wrap_session_send() -> None:
-    wrapped_fn = Session.send
-
-    @wraps(wrapped_fn)
-    def filtered_send(self: Any, request: PreparedRequest, **kwargs: Any) -> Response:
-        parsed_url = urlparse(request.url)
-
-        if parsed_url.scheme not in VALID_URL_SCHEMES:
-            raise requests.exceptions.InvalidSchema(
-                "Invalid Protocol Scheme: The endpoint that data is being requested from is using an invalid or insecure "
-                + f"protocol {parsed_url.scheme!r}. Valid protocol schemes: {','.join(VALID_URL_SCHEMES)}"
-            )
-
-        if not parsed_url.hostname:
-            raise requests.exceptions.InvalidURL(
-                "Invalid URL specified: The endpoint that data is being requested from is not a valid URL"
-            )
-
-        try:
-            is_private = _is_private_url(parsed_url.hostname, parsed_url.port)  # type: ignore [arg-type]
-            if is_private:
-                raise AirbyteTracedException(
-                    internal_message=f"Invalid URL endpoint: `{parsed_url.hostname!r}` belongs to a private network",
-                    failure_type=FailureType.config_error,
-                    message="Invalid URL endpoint: The endpoint that data is being requested from belongs to a private network. Source connectors only support requesting data from public API endpoints.",
-                )
-        except socket.gaierror as exception:
-            # This is a special case where the developer specifies an IP address string that is not formatted correctly like trailing
-            # whitespace which will fail the socket IP lookup. This only happens when using IP addresses and not text hostnames.
-            # Knowing that this is a request using the requests library, we will mock the exception without calling the lib
-            raise requests.exceptions.InvalidURL(f"Invalid URL {parsed_url}: {exception}")
-
-        return wrapped_fn(self, request, **kwargs)
-
-    setattr(filtered_send, _INTERNAL_REQUEST_FILTER_MARKER, True)
-    Session.send = filtered_send  # type: ignore [method-assign]
-
-
-def _is_private_url(hostname: str, port: int) -> bool:
-    """
-    Helper method that checks if any of the IP addresses associated with a hostname belong to a private network.
-    """
-    address_info_entries = socket.getaddrinfo(hostname, port)
-    for entry in address_info_entries:
-        # getaddrinfo() returns entries in the form of a 5-tuple where the IP is stored as the sockaddr. For IPv4 this
-        # is a 2-tuple and for IPv6 it is a 4-tuple, but the address is always the first value of the tuple at 0.
-        # See https://docs.python.org/3/library/socket.html#socket.getaddrinfo for more details.
-        ip_address = entry[4][0]
-        if ipaddress.ip_address(ip_address).is_private:
-            return True
-    return False
 
 
 def main() -> None:

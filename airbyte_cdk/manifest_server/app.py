@@ -6,7 +6,23 @@ if os.getenv("DD_ENABLED", "false").lower() == "true":
 
 from fastapi import FastAPI
 
+from airbyte_cdk.utils import is_cloud_environment
+from airbyte_cdk.utils.outbound_request_filter import (
+    cloud_outbound_request_policy,
+    init_internal_request_filter,
+)
+
 from .routers import capabilities, health, manifest
+
+
+def _configure_outbound_request_filter() -> None:
+    if is_cloud_environment():
+        init_internal_request_filter(
+            cloud_outbound_request_policy(include_airbyte_service_names=True)
+        )
+
+
+_configure_outbound_request_filter()
 
 app = FastAPI(
     title="Manifest Server",
