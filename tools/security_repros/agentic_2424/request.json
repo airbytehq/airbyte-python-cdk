@@ -1,0 +1,52 @@
+{
+  "manifest": {
+    "version": "6.48.15",
+    "type": "DeclarativeSource",
+    "check": {
+      "type": "CheckStream",
+      "stream_names": [
+        "canary"
+      ]
+    },
+    "spec": {
+      "type": "Spec",
+      "connection_specification": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    "streams": [
+      {
+        "type": "DeclarativeStream",
+        "name": "canary",
+        "primary_key": [
+          "id"
+        ],
+        "retriever": {
+          "type": "SimpleRetriever",
+          "requester": {
+            "type": "HttpRequester",
+            "url": "https://TARGET:8443/records",
+            "http_method": "GET"
+          },
+          "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {
+              "type": "DpathExtractor",
+              "field_path": [
+                "records"
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  "config": {},
+  "stream_name": "canary",
+  "state": [],
+  "record_limit": 1,
+  "page_limit": 1,
+  "slice_limit": 1
+}
