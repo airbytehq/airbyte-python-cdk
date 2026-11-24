@@ -1,9 +1,11 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import csv
+import errno
 import os
 from io import BytesIO
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import Mock
 
 import pandas  # noqa: F401  # loaded here so limit_memory measures CSV parsing, not the extractor's lazy import
 import pytest
@@ -129,26 +131,90 @@ def test_response_to_file_extractor_memory_usage(requests_mock, large_events_res
     assert counter == lines_in_response
 
 
-def test_extractor_does_not_write_to_the_working_directory(tmp_path, monkeypatch, requests_mock):
-    read_only_cwd = tmp_path / "app"
-    read_only_cwd.mkdir()
-    read_only_cwd.chmod(0o555)
-    scratch_dir = tmp_path / "scratch"
-    scratch_dir.mkdir()
-    monkeypatch.chdir(read_only_cwd)
-    monkeypatch.setenv("TMPDIR", str(scratch_dir))
+@pytest.fixture
+def scratch_dir(tmp_path, monkeypatch):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setenv("TMPDIR", str(scratch))
     monkeypatch.setattr("tempfile.tempdir", None)
-    requests_mock.get("https://a-url.com", content=b"id,name\n1,first\n2,second\n")
+    return scratch
 
-    try:
-        records = list(
-            ResponseToFileExtractor({}).extract_records(
-                requests.get("https://a-url.com", stream=True)
-            )
-        )
-    finally:
-        read_only_cwd.chmod(0o755)
+
+def _file_path_of(data) -> str:
+    return os.readlink(f"/proc/self/fd/{data.fileno()}")
+
+
+@pytest.mark.skipif(
+    not os.path.isdir("/proc/self/fd"), reason="needs /proc to see where an unnamed file lives"
+)
+def test_extractor_writes_its_scratch_file_to_the_temp_directory_without_a_name(
+    tmp_path, monkeypatch, requests_mock, scratch_dir
+):
+    working_dir = tmp_path / "app"
+    working_dir.mkdir()
+    monkeypatch.chdir(working_dir)
+    requests_mock.get("https://a-url.com", content=b"id,name\n1,first\n2,second\n")
+    extractor = ResponseToFileExtractor({})
+    paths_during_read = []
+    read_with_chunks = extractor._read_with_chunks
+
+    def spy(data, *args, **kwargs):
+        paths_during_read.append(_file_path_of(data))
+        assert list(scratch_dir.iterdir()) == []
+        yield from read_with_chunks(data, *args, **kwargs)
+
+    monkeypatch.setattr(extractor, "_read_with_chunks", spy)
+
+    records = list(extractor.extract_records(requests.get("https://a-url.com", stream=True)))
 
     assert records == [{"id": "1", "name": "first"}, {"id": "2", "name": "second"}]
-    assert list(read_only_cwd.iterdir()) == []
+    assert len(paths_during_read) == 1, paths_during_read
+    assert paths_during_read[0].startswith(f"{scratch_dir}/"), paths_during_read
+    assert paths_during_read[0].endswith(" (deleted)"), paths_during_read
+    assert list(working_dir.iterdir()) == []
+    assert list(scratch_dir.iterdir()) == []
+
+
+def test_interrupted_download_leaves_no_scratch_file(tmp_path, monkeypatch, scratch_dir):
+    working_dir = tmp_path / "app"
+    working_dir.mkdir()
+    monkeypatch.chdir(working_dir)
+
+    def broken_body(chunk_size):
+        yield b"id,name\n1,first\n"
+        raise requests.exceptions.ChunkedEncodingError("connection reset")
+
+    response = Mock(headers={}, iter_content=broken_body)
+
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        list(ResponseToFileExtractor({}).extract_records(response))
+
+    assert list(working_dir.iterdir()) == []
+    assert list(scratch_dir.iterdir()) == []
+    response.close.assert_called()
+
+
+def test_response_is_closed_when_the_scratch_file_cannot_be_created(monkeypatch, scratch_dir):
+    def no_space(*args, **kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr("tempfile.TemporaryFile", no_space)
+    response = Mock(headers={}, iter_content=Mock(return_value=iter([b"id\n1\n"])))
+
+    with pytest.raises(OSError):
+        list(ResponseToFileExtractor({}).extract_records(response))
+
+    response.close.assert_called_once()
+    response.iter_content.assert_not_called()
+
+
+def test_stopping_early_removes_the_scratch_file(requests_mock, scratch_dir):
+    requests_mock.get("https://a-url.com", content=b"id\n1\n2\n3\n")
+    records = ResponseToFileExtractor({}).extract_records(
+        requests.get("https://a-url.com", stream=True)
+    )
+
+    assert next(records) == {"id": "1"}
+    records.close()
+
     assert list(scratch_dir.iterdir()) == []
