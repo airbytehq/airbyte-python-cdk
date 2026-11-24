@@ -29,6 +29,21 @@ from .file_writer import FileWriter
 logger = logging.getLogger("airbyte")
 
 
+def _safe_relative_path(value: Any, field_name: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field_name} must be a non-empty relative path")
+
+    relative_path = Path(value)
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        raise ValueError(f"{field_name} must remain within the files directory")
+
+    normalized_path = Path(*relative_path.parts)
+    if not normalized_path.parts:
+        raise ValueError(f"{field_name} must be a non-empty relative path")
+
+    return normalized_path
+
+
 @dataclass
 class DefaultFileUploader(FileUploader):
     """
@@ -79,9 +94,11 @@ class DefaultFileUploader(FileUploader):
             if self.filename_extractor
             else str(uuid.uuid4())
         )
-        file_name = file_name.lstrip("/")
+        stream_path = _safe_relative_path(record.stream_name, "stream name")
+        filename_path = _safe_relative_path(file_name, "filename")
+        file_relative_path = stream_path / filename_path
         expected_type = (
-            self._file_type_policy.expected_type_from_filename(file_name)
+            self._file_type_policy.expected_type_from_filename(str(filename_path))
             if self._file_type_policy
             else None
         )
@@ -96,10 +113,7 @@ class DefaultFileUploader(FileUploader):
                 content, response.headers.get("Content-Type", ""), expected_type
             )
 
-        file_relative_path = Path(record.stream_name) / Path(file_name)
-
         full_path = files_directory / file_relative_path
-        full_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_size_bytes = self.file_writer.write(full_path, content=content)
 

@@ -18,12 +18,12 @@ PNG_PREFIX = b"\x89PNG\r\n\x1a\n"
 PDF_PREFIX = b"%PDF-"
 
 
-def test_leading_slash_is_stripped_before_checking_extension(
+def test_absolute_filename_is_rejected_even_with_allowed_extension(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "airbyte_cdk.sources.declarative.retrievers.file_uploader.default_file_uploader.get_files_directory",
-        lambda: str(tmp_path),
+        "airbyte_cdk.sources.utils.files_directory.AIRBYTE_STAGING_DIRECTORY",
+        str(tmp_path),
     )
     response = Mock(spec=Response, content=PDF_PREFIX, headers={"Content-Type": "application/pdf"})
     record = Record(data={}, stream_name="attachments")
@@ -37,10 +37,11 @@ def test_leading_slash_is_stripped_before_checking_extension(
         allowed_extensions=["pdf"],
     )
 
-    uploader.upload(record)
+    with pytest.raises(ValueError, match="filename must remain within"):
+        uploader.upload(record)
 
-    assert (tmp_path / "attachments" / "doc.pdf").read_bytes() == PDF_PREFIX
-    assert record.file_reference.source_file_relative_path == "attachments/doc.pdf"
+    assert list(tmp_path.iterdir()) == []
+    assert not record.file_reference
 
 
 @pytest.mark.parametrize(
@@ -84,8 +85,8 @@ def test_file_type_policy(
     error_message: str | None,
 ) -> None:
     monkeypatch.setattr(
-        "airbyte_cdk.sources.declarative.retrievers.file_uploader.default_file_uploader.get_files_directory",
-        lambda: str(tmp_path),
+        "airbyte_cdk.sources.utils.files_directory.AIRBYTE_STAGING_DIRECTORY",
+        str(tmp_path),
     )
     mock_response = Mock(spec=Response, content=content, headers={"Content-Type": declared_type})
     record = Record(
