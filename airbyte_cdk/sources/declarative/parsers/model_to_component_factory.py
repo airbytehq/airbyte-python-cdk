@@ -5713,6 +5713,8 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
             max_file_size_bytes=max_file_size_bytes,
+            allowed_extensions=model.allowed_extensions,
+            allowed_content_types=model.allowed_content_types,
         )
 
         return (
