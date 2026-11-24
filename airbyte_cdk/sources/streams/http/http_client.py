@@ -65,6 +65,9 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
     ResponseAwareAuthenticator,
     TokenRotatingAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.sync_token_reset_exception import (
+    SyncTokenResetRequiredException,
+)
 from airbyte_cdk.sources.streams.http.tcp_keepalive import TcpKeepaliveHTTPAdapter
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
@@ -619,6 +622,9 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.RESET_SYNC_TOKEN:
+            raise SyncTokenResetRequiredException(error_resolution.error_message)
 
         if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
             raise PageSizeReductionRequiredException(
