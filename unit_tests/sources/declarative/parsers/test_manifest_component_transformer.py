@@ -764,3 +764,160 @@ def test_dynamic_stream_use_parent_parameters_configuration():
     assert result_false["retriever"]["name"] == "retriever_name"
     # When use_parent_parameters=True, parent's $parameters win
     assert result_true["retriever"]["name"] == "parent_name"
+
+
+# --- `STREAM_INDEPENDENT_FIELDS`: outer parameters do not fill a credential login ------------
+
+_STREAM_PARAMETERS = {
+    "name": "users",
+    "path": "/users",
+    "url": "https://api.example.com/users",
+    "use_cache": True,
+    "max_retries": 9,
+    "action": "IGNORE",
+    "field_name": "stream_field",
+}
+
+
+def _stream_with_login(login_requester_updates=None, login_updates=None):
+    login_requester = {
+        "type": "HttpRequester",
+        "url_base": "https://api.example.com",
+        "path": "/login",
+        **(login_requester_updates or {}),
+    }
+    return {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "authenticator": {
+                    "type": "RateLimitedMultipleTokenAuthenticator",
+                    "credentials": {
+                        "type": "CredentialSet",
+                        "items": "{{ config['accounts'] }}",
+                        "authenticator": {
+                            "type": "SessionTokenAuthenticator",
+                            "login_requester": login_requester,
+                            **(login_updates or {}),
+                        },
+                    },
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+        },
+        "$parameters": dict(_STREAM_PARAMETERS),
+    }
+
+
+def _login(propagated):
+    authenticator = propagated["retriever"]["requester"]["authenticator"]
+    return authenticator["credentials"]["authenticator"]
+
+
+def _propagate_like_a_dynamic_stream(stream):
+    """Propagate twice, as a resolved dynamic stream is: once with the manifest, once on its own."""
+    transformer = ManifestComponentTransformer()
+    first = transformer.propagate_types_and_parameters("", stream, {})
+    return transformer.propagate_types_and_parameters("", first, {}, use_parent_parameters=True)
+
+
+@pytest.mark.parametrize(
+    "propagate",
+    [
+        pytest.param(
+            lambda stream: ManifestComponentTransformer().propagate_types_and_parameters(
+                "", stream, {}
+            ),
+            id="once",
+        ),
+        pytest.param(_propagate_like_a_dynamic_stream, id="twice_like_a_dynamic_stream"),
+    ],
+)
+def test_stream_parameters_fill_no_field_inside_a_credential_login(propagate):
+    stream = _stream_with_login(
+        login_requester_updates={
+            # A list of typed components.
+            "error_handler": {
+                "type": "CompositeErrorHandler",
+                "error_handlers": [
+                    {
+                        "type": "DefaultErrorHandler",
+                        "response_filters": [{"type": "HttpResponseFilter", "http_codes": [401]}],
+                    }
+                ],
+            },
+            # An untyped object holding a typed component.
+            "options": {"token": {"type": "RequestOption", "inject_into": "header"}},
+        }
+    )
+
+    propagated = propagate(stream)
+
+    login = _login(propagated)
+    login_requester = login["login_requester"]
+    assert login_requester["path"] == "/login"
+    for field in ("url", "use_cache", "name"):
+        assert field not in login_requester
+    error_handler = login_requester["error_handler"]["error_handlers"][0]
+    assert "max_retries" not in error_handler
+    assert "action" not in error_handler["response_filters"][0]
+    assert "field_name" not in login_requester["options"]["token"]
+    # The stream's parameters can still be read as `parameters`.
+    assert login_requester["$parameters"]["url"] == _STREAM_PARAMETERS["url"]
+    assert error_handler["$parameters"]["max_retries"] == 9
+
+
+@pytest.mark.parametrize(
+    "propagate",
+    [
+        pytest.param(
+            lambda stream: ManifestComponentTransformer().propagate_types_and_parameters(
+                "", stream, {}
+            ),
+            id="once",
+        ),
+        pytest.param(_propagate_like_a_dynamic_stream, id="twice_like_a_dynamic_stream"),
+    ],
+)
+def test_parameters_declared_inside_a_credential_login_fill_its_fields(propagate):
+    stream = _stream_with_login(
+        login_requester_updates={"path": None, "$parameters": {"path": "/sessions"}},
+        login_updates={"$parameters": {"use_cache": True}},
+    )
+    del stream["retriever"]["requester"]["authenticator"]["credentials"]["authenticator"][
+        "login_requester"
+    ]["path"]
+
+    propagated = propagate(stream)
+
+    login_requester = _login(propagated)["login_requester"]
+    assert login_requester["path"] == "/sessions"
+    assert login_requester["use_cache"] is True
+    assert "url" not in login_requester
+
+
+def test_a_credential_login_parameter_named_like_a_field_is_not_propagated_into_it():
+    stream = _stream_with_login(login_updates={"$parameters": {"login_requester": "not a field"}})
+
+    propagated = ManifestComponentTransformer().propagate_types_and_parameters("", stream, {})
+
+    assert "login_requester" not in _login(propagated)["login_requester"]
+
+
+def test_components_around_a_credential_login_are_still_filled_with_stream_parameters():
+    propagated = ManifestComponentTransformer().propagate_types_and_parameters(
+        "", _stream_with_login(), {}
+    )
+
+    requester = propagated["retriever"]["requester"]
+    assert requester["path"] == "/users"
+    assert requester["authenticator"]["name"] == "users"
+    # A sibling processed after the requester that holds the login.
+    assert propagated["retriever"]["record_selector"]["name"] == "users"
+    assert propagated["retriever"]["record_selector"]["extractor"]["name"] == "users"
