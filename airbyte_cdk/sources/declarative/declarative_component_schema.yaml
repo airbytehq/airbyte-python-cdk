@@ -2013,6 +2013,16 @@ definitions:
             examples:
               - "{{ record.id }}/{{ record.file_name }}/"
               - "{{ record.id }}_{{ record.file_name }}/"
+          allowed_extensions:
+            description: Allowed final filename extensions (case-insensitive, optional leading dot). Requires a matching file signature. Supported extensions are gif, gz, jpeg, jpg, pdf, png, tif, tiff, and zip.
+            type: array
+            items:
+              type: string
+          allowed_content_types:
+            description: Allowed HTTP Content-Type media types (case-insensitive, parameters ignored). Requires a matching file signature. Supported types are application/gzip, application/pdf, application/zip, image/gif, image/jpeg, image/png, and image/tiff.
+            type: array
+            items:
+              type: string
           $parameters:
             type: object
             additionalProperties: true

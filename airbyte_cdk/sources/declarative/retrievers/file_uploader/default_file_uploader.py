@@ -7,7 +7,7 @@ import logging
 import uuid
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
@@ -22,6 +22,7 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
+from .file_type_policy import FileTypePolicy
 from .file_uploader import FileUploader
 from .file_writer import FileWriter
 
@@ -58,8 +59,15 @@ class DefaultFileUploader(FileUploader):
     parameters: InitVar[Mapping[str, Any]]
 
     filename_extractor: Optional[Union[InterpolatedString, str]] = None
+    allowed_extensions: Optional[Sequence[str]] = None
+    allowed_content_types: Optional[Sequence[str]] = None
+    _file_type_policy: Optional[FileTypePolicy] = field(init=False, default=None)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        if self.allowed_extensions is not None or self.allowed_content_types is not None:
+            self._file_type_policy = FileTypePolicy(
+                self.allowed_extensions, self.allowed_content_types
+            )
         if self.filename_extractor:
             self.filename_extractor = InterpolatedString.create(
                 self.filename_extractor,
@@ -79,12 +87,6 @@ class DefaultFileUploader(FileUploader):
                 f"download_target is expected to be a str but was {type(download_target)}: {download_target}"
             )
 
-        response = self.requester.send_request(
-            stream_slice=StreamSlice(
-                partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
-            ),
-        )
-
         files_directory = Path(get_files_directory())
 
         file_name = (
@@ -95,10 +97,25 @@ class DefaultFileUploader(FileUploader):
         stream_path = _safe_relative_path(record.stream_name, "stream name")
         filename_path = _safe_relative_path(file_name, "filename")
         file_relative_path = stream_path / filename_path
+        expected_type = (
+            self._file_type_policy.expected_type_from_filename(str(filename_path))
+            if self._file_type_policy
+            else None
+        )
+        response = self.requester.send_request(
+            stream_slice=StreamSlice(
+                partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
+            ),
+        )
+        content = response.content
+        if self._file_type_policy:
+            self._file_type_policy.validate_content(
+                content, response.headers.get("Content-Type", ""), expected_type
+            )
 
         full_path = files_directory / file_relative_path
 
-        file_size_bytes = self.file_writer.write(full_path, content=response.content)
+        file_size_bytes = self.file_writer.write(full_path, content=content)
 
         logger.info("File uploaded successfully")
         logger.info(f"File url: {str(full_path)}")
