@@ -35,7 +35,11 @@ def _ensure_path_within_package(resource: str, schema_path: str, json_schema_pat
     """Reject schema paths that resolve outside the directory of the `resource` package."""
     spec = importlib.util.find_spec(resource) if resource else None
     if spec is None or not spec.origin:
-        return
+        raise ValueError(
+            f"Schema file path '{json_schema_path}' does not start with an installed package. "
+            "JsonFileSchemaLoader can only read schema files inside a package; "
+            "use a path such as '<package>/schemas/<stream>.json'."
+        )
     package_dir = os.path.realpath(os.path.dirname(spec.origin))
     target = os.path.realpath(os.path.join(package_dir, schema_path))
     if os.path.commonpath([package_dir, target]) != package_dir:

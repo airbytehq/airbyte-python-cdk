@@ -116,3 +116,22 @@ def test_parent_segments_that_stay_inside_package_still_load():
     )
 
     assert loader.get_json_schema()
+
+
+@pytest.mark.parametrize(
+    "file_path",
+    [
+        pytest.param("not_an_installed_package/schemas/stream.json", id="unknown_package"),
+        pytest.param("/tmp/schemas/stream.json", id="absolute_path"),
+    ],
+)
+def test_path_without_an_installed_package_is_rejected(file_path):
+    loader = JsonFileSchemaLoader({}, {}, file_path)
+
+    with patch(
+        "airbyte_cdk.sources.declarative.schema.json_file_schema_loader.pkgutil.get_data"
+    ) as get_data:
+        with pytest.raises(ValueError, match="does not start with an installed package"):
+            loader.get_json_schema()
+
+    get_data.assert_not_called()
