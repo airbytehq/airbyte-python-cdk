@@ -122,7 +122,9 @@ def test_parent_segments_that_stay_inside_package_still_load():
     "file_path",
     [
         pytest.param("not_an_installed_package/schemas/stream.json", id="unknown_package"),
-        pytest.param("/tmp/schemas/stream.json", id="absolute_path"),
+        pytest.param("/tmp/schemas/stream.json", id="leading_slash_then_not_a_package"),
+        pytest.param("os/../../../etc/passwd.json", id="plain_module_is_not_a_package"),
+        pytest.param("json.decoder/schemas/stream.json", id="submodule_is_not_a_package"),
     ],
 )
 def test_path_without_an_installed_package_is_rejected(file_path):
@@ -135,3 +137,17 @@ def test_path_without_an_installed_package_is_rejected(file_path):
             loader.get_json_schema()
 
     get_data.assert_not_called()
+
+
+def test_symlink_inside_package_pointing_outside_is_rejected(
+    tmp_path, monkeypatch, outside_json_file
+):
+    package_dir = tmp_path / "symlink_test_package"
+    (package_dir / "schemas").mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("")
+    (package_dir / "schemas" / "stream.json").symlink_to(outside_json_file)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    loader = JsonFileSchemaLoader({}, {}, "symlink_test_package/schemas/stream.json")
+
+    with pytest.raises(ValueError, match="points outside the 'symlink_test_package' package"):
+        loader.get_json_schema()

@@ -34,7 +34,8 @@ def _default_file_path() -> str:
 def _ensure_path_within_package(resource: str, schema_path: str, json_schema_path: str) -> None:
     """Reject schema paths that resolve outside the directory of the `resource` package."""
     spec = importlib.util.find_spec(resource) if resource else None
-    if spec is None or not spec.origin:
+    # A plain module (e.g. `os`) has an origin too, but its directory is not a package of its own.
+    if spec is None or not spec.origin or not spec.submodule_search_locations:
         raise ValueError(
             f"Schema file path '{json_schema_path}' does not start with an installed package. "
             "JsonFileSchemaLoader can only read schema files inside a package; "
