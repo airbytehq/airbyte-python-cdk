@@ -6914,14 +6914,14 @@ telegram = ["requests"]
 
 [[package]]
 name = "types-cachetools"
-version = "5.5.0.20240820"
+version = "7.0.0.20260713"
 description = "Typing stubs for cachetools"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.10"
 groups = ["dev"]
 files = [
-    {file = "types-cachetools-5.5.0.20240820.tar.gz", hash = "sha256:b888ab5c1a48116f7799cd5004b18474cd82b5463acb5ffb2db2fc9c7b053bc0"},
-    {file = "types_cachetools-5.5.0.20240820-py3-none-any.whl", hash = "sha256:efb2ed8bf27a4b9d3ed70d33849f536362603a90b8090a328acf0cd42fda82e2"},
+    {file = "types_cachetools-7.0.0.20260713-py3-none-any.whl", hash = "sha256:6db9bcc7a3840d39e91c04117d85a9d0937eacc9d14d12a873e2b01a2d24a71d"},
+    {file = "types_cachetools-7.0.0.20260713.tar.gz", hash = "sha256:f1acf079e9c66a81e096a897ef0b261a82117cf856834e37b4bd0c9a116a076a"},
 ]
 
 [[package]]
@@ -7811,4 +7811,4 @@ vector-db-based = ["cohere", "langchain_community", "langchain_core", "langchain
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "02036c200df5cc6f02b4950878d21f309b321ba2f0aa5b87a367551a6b9c3c56"
+content-hash = "3ad1ceafad78b4a7894ee97f669fe96189acb46a57842e9bcaf253c2ad96e54c"
