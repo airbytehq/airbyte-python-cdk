@@ -40,8 +40,8 @@ def uploader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: MagicMock
 ) -> DefaultFileUploader:
     monkeypatch.setattr(
-        "airbyte_cdk.sources.declarative.retrievers.file_uploader.default_file_uploader.get_files_directory",
-        lambda: str(tmp_path),
+        "airbyte_cdk.sources.utils.files_directory.AIRBYTE_STAGING_DIRECTORY",
+        str(tmp_path),
     )
     return DefaultFileUploader(
         requester=Mock(spec=HttpRequester, **{"send_request.return_value": response}),
@@ -97,6 +97,22 @@ def test_oversized_content_length_does_not_read_body(
 
     response.iter_content.assert_not_called()
     response.__exit__.assert_called_once()
+
+
+def test_oversized_download_leaves_existing_attachment_unchanged(
+    tmp_path: Path, uploader: DefaultFileUploader, record: Record
+) -> None:
+    staged_file = tmp_path / "attachments" / "attachment"
+    staged_file.parent.mkdir()
+    staged_file.write_bytes(b"existing")
+    uploader.max_file_size_bytes = 3
+
+    with pytest.raises(AirbyteTracedException, match="exceeds the 3-byte"):
+        uploader.upload(record)
+
+    assert staged_file.read_bytes() == b"existing"
+    assert list(staged_file.parent.iterdir()) == [staged_file]
+    assert not record.file_reference
 
 
 def test_builder_applies_byte_limit_without_staging(
