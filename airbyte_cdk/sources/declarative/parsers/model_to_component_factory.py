@@ -608,6 +608,10 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
+from airbyte_cdk.sources.declarative.retrievers.file_uploader.default_file_uploader import (
+    BUILDER_MAX_FILE_SIZE_BYTES,
+    DEFAULT_MAX_FILE_SIZE_BYTES,
+)
 from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeReduction,
     PageSizeResetPolicy,
@@ -5696,6 +5700,9 @@ class ModelToComponentFactory:
             **kwargs,
         )
         emit_connector_builder_messages = self._emit_connector_builder_messages
+        max_file_size_bytes = model.max_file_size_bytes or DEFAULT_MAX_FILE_SIZE_BYTES
+        if emit_connector_builder_messages:
+            max_file_size_bytes = min(max_file_size_bytes, BUILDER_MAX_FILE_SIZE_BYTES)
         file_uploader = DefaultFileUploader(
             requester=requester,
             download_target_extractor=download_target_extractor,
@@ -5705,6 +5712,7 @@ class ModelToComponentFactory:
             else LocalFileSystemFileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
+            max_file_size_bytes=max_file_size_bytes,
         )
 
         return (
