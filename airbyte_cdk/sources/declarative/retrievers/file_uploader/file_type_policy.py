@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 
+from itertools import chain
 from pathlib import PurePosixPath
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -74,25 +75,49 @@ class FileTypePolicy:
             )
         return _EXTENSION_TYPES[extension]
 
-    def validate_content(
-        self, content: bytes, content_type: str, expected_from_filename: Optional[str]
-    ) -> None:
+    def validate_content_type(self, content_type: str) -> Optional[str]:
+        if self._content_types is None:
+            return None
         declared_type = content_type.partition(";")[0].strip().lower()
-        if self._content_types is not None and declared_type not in self._content_types:
+        if declared_type not in self._content_types:
             raise self._rejection(
                 "The attachment Content-Type is missing or disallowed. "
                 "Check the source response header and allowed_content_types."
             )
-        if expected_from_filename and not content.startswith(_SIGNATURES[expected_from_filename]):
+        return declared_type
+
+    def validate_stream(
+        self,
+        chunks: Iterable[bytes],
+        expected_from_filename: Optional[str],
+        declared_type: Optional[str],
+    ) -> Iterable[bytes]:
+        filename_signatures = _SIGNATURES[expected_from_filename] if expected_from_filename else ()
+        media_type_signatures = _SIGNATURES[declared_type] if declared_type else ()
+        prefix_size = max(map(len, filename_signatures + media_type_signatures), default=0)
+        if not prefix_size:
+            return chunks
+
+        remaining_chunks = iter(chunks)
+        initial_chunks: list[bytes] = []
+        prefix = bytearray()
+        for chunk in remaining_chunks:
+            initial_chunks.append(chunk)
+            prefix.extend(chunk[: prefix_size - len(prefix)])
+            if len(prefix) == prefix_size:
+                break
+
+        if filename_signatures and not prefix.startswith(filename_signatures):
             raise self._rejection(
                 "The attachment bytes do not match the filename extension. "
                 "Check the source file and filename_extractor."
             )
-        if self._content_types is not None and not content.startswith(_SIGNATURES[declared_type]):
+        if media_type_signatures and not prefix.startswith(media_type_signatures):
             raise self._rejection(
                 "The attachment bytes do not match the Content-Type header. "
                 "Check the source file and response header."
             )
+        return chain(initial_chunks, remaining_chunks)
 
     @staticmethod
     def _rejection(message: str) -> AirbyteTracedException:

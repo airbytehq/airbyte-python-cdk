@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from requests import Response
@@ -50,7 +50,7 @@ def test_absolute_filename_is_rejected_even_with_allowed_extension(
         (
             "documents/file.PNG/",
             "IMAGE/PNG; charset=binary",
-            PNG_PREFIX,
+            PNG_PREFIX + b"attachment data",
             [".PnG"],
             ["image/png"],
             None,
@@ -63,7 +63,23 @@ def test_absolute_filename_is_rejected_even_with_allowed_extension(
         ("file.pdf", "application/pdf", PDF_PREFIX, ["png"], None, "disallowed extension"),
         ("file.png", "image/png", PDF_PREFIX, ["png"], None, "do not match the filename extension"),
         ("file.png", "", PNG_PREFIX, None, ["image/png"], "Content-Type is missing or disallowed"),
-        ("file.png", "image/png", PDF_PREFIX, None, ["image/png"], "do not match the Content-Type"),
+        (
+            "file.png",
+            "image/png",
+            PDF_PREFIX + b"attachment data",
+            None,
+            ["image/png"],
+            "do not match the Content-Type",
+        ),
+        (
+            "file.png",
+            "image/png",
+            PNG_PREFIX[:4],
+            ["png"],
+            None,
+            "do not match the filename extension",
+        ),
+        ("file.png", "image/png", b"", None, ["image/png"], "do not match the Content-Type"),
         (
             "file.png",
             "image/png",
@@ -88,7 +104,9 @@ def test_file_type_policy(
         "airbyte_cdk.sources.utils.files_directory.AIRBYTE_STAGING_DIRECTORY",
         str(tmp_path),
     )
-    mock_response = Mock(spec=Response, content=content, headers={"Content-Type": declared_type})
+    mock_response = MagicMock(spec=Response, headers={"Content-Type": declared_type})
+    del mock_response.content
+    mock_response.iter_content.return_value = iter((content[:2], content[2:5], content[5:]))
     record = Record(
         data={},
         stream_name="attachments",
@@ -117,3 +135,7 @@ def test_file_type_policy(
         assert error.value.failure_type == FailureType.config_error
         assert not record.file_reference
         assert list(tmp_path.iterdir()) == []
+        if "do not match" in error_message:
+            mock_response.iter_content.assert_called_once()
+        else:
+            mock_response.iter_content.assert_not_called()

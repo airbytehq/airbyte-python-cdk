@@ -2013,6 +2013,10 @@ definitions:
             examples:
               - "{{ record.id }}/{{ record.file_name }}/"
               - "{{ record.id }}_{{ record.file_name }}/"
+          max_file_size_bytes:
+            description: Maximum number of bytes per downloaded file. Defaults to 1500000000. Builder test reads never exceed 10485760 bytes per file.
+            type: integer
+            minimum: 1
           allowed_extensions:
             description: Allowed final filename extensions (case-insensitive, optional leading dot). Requires a matching file signature. Supported extensions are gif, gz, jpeg, jpg, pdf, png, tif, tiff, and zip.
             type: array

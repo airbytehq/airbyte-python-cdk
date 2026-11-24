@@ -7,9 +7,11 @@ import logging
 import uuid
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence, Union
+from typing import Any, Iterable, Mapping, Optional, Sequence, Union
 
-from airbyte_cdk.models import AirbyteRecordMessageFileReference
+from requests import Response
+
+from airbyte_cdk.models import AirbyteRecordMessageFileReference, FailureType
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
     InterpolatedString,
@@ -17,16 +19,21 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SafeResponse,
 )
-from airbyte_cdk.sources.declarative.requesters import Requester
+from airbyte_cdk.sources.declarative.requesters import HttpRequester, Requester
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 from .file_type_policy import FileTypePolicy
 from .file_uploader import FileUploader
 from .file_writer import FileWriter
 
 logger = logging.getLogger("airbyte")
+
+DEFAULT_MAX_FILE_SIZE_BYTES = 1_500_000_000
+BUILDER_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+DOWNLOAD_CHUNK_SIZE_BYTES = 64 * 1024
 
 
 def _safe_relative_path(value: Any, field_name: str) -> Path:
@@ -59,6 +66,7 @@ class DefaultFileUploader(FileUploader):
     parameters: InitVar[Mapping[str, Any]]
 
     filename_extractor: Optional[Union[InterpolatedString, str]] = None
+    max_file_size_bytes: int = DEFAULT_MAX_FILE_SIZE_BYTES
     allowed_extensions: Optional[Sequence[str]] = None
     allowed_content_types: Optional[Sequence[str]] = None
     _file_type_policy: Optional[FileTypePolicy] = field(init=False, default=None)
@@ -102,20 +110,28 @@ class DefaultFileUploader(FileUploader):
             if self._file_type_policy
             else None
         )
-        response = self.requester.send_request(
-            stream_slice=StreamSlice(
-                partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
-            ),
-        )
-        content = response.content
-        if self._file_type_policy:
-            self._file_type_policy.validate_content(
-                content, response.headers.get("Content-Type", ""), expected_type
-            )
-
         full_path = files_directory / file_relative_path
-
-        file_size_bytes = self.file_writer.write(full_path, content=content)
+        stream_slice = StreamSlice(
+            partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
+        )
+        if isinstance(self.requester, HttpRequester):
+            response = self.requester.send_request(
+                stream_slice=stream_slice, stream_response=True, bypass_cache=True
+            )
+        else:
+            response = self.requester.send_request(stream_slice=stream_slice)
+        if response is None:
+            raise ValueError("No response was returned for the file download")
+        with response:
+            chunks = self._bounded_chunks(response)
+            if self._file_type_policy:
+                declared_type = self._file_type_policy.validate_content_type(
+                    response.headers.get("Content-Type", "")
+                )
+                chunks = self._file_type_policy.validate_stream(
+                    chunks, expected_type, declared_type
+                )
+            file_size_bytes = self.file_writer.write(full_path, chunks)
 
         logger.info("File uploaded successfully")
         logger.info(f"File url: {str(full_path)}")
@@ -126,4 +142,29 @@ class DefaultFileUploader(FileUploader):
             staging_file_url=str(full_path),
             source_file_relative_path=str(file_relative_path),
             file_size_bytes=file_size_bytes,
+        )
+
+    def _bounded_chunks(self, response: Response) -> Iterable[bytes]:
+        content_length = response.headers.get("Content-Length", "")
+        if content_length.isascii() and content_length.isdecimal():
+            declared_size = content_length.lstrip("0")
+            limit = str(self.max_file_size_bytes)
+            if (len(declared_size), declared_size) > (len(limit), limit):
+                raise self._file_size_error()
+
+        size = 0
+        for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE_BYTES):
+            size += len(chunk)
+            if size > self.max_file_size_bytes:
+                raise self._file_size_error()
+            if chunk:
+                yield chunk
+
+    def _file_size_error(self) -> AirbyteTracedException:
+        return AirbyteTracedException(
+            message=(
+                f"The attachment exceeds the {self.max_file_size_bytes}-byte download limit. "
+                "Use a smaller attachment or exclude it from the stream."
+            ),
+            failure_type=FailureType.config_error,
         )

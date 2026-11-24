@@ -2,11 +2,12 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
+from requests import Response
 
 from airbyte_cdk.sources.declarative.retrievers.file_uploader.default_file_uploader import (
     DefaultFileUploader,
@@ -26,8 +27,10 @@ class SyntheticDownloadTargetExtractor:
 
 
 class SyntheticRequester:
-    def send_request(self, **_kwargs: Any) -> SimpleNamespace:
-        return SimpleNamespace(content=MARKER)
+    def send_request(self, **_kwargs: Any) -> Response:
+        response = Response()
+        response.raw = BytesIO(MARKER)
+        return response
 
 
 def upload(
@@ -137,7 +140,7 @@ def test_writer_rejects_path_outside_files_root(files_root: Path, tmp_path: Path
     escaped_path = tmp_path / "escaped.bin"
 
     with pytest.raises(ValueError, match="must remain within"):
-        LocalFileSystemFileWriter().write(escaped_path, MARKER)
+        LocalFileSystemFileWriter().write(escaped_path, (MARKER,))
 
     assert not escaped_path.exists()
 
@@ -159,5 +162,5 @@ def test_fallback_files_root_is_contained(tmp_path: Path, monkeypatch: pytest.Mo
 
     escaped_path = tmp_path / "escaped.bin"
     with pytest.raises(ValueError, match="must remain within"):
-        LocalFileSystemFileWriter().write(escaped_path, MARKER)
+        LocalFileSystemFileWriter().write(escaped_path, (MARKER,))
     assert not escaped_path.exists()

@@ -4,7 +4,10 @@
 
 import errno
 import os
+import stat
+import uuid
 from pathlib import Path
+from typing import Iterable
 
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
@@ -12,7 +15,7 @@ from .file_writer import FileWriter
 
 
 class LocalFileSystemFileWriter(FileWriter):
-    def write(self, file_path: Path, content: bytes) -> int:
+    def write(self, file_path: Path, chunks: Iterable[bytes]) -> int:
         """
         Writes the file without following symlinks outside the selected files directory.
         """
@@ -52,24 +55,41 @@ class LocalFileSystemFileWriter(FileWriter):
                 os.close(directory_fd)
                 directory_fd = next_directory_fd
 
-            file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-            try:
-                file_descriptor = os.open(
-                    relative_path.name,
-                    file_flags,
-                    0o666,
-                    dir_fd=directory_fd,
-                )
-            except OSError as error:
-                if error.errno == errno.ELOOP:
-                    raise ValueError(
-                        "File path must not contain symlinks under the files directory"
-                    ) from error
-                raise
-
-            with os.fdopen(file_descriptor, "wb") as file:
-                bytes_written = file.write(content)
+            return self._stage_file(directory_fd, directory_flags, relative_path.name, chunks)
         finally:
             os.close(directory_fd)
 
-        return bytes_written
+    @staticmethod
+    def _stage_file(
+        directory_fd: int, directory_flags: int, filename: str, chunks: Iterable[bytes]
+    ) -> int:
+        temporary_dir = f".airbyte-upload-{uuid.uuid4().hex}"
+        os.mkdir(temporary_dir, 0o700, dir_fd=directory_fd)
+        try:
+            temporary_fd = os.open(temporary_dir, directory_flags, dir_fd=directory_fd)
+            try:
+                file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                file_fd = os.open("attachment", file_flags, 0o666, dir_fd=temporary_fd)
+                try:
+                    with os.fdopen(file_fd, "wb") as staged_file:
+                        size = sum(staged_file.write(chunk) for chunk in chunks)
+                    try:
+                        destination = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        if stat.S_ISLNK(destination.st_mode):
+                            raise ValueError(
+                                "File path must not contain symlinks under the files directory"
+                            )
+                    os.replace(
+                        "attachment", filename, src_dir_fd=temporary_fd, dst_dir_fd=directory_fd
+                    )
+                except BaseException:
+                    os.unlink("attachment", dir_fd=temporary_fd)
+                    raise
+                return size
+            finally:
+                os.close(temporary_fd)
+        finally:
+            os.rmdir(temporary_dir, dir_fd=directory_fd)

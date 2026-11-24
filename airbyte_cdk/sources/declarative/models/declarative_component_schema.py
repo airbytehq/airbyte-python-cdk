@@ -2987,6 +2987,11 @@ class FileUploader(BaseModel):
             "{{ record.id }}_{{ record.file_name }}/",
         ],
     )
+    max_file_size_bytes: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Maximum number of bytes per downloaded file. Defaults to 1500000000. Builder test reads never exceed 10485760 bytes per file.",
+    )
     allowed_extensions: Optional[List[str]] = Field(
         None,
         description="Allowed final filename extensions (case-insensitive, optional leading dot). Requires a matching file signature. Supported extensions are gif, gz, jpeg, jpg, pdf, png, tif, tiff, and zip.",

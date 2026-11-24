@@ -4,6 +4,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Iterable
 
 
 class FileWriter(ABC):
@@ -12,7 +13,7 @@ class FileWriter(ABC):
     """
 
     @abstractmethod
-    def write(self, file_path: Path, content: bytes) -> int:
+    def write(self, file_path: Path, chunks: Iterable[bytes]) -> int:
         """
         Writes the file to the specified location
         """
