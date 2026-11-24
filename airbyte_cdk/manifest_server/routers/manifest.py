@@ -1,8 +1,12 @@
 import hashlib
+import json
+import logging
+import uuid
 from dataclasses import asdict
 from typing import Any, Dict, List, Mapping, Optional
 
 import jsonschema
+import pydantic
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -15,6 +19,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY_CHECKSUMS,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 from ..api_models import (
     CheckRequest,
@@ -33,6 +38,37 @@ from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
 from ..helpers.auth import verify_jwt_token
 from ..helpers.tracing import with_request_context
+
+logger = logging.getLogger("airbyte.manifest-server")
+
+_CLIENT_FACING_EXCEPTIONS = (
+    jsonschema.exceptions.ValidationError,
+    pydantic.ValidationError,
+    ValueError,
+)
+_INTERNAL_VALUE_ERRORS = (json.JSONDecodeError, UnicodeError)
+
+
+def _error_detail(action: str, exc: Exception) -> str:
+    """
+    Build the HTTP error detail for a failed request.
+
+    Manifest validation errors, value errors and the user-facing message of an
+    AirbyteTracedException describe the user's own manifest or config, so they are returned.
+    Any other exception (file system, network, attribute or key errors, ...) can carry details
+    of the server itself, so it is logged with an error id and only the id is returned.
+    """
+    if isinstance(exc, AirbyteTracedException):
+        if exc.message:
+            return filter_secrets(f"{action}: {exc.message}")
+    elif isinstance(exc, _CLIENT_FACING_EXCEPTIONS) and not isinstance(exc, _INTERNAL_VALUE_ERRORS):
+        return filter_secrets(f"{action}: {exc}")
+
+    error_id = uuid.uuid4().hex
+    logger.error(
+        filter_secrets(f"{action} (error id {error_id}): {type(exc).__name__}: {exc}"), exc_info=exc
+    )
+    return f"{action}: an internal error occurred (error id {error_id}). The details are in the manifest server logs."
 
 
 def safe_build_source(
@@ -122,9 +158,7 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
         )
         return StreamReadResponse.model_validate(asdict(cdk_result))
     except Exception as exc:
-        # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(f"Error reading stream: {str(exc)}")
-        raise HTTPException(status_code=400, detail=sanitized_message)
+        raise HTTPException(status_code=400, detail=_error_detail("Error reading stream", exc))
 
 
 @router.post(
@@ -143,9 +177,7 @@ def check(request: CheckRequest) -> CheckResponse:
         success, message = runner.check_connection(request.config.model_dump())
         return CheckResponse(success=success, message=message)
     except Exception as exc:
-        # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(f"Error checking connection: {str(exc)}")
-        raise HTTPException(status_code=400, detail=sanitized_message)
+        raise HTTPException(status_code=400, detail=_error_detail("Error checking connection", exc))
 
 
 @router.post(
@@ -171,9 +203,7 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
         # Re-raise HTTPExceptions as-is (like the catalog None check above)
         raise
     except Exception as exc:
-        # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(f"Error discovering streams: {str(exc)}")
-        raise HTTPException(status_code=400, detail=sanitized_message)
+        raise HTTPException(status_code=400, detail=_error_detail("Error discovering streams", exc))
 
 
 @router.post(
@@ -190,9 +220,7 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
         source = safe_build_source(request.manifest.model_dump(), {})
         return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
     except Exception as exc:
-        # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(f"Error resolving manifest: {str(exc)}")
-        raise HTTPException(status_code=400, detail=sanitized_message)
+        raise HTTPException(status_code=400, detail=_error_detail("Error resolving manifest", exc))
 
 
 @router.post(
@@ -229,6 +257,6 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
         manifest["streams"] = streams
         return ManifestResponse(manifest=Manifest(**manifest))
     except Exception as exc:
-        # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(f"Error full resolving manifest: {str(exc)}")
-        raise HTTPException(status_code=400, detail=sanitized_message)
+        raise HTTPException(
+            status_code=400, detail=_error_detail("Error full resolving manifest", exc)
+        )

@@ -592,7 +592,8 @@ class TestManifestRouter:
         data = response.json()
         assert "detail" in data
         assert "Error checking connection:" in data["detail"]
-        assert "Failed to connect to API" in data["detail"]
+        assert "Failed to connect to API" not in data["detail"]
+        assert "internal error occurred (error id" in data["detail"]
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
@@ -618,7 +619,8 @@ class TestManifestRouter:
         data = response.json()
         assert "detail" in data
         assert "Error discovering streams:" in data["detail"]
-        assert "Schema validation failed" in data["detail"]
+        assert "Schema validation failed" not in data["detail"]
+        assert "internal error occurred (error id" in data["detail"]
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_resolve_cdk_error_handling(self, mock_build_source, sample_manifest):
@@ -636,7 +638,8 @@ class TestManifestRouter:
         data = response.json()
         assert "detail" in data
         assert "Error resolving manifest:" in data["detail"]
-        assert "'NoneType' object has no attribute 'get'" in data["detail"]
+        assert "NoneType" not in data["detail"]
+        assert "internal error occurred (error id" in data["detail"]
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_full_resolve_cdk_error_handling(
@@ -654,4 +657,5 @@ class TestManifestRouter:
         data = response.json()
         assert "detail" in data
         assert "Error full resolving manifest:" in data["detail"]
-        assert "Missing required field 'streams'" in data["detail"]
+        assert "Missing required field 'streams'" not in data["detail"]
+        assert "internal error occurred (error id" in data["detail"]
