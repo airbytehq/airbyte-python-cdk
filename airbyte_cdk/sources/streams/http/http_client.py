@@ -24,6 +24,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
 )
 from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
+from airbyte_cdk.sources.http_logger import mask_credential_headers
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget, CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http.error_handlers import (
@@ -460,7 +461,11 @@ class HttpClient:
 
         self._logger.debug(
             "Making outbound API request",
-            extra={"headers": request.headers, "url": request.url, "request_body": request.body},
+            extra={
+                "headers": mask_credential_headers(request.headers),
+                "url": request.url,
+                "request_body": request.body,
+            },
         )
 
         response: Optional[requests.Response] = None

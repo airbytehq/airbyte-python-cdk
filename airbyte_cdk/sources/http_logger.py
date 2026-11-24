@@ -32,7 +32,7 @@ def format_http_message(
                 "body": {
                     "content": _normalize_body_string(request.body),
                 },
-                "headers": _mask_credential_headers(request.headers),
+                "headers": mask_credential_headers(request.headers),
             },
             "response": {
                 "body": {
@@ -58,7 +58,9 @@ def _normalize_body_string(body_str: Optional[Union[str, bytes]]) -> Optional[st
     return body_str.decode() if isinstance(body_str, (bytes, bytearray)) else body_str
 
 
-def _mask_credential_headers(headers: Mapping[str, str]) -> Dict[str, str]:
+def mask_credential_headers(headers: Optional[Mapping[str, str]]) -> Dict[str, str]:
+    if headers is None:
+        return {}
     return {
         name: _MASKED_HEADER_VALUE if name.lower() in _CREDENTIAL_HEADERS else value
         for name, value in headers.items()
