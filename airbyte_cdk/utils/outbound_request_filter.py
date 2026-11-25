@@ -11,7 +11,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, FrozenSet, Iterable, Literal, NoReturn, Tuple
+from typing import Any, FrozenSet, Iterable, Literal, NoReturn, Tuple, cast
 from urllib.parse import urlparse
 
 import dns.exception
@@ -142,10 +142,10 @@ def _wrap_session_send() -> None:
 
 
 def _validate_prepared_request(request: PreparedRequest) -> None:
-    parsed_url = urlparse(request.url)
-    scheme = parsed_url.scheme.lower()
+    parsed_url = urlparse(cast(str, request.url))
+    scheme = parsed_url.scheme
 
-    if not isinstance(scheme, str) or scheme not in VALID_URL_SCHEMES:
+    if scheme not in VALID_URL_SCHEMES:
         raise requests.exceptions.InvalidSchema(
             "Invalid Protocol Scheme: The endpoint that data is being requested from is using an "
             f"invalid or insecure protocol {parsed_url.scheme!r}. Valid protocol schemes: "
@@ -203,9 +203,7 @@ def _validate_prepared_request(request: PreparedRequest) -> None:
 def _reject_blocked_hostname(
     hostname: str, policy: OutboundRequestPolicy, *, scheme: str, port: int | None
 ) -> None:
-    if hostname in policy.blocked_hosts:
-        matched_rule = next(rule for rule in policy.blocked_hosts if rule == hostname)
-    else:
+    if hostname not in policy.blocked_hosts:
         matched_rule = max(
             (
                 suffix
@@ -213,9 +211,11 @@ def _reject_blocked_hostname(
                 if hostname == suffix or hostname.endswith(f".{suffix}")
             ),
             key=len,
-            default="",
+            default=None,
         )
-    if not matched_rule:
+    else:
+        matched_rule = hostname
+    if matched_rule is None:
         return
     destination_class: DestinationClass = (
         "protected_service" if hostname in _MANIFEST_SERVER_BLOCKED_HOSTS else "other_policy"
