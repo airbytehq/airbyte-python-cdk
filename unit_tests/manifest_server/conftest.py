@@ -13,7 +13,7 @@ def inline_manifest_operations(monkeypatch):
     """Run handler unit tests in-process so their mocks and log capture are visible."""
     from airbyte_cdk.manifest_server.routers import manifest
 
-    def run_operation(operation, request, response_type):
+    def run_operation(operation, request, response_type, *, builder_request_id=None):
         handler = manifest.WORKER_OPERATIONS[operation][1]
         return handler.__wrapped__(request)
 

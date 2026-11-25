@@ -3,14 +3,71 @@ import logging
 from unittest.mock import Mock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from airbyte_cdk.connector_builder.models import StreamRead as CDKStreamRead
 from airbyte_cdk.manifest_server.app import app
+from airbyte_cdk.manifest_server.routers import manifest
 
 pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
 
 client = TestClient(app)
+BUILDER_REQUEST_ID_HEADER = "X-Airbyte-Builder-Request-Id"
+BUILDER_REQUEST_ID = "d31133b1-01b2-4553-a167-1921c331fc21"
+
+
+@pytest.mark.parametrize("operation", ["test_read", "full_resolve", "check", "discover"])
+@pytest.mark.parametrize(
+    "values,expected",
+    [
+        ([BUILDER_REQUEST_ID.upper()], BUILDER_REQUEST_ID),
+        ([], None),
+        (["invalid-header-marker"], None),
+        (["d31133b1-01b2-1553-a167-1921c331fc21"], None),
+        ([BUILDER_REQUEST_ID, BUILDER_REQUEST_ID], None),
+        ([f"{BUILDER_REQUEST_ID},{BUILDER_REQUEST_ID}"], None),
+    ],
+)
+def test_only_builder_worker_operations_forward_a_single_uuidv4(
+    operation, values, expected, monkeypatch, caplog
+) -> None:
+    run_operation = Mock(side_effect=HTTPException(status_code=400, detail="Worker reached"))
+    monkeypatch.setattr(manifest, "run_operation", run_operation)
+    payload = {
+        "manifest": {},
+        "config": {},
+        "stream_name": "items",
+        "context": {"request_id": "forged-body-id"},
+    }
+
+    response = client.post(
+        f"/v1/manifest/{operation}",
+        json=payload,
+        headers=[(BUILDER_REQUEST_ID_HEADER, value) for value in values],
+    )
+
+    expected = expected if operation in {"test_read", "full_resolve"} else None
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Worker reached"}
+    assert BUILDER_REQUEST_ID_HEADER not in response.headers
+    run_operation.assert_called_once()
+    assert run_operation.call_args.args[0] == operation
+    assert run_operation.call_args.kwargs.get("builder_request_id") == expected
+    assert "invalid-header-marker" not in caplog.text
+
+
+@pytest.mark.parametrize("operation", ["test_read", "full_resolve", "resolve"])
+def test_builder_request_id_does_not_bypass_service_auth(operation, monkeypatch) -> None:
+    monkeypatch.setenv("AB_MANIFEST_SERVER_JWT_SIGNATURE_SECRET", "synthetic-signing-key")
+    response = client.post(
+        f"/v1/manifest/{operation}",
+        json={"manifest": {}, "config": {}, "stream_name": "items"},
+        headers={BUILDER_REQUEST_ID_HEADER: BUILDER_REQUEST_ID},
+    )
+
+    assert response.status_code == 401
+    assert BUILDER_REQUEST_ID_HEADER not in response.headers
 
 
 class TestManifestRouter:

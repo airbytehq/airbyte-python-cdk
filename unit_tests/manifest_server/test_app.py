@@ -1,4 +1,5 @@
 from airbyte_cdk.manifest_server import app as manifest_server_app
+from airbyte_cdk.manifest_server.helpers.security_events import log_egress_denied
 from airbyte_cdk.utils.outbound_request_filter import OutboundRequestPolicy
 
 
@@ -15,7 +16,7 @@ def test_cloud_manifest_server_eagerly_installs_airbyte_service_policy(mocker):
     manifest_server_app._configure_outbound_request_filter()
 
     policy_builder.assert_called_once_with(include_airbyte_service_names=True)
-    installer.assert_called_once_with(policy)
+    installer.assert_called_once_with(policy, deny_observer=log_egress_denied)
 
 
 def test_oss_manifest_server_does_not_install_cloud_request_filter(mocker):

@@ -3,12 +3,13 @@ import json
 import logging
 import uuid
 from dataclasses import asdict
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Annotated, Any, Callable, Dict, List, Mapping, Optional
 
 import jsonschema
 import pydantic
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import WithJsonSchema
 
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
@@ -38,10 +39,23 @@ from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
 from ..execution import run_operation
 from ..helpers.auth import verify_jwt_token
+from ..helpers.security_events import (
+    WorkerOperation,
+    bind_request_operation,
+    normalize_builder_request_id,
+)
 from ..helpers.tracing import with_request_context
 
 logger = logging.getLogger("airbyte.manifest-server")
 
+BuilderRequestIdHeader = Annotated[
+    list[str] | None,
+    WithJsonSchema({"type": "string", "format": "uuid"}),
+    Header(
+        alias="X-Airbyte-Builder-Request-Id",
+        description="Internal correlation ID. Only a single UUIDv4 value is accepted.",
+    ),
+]
 _CLIENT_FACING_EXCEPTIONS = (
     jsonschema.exceptions.ValidationError,
     pydantic.ValidationError,
@@ -117,9 +131,16 @@ router = APIRouter(
     },
 )
 @with_request_context
-def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
+def test_read(
+    request: StreamTestReadRequest, builder_request_id: BuilderRequestIdHeader = None
+) -> StreamReadResponse:
     """Test reading from a specific stream in the manifest."""
-    return run_operation("test_read", request, StreamReadResponse)
+    return run_operation(
+        "test_read",
+        request,
+        StreamReadResponse,
+        builder_request_id=normalize_builder_request_id(builder_request_id),
+    )
 
 
 @with_request_context
@@ -239,13 +260,18 @@ def _discover(request: DiscoverRequest) -> DiscoverResponse:
     },
 )
 @with_request_context
-def resolve(request: ResolveRequest) -> ManifestResponse:
+def resolve(
+    request: ResolveRequest, builder_request_id: BuilderRequestIdHeader = None
+) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
-    try:
-        source = safe_build_source(request.manifest.model_dump(), {})
-        return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=_error_detail("Error resolving manifest", exc))
+    with bind_request_operation("resolve", normalize_builder_request_id(builder_request_id)):
+        try:
+            source = safe_build_source(request.manifest.model_dump(), {})
+            return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail=_error_detail("Error resolving manifest", exc)
+            )
 
 
 @router.post(
@@ -256,18 +282,24 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
     },
 )
 @with_request_context
-def full_resolve(request: FullResolveRequest) -> ManifestResponse:
-    """Fully resolve a manifest, including dynamic streams."""
-    return run_operation("full_resolve", request, ManifestResponse)
-
-
-@with_request_context
-def _full_resolve(request: FullResolveRequest) -> ManifestResponse:
+def full_resolve(
+    request: FullResolveRequest, builder_request_id: BuilderRequestIdHeader = None
+) -> ManifestResponse:
     """
     Fully resolve a manifest, including dynamic streams.
 
     This is a similar operation to resolve, but has an extra step which generates streams from dynamic stream templates if the manifest contains any. This is used when a user clicks the generate streams button on a stream template in the Builder UI
     """
+    return run_operation(
+        "full_resolve",
+        request,
+        ManifestResponse,
+        builder_request_id=normalize_builder_request_id(builder_request_id),
+    )
+
+
+@with_request_context
+def _full_resolve(request: FullResolveRequest) -> ManifestResponse:
     try:
         source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
         manifest = {**source.resolved_manifest}
@@ -295,7 +327,7 @@ def _full_resolve(request: FullResolveRequest) -> ManifestResponse:
 
 # The worker accepts only these predefined operations and validates all operation inputs.
 WORKER_OPERATIONS: dict[
-    str, tuple[type[pydantic.BaseModel], Callable[[Any], pydantic.BaseModel]]
+    WorkerOperation, tuple[type[pydantic.BaseModel], Callable[[Any], pydantic.BaseModel]]
 ] = {
     "test_read": (StreamTestReadRequest, _test_read),
     "check": (CheckRequest, _check),

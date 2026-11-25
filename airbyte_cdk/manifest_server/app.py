@@ -12,13 +12,15 @@ from airbyte_cdk.utils.outbound_request_filter import (
     init_internal_request_filter,
 )
 
+from .helpers.security_events import log_egress_denied
 from .routers import capabilities, health, manifest
 
 
 def _configure_outbound_request_filter() -> None:
     if is_cloud_environment():
         init_internal_request_filter(
-            cloud_outbound_request_policy(include_airbyte_service_names=True)
+            cloud_outbound_request_policy(include_airbyte_service_names=True),
+            deny_observer=log_egress_denied,
         )
 
 

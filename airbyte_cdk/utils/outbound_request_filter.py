@@ -8,9 +8,10 @@ import ipaddress
 import os
 import socket
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, FrozenSet, Iterable, Tuple
+from typing import Any, FrozenSet, Iterable, Literal, Tuple
 from urllib.parse import urlparse
 
 import dns.exception
@@ -22,6 +23,15 @@ from airbyte_cdk.models import FailureType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 VALID_URL_SCHEMES = frozenset({"https"})
+BlockKind = Literal["hostname", "address"]
+DestinationClass = Literal[
+    "metadata_or_link_local",
+    "private_or_non_global",
+    "protected_service",
+    "restricted_network",
+    "other_policy",
+]
+DenyObserver = Callable[[BlockKind, DestinationClass], None]
 _INTERNAL_REQUEST_FILTER_MARKER = "_airbyte_internal_request_filter"
 _INTERNAL_REQUEST_FILTER_LOCK = threading.Lock()
 _CNAME_RESOLVER_LOCK = threading.Lock()
@@ -60,6 +70,7 @@ class OutboundRequestPolicy:
 
 
 _ACTIVE_POLICY = OutboundRequestPolicy()
+_DENY_OBSERVER: DenyObserver | None = None
 
 
 def cloud_outbound_request_policy(
@@ -87,12 +98,16 @@ def cloud_outbound_request_policy(
     )
 
 
-def init_internal_request_filter(policy: OutboundRequestPolicy | None = None) -> None:
-    """Install the process-wide Requests filter once and add the supplied policy."""
+def init_internal_request_filter(
+    policy: OutboundRequestPolicy | None = None, *, deny_observer: DenyObserver | None = None
+) -> None:
+    """Install the process-wide Requests filter, adding policy and optionally a deny observer."""
 
-    global _ACTIVE_POLICY
+    global _ACTIVE_POLICY, _DENY_OBSERVER
 
     with _INTERNAL_REQUEST_FILTER_LOCK:
+        if deny_observer is not None:
+            _DENY_OBSERVER = deny_observer
         _ACTIVE_POLICY = _ACTIVE_POLICY.merge(policy or OutboundRequestPolicy())
         if not getattr(Session.send, _INTERNAL_REQUEST_FILTER_MARKER, False):
             _wrap_session_send()
@@ -154,19 +169,26 @@ def _reject_blocked_hostname(hostname: str, policy: OutboundRequestPolicy) -> No
     if hostname in policy.blocked_hosts or any(
         hostname == suffix or hostname.endswith(f".{suffix}") for suffix in policy.blocked_suffixes
     ):
-        _raise_blocked_destination(hostname, "hostname")
+        destination_class: DestinationClass = (
+            "protected_service" if hostname in _MANIFEST_SERVER_BLOCKED_HOSTS else "other_policy"
+        )
+        _raise_blocked_destination(hostname, "hostname", destination_class)
 
 
 def _reject_blocked_ip(
     address: ipaddress.IPv4Address | ipaddress.IPv6Address,
     policy: OutboundRequestPolicy,
 ) -> None:
-    if (
-        not address.is_global
-        or address.is_multicast
-        or any(_address_is_in_network(address, network) for network in policy.blocked_networks)
-    ):
-        _raise_blocked_destination(str(address), "address")
+    if not address.is_global or address.is_multicast:
+        mapped = address.ipv4_mapped if isinstance(address, ipaddress.IPv6Address) else None
+        destination_class: DestinationClass = (
+            "metadata_or_link_local"
+            if (mapped or address).is_link_local
+            else "private_or_non_global"
+        )
+        _raise_blocked_destination(str(address), "address", destination_class)
+    if any(_address_is_in_network(address, network) for network in policy.blocked_networks):
+        _raise_blocked_destination(str(address), "address", "restricted_network")
 
 
 def _address_is_in_network(
@@ -187,7 +209,15 @@ def _address_is_in_network(
     )
 
 
-def _raise_blocked_destination(destination: str, kind: str) -> None:
+def _raise_blocked_destination(
+    destination: str, kind: BlockKind, destination_class: DestinationClass
+) -> None:
+    observer = _DENY_OBSERVER
+    if observer is not None:
+        try:
+            observer(kind, destination_class)
+        except Exception:
+            pass
     raise AirbyteTracedException(
         internal_message=f"Invalid URL endpoint: {kind} {destination!r} is not permitted",
         failure_type=FailureType.config_error,
@@ -259,6 +289,7 @@ def _split_env(name: str) -> set[str]:
 def _reset_request_filter_policy_for_testing() -> None:
     """Reset additive policy state. Tests must also patch Session.send to remove the wrapper."""
 
-    global _ACTIVE_POLICY
+    global _ACTIVE_POLICY, _DENY_OBSERVER
     with _INTERNAL_REQUEST_FILTER_LOCK:
         _ACTIVE_POLICY = OutboundRequestPolicy()
+        _DENY_OBSERVER = None
