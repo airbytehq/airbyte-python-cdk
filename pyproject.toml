@@ -62,7 +62,7 @@ requests_cache = "*"
 rich = "*"  # Use whichever version meets other constraints
 rich-click = "^1.8.8"
 typing-extensions = "*"  # Transitive dependency used directly in code
-urllib3 = "*"  # Transitive dependency used directly in code
+urllib3 = ">=2.8.0,<3"  # Transitive dependency used directly in code
 wcmatch = "10.0"
 # Extras depedencies
 avro = { version = ">=1.11.2,<1.13.0", optional = true }  # TODO: Move into dev dependencies if only used in tests
@@ -83,20 +83,20 @@ python-calamine = { version = ">=0.2.3,<0.9.0", optional = true }  # TODO: Remov
 openpyxl = { version = "^3.1.0", optional = true }
 python-snappy = { version = "0.7.3", optional = true }  # TODO: remove if unused
 tiktoken = { version = ">=0.8.0,<0.15.0", optional = true }
-nltk = { version = "3.9.4", optional = true }
+nltk = { version = ">=3.10.4", optional = true }
 unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
-pyjwt = "^2.8.0"
-cryptography = ">=44.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958); upper cap removed so >=48.0.1 (ASN.1 OOB read fix) can be installed
+pyjwt = "^2.14.0"
+cryptography = ">=50.0.0"
 pytz = ">=2024.2"
 pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
 ijson = "^3.3.0"  # Streaming JSON parser used by `JsonItemsParser` to handle very large response bodies without OOMing.
 serpyco-rs = "^1.10.2"
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
-fastapi = { version = ">=0.116.1", optional = true }
+fastapi = { version = ">=0.165.0", optional = true }
 uvicorn = { version = ">=0.35.0", optional = true}
-ddtrace = { version = "^3", optional = true }
+ddtrace = { version = "^4.15.6", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = ">=0.7.3,<0.9.0"
@@ -130,7 +130,7 @@ deptry = "^0.23.0"
 dagger-io = "0.19.0"
 
 [tool.poetry.extras]
-file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy", "pillow"]
+file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy", "pillow", "nltk"]
 vector-db-based = ["langchain_community", "langchain_core", "langchain_text_splitters", "openai", "cohere", "tiktoken", "pillow"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
