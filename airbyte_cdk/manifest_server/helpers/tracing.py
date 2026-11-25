@@ -1,7 +1,7 @@
 import logging
 from contextvars import ContextVar
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Any, Callable, Concatenate, Optional, ParamSpec, TypeVar, Union
 
 import ddtrace
 
@@ -12,6 +12,7 @@ from ..api_models import (
     ResolveRequest,
     StreamTestReadRequest,
 )
+from .security_events import SECURITY_EVENT_LOGGER_NAME
 
 logger = logging.getLogger(__name__)
 _log_context: ContextVar[str] = ContextVar("manifest_server_log_context", default="")
@@ -25,7 +26,7 @@ def _install_record_factory() -> None:
     def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
         record = previous_factory(*args, **kwargs)
         context = _log_context.get()
-        if context:
+        if context and record.name != SECURITY_EVENT_LOGGER_NAME:
             try:
                 message = record.getMessage()
             except Exception:
@@ -47,18 +48,21 @@ RequestT = TypeVar(
     ],
 )
 ResponseT = TypeVar("ResponseT")
+RequestParams = ParamSpec("RequestParams")
 
 
 def with_request_context(
-    endpoint: Callable[[RequestT], ResponseT],
-) -> Callable[[RequestT], ResponseT]:
-    """Scope logs for sync endpoints with a single body parameter named `request`.
+    endpoint: Callable[Concatenate[RequestT, RequestParams], ResponseT],
+) -> Callable[Concatenate[RequestT, RequestParams], ResponseT]:
+    """Scope logs for sync endpoints with a body parameter named `request`.
 
     Drives a process-wide LogRecord factory that prefixes records only in this context.
     """
 
     @wraps(endpoint)
-    def wrapped(request: RequestT) -> ResponseT:
+    def wrapped(
+        request: RequestT, *args: RequestParams.args, **kwargs: RequestParams.kwargs
+    ) -> ResponseT:
         context = request.context
         log_parts = []
         if context:
@@ -75,7 +79,7 @@ def with_request_context(
                     request_id=context.request_id,
                     connector_name=context.connector_name,
                 )
-            return endpoint(request)
+            return endpoint(request, *args, **kwargs)
         finally:
             _log_context.reset(token)
 

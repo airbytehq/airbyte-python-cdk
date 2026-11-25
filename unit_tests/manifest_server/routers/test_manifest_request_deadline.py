@@ -1,8 +1,12 @@
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import time
+from copy import deepcopy
+from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from threading import BoundedSemaphore
 
@@ -19,6 +23,96 @@ MANIFEST = {
     "check": {"type": "CheckStream", "stream_names": []},
     "streams": [],
 }
+BUILDER_REQUEST_ID = "d31133b1-01b2-4553-a167-1921c331fc21"
+TEST_READ_MANIFEST = {
+    **MANIFEST,
+    "check": {"type": "CheckStream", "stream_names": ["items"]},
+    "spec": {
+        "type": "Spec",
+        "connection_specification": {"type": "object", "properties": {}},
+    },
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "name": "items",
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {"id": {"type": "integer"}}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url": "https://fixture.example/synthetic-input-marker",
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+            },
+        }
+    ],
+}
+TEST_READ_WORKER = """
+import os
+import socket
+import sys
+from threading import current_thread, main_thread
+from unittest.mock import patch
+
+from requests import Response, Session
+
+from airbyte_cdk.utils import outbound_request_filter
+
+
+def resolve(host, port, *, flags):
+    assert host == "fixture.example"
+    assert current_thread() is not main_thread()
+    return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.0.9", 443))]
+
+
+def resolve_cname(host):
+    rule = os.getenv("AIRBYTE_SSRF_DENY_HOSTS")
+    if rule:
+        assert host == "fixture.example"
+        return (rule,)
+    return ()
+
+
+def send(session, request, **kwargs):
+    response = Response()
+    response.status_code = 200
+    response.url = request.url
+    response.request = request
+    response._content = b'[{"id": 1}]'
+    return response
+
+
+hostname_blocked = bool(os.getenv("AIRBYTE_SSRF_DENY_HOSTS") or os.getenv("AIRBYTE_SSRF_DENY_HOST_SUFFIXES"))
+blocked = hostname_blocked or bool(os.getenv("AIRBYTE_SSRF_DENY_CIDRS"))
+with (
+    patch.object(
+        Session,
+        "send",
+        autospec=True,
+        side_effect=AssertionError("Blocked send ran") if blocked else send,
+    ) as send_mock,
+    patch.object(outbound_request_filter, "_resolve_cname_chain", side_effect=resolve_cname),
+    patch.object(outbound_request_filter.socket, "getaddrinfo", side_effect=resolve) as resolver,
+):
+    from airbyte_cdk.manifest_server.operation_worker import main
+
+    main(sys.argv[1], int(sys.argv[2]), float(sys.argv[3]))
+    if hostname_blocked:
+        resolver.assert_not_called()
+    else:
+        resolver.assert_called_once()
+    if blocked:
+        send_mock.assert_not_called()
+    else:
+        send_mock.assert_called_once()
+"""
 
 
 def test_full_resolve_uses_supervised_worker():
@@ -26,6 +120,114 @@ def test_full_resolve_uses_supervised_worker():
 
     assert response.status_code == 200, response.json()
     assert response.json() == {"manifest": MANIFEST}
+
+
+@pytest.mark.parametrize(
+    "block_kind,request_id,explicit_port,host,suffix,exact_rule",
+    [
+        ("address", BUILDER_REQUEST_ID, None, "fixture.example", None, None),
+        ("address", None, 8443, "fixture.example", None, None),
+        (
+            "hostname",
+            BUILDER_REQUEST_ID,
+            None,
+            "secret-customer.svc.cluster.local",
+            "svc.cluster.local",
+            None,
+        ),
+        ("hostname", BUILDER_REQUEST_ID, None, "fixture.example", None, "denied.example"),
+        (None, BUILDER_REQUEST_ID, None, "fixture.example", None, None),
+    ],
+    ids=[
+        "address-default-port",
+        "address-explicit-port",
+        "hostname-suffix",
+        "cname-exact-host",
+        "allowed",
+    ],
+)
+def test_real_test_read_worker_correlates_policy_denies(
+    monkeypatch, capfd, block_kind, request_id, explicit_port, host, suffix, exact_rule
+):
+    process_factory = subprocess.Popen
+    worker_inputs = []
+
+    def start_worker(command, **kwargs):
+        assert command[1:3] == ["-m", "airbyte_cdk.manifest_server.operation_worker"]
+        assert all(BUILDER_REQUEST_ID not in value for value in command)
+        assert all(BUILDER_REQUEST_ID not in value for value in kwargs["env"].values())
+        stdin = kwargs["stdin"]
+        worker_inputs.append(execution.WorkerInput.read(stdin))
+        stdin.seek(0)
+        return process_factory([command[0], "-c", TEST_READ_WORKER, *command[3:]], **kwargs)
+
+    monkeypatch.setattr(execution.subprocess, "Popen", start_worker)
+    monkeypatch.setenv("AIRBYTE_EDITION", "cloud")
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", "192.0.0.9/32" if block_kind == "address" else "")
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_HOSTS", exact_rule or "")
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_HOST_SUFFIXES", suffix or "")
+    test_manifest = deepcopy(TEST_READ_MANIFEST)
+    requester = test_manifest["streams"][0]["retriever"]["requester"]
+    authority = f"{host}:{explicit_port}" if explicit_port is not None else host
+    requester["url"] = f"https://{authority}/synthetic-input-marker"
+    body = {
+        "manifest": test_manifest,
+        "config": {},
+        "stream_name": "items",
+        "context": {"request_id": "forged-body-id"},
+    }
+    headers = {"X-Airbyte-Builder-Request-Id": request_id} if request_id else {}
+
+    response = client.post("/v1/manifest/test_read", json=body, headers=headers)
+
+    stderr = capfd.readouterr().err
+    assert response.status_code == 200, (response.json(), stderr)
+    assert BUILDER_REQUEST_ID not in response.text
+    assert "X-Airbyte-Builder-Request-Id" not in response.headers
+    (worker_input,) = worker_inputs
+    assert worker_input.builder_request_id == request_id
+    assert json.loads(worker_input.payload)["context"]["request_id"] == "forged-body-id"
+    assert BUILDER_REQUEST_ID.encode() not in worker_input.payload
+    result = response.json()
+    event_lines = [line for line in stderr.splitlines() if "airbyte.builder.egress_denied" in line]
+    if block_kind is None:
+        assert not event_lines
+        assert result["slices"][0]["pages"][0]["records"] == [{"id": 1}]
+        return
+
+    assert result["slices"] == []
+    assert any(
+        log["level"] == "ERROR" and "not a permitted public API endpoint" in log["message"]
+        for log in result["logs"]
+    ), result["logs"]
+    (event_line,) = event_lines
+    event = json.loads(event_line)
+    assert datetime.fromisoformat(event.pop("timestamp")).utcoffset() == timezone.utc.utcoffset(
+        None
+    )
+    assert event == {
+        "schema_version": 1,
+        "event": "airbyte.builder.egress_denied",
+        "builder_request_id": request_id,
+        "operation": "test_read",
+        "outcome": "blocked",
+        "block_kind": block_kind,
+        "destination_class": "restricted_network" if block_kind == "address" else "other_policy",
+        "blocked_address": "192.0.0.9" if block_kind == "address" else None,
+        "matched_rule": suffix or exact_rule,
+        "scheme": "https",
+        "port": explicit_port if explicit_port is not None else 443,
+    }
+    assert host not in event_line
+    assert "synthetic-input-marker" not in event_line
+    assert "forged-body-id" not in event_line
+
+
+@pytest.mark.parametrize("wire", [b"null\n12345", b"null", b'"not-a-uuid"\n12'])
+def test_worker_input_rejects_invalid_or_oversized_envelopes(monkeypatch, wire):
+    monkeypatch.setattr(execution, "_MAX_MESSAGE_BYTES", 4)
+    with pytest.raises(ValueError, match="Manifest worker"):
+        execution.WorkerInput.read(BytesIO(wire))
 
 
 def test_deadline_reaps_worker_cleans_scratch_and_releases_slot(monkeypatch):

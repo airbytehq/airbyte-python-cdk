@@ -1,5 +1,6 @@
 """Run network-capable Manifest Server operations in a process we can stop."""
 
+import json
 import logging
 import math
 import os
@@ -8,15 +9,17 @@ import subprocess
 import sys
 import time
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory, TemporaryFile
 from threading import BoundedSemaphore
-from typing import TypeVar
+from typing import BinaryIO, TypeVar
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
 
 from .helpers.auth import MANIFEST_SERVER_SIGNATURE_SECRET_ENV_VAR, SHARED_SIGNATURE_SECRET_ENV_VAR
+from .helpers.security_events import WorkerOperation, normalize_builder_request_id
 
 logger = logging.getLogger("airbyte.manifest-server")
 
@@ -26,6 +29,7 @@ _OPERATION_TIMEOUT_ENV = "AIRBYTE_MANIFEST_SERVER_OPERATION_TIMEOUT_SECONDS"
 _CHECK_TIMEOUT_ENV = "AIRBYTE_MANIFEST_SERVER_CHECK_TIMEOUT_SECONDS"
 _WORKER_LIMIT_ENV = "AIRBYTE_MANIFEST_SERVER_MAX_ACTIVE_OPERATIONS"
 _MAX_MESSAGE_BYTES = 32 * 1024 * 1024
+_MAX_WORKER_METADATA_BYTES = 64
 _TIMEOUT_DETAIL = (
     "The connector operation ran out of time. Try again or reduce the amount of data requested."
 )
@@ -34,6 +38,35 @@ _TIMEOUT_DETAIL = (
 # cooperative cancellation to produce the usual Builder result.
 operation_deadline: ContextVar[float | None] = ContextVar("operation_deadline", default=None)
 ResponseT = TypeVar("ResponseT", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class WorkerInput:
+    """Private stdin envelope: one JSON metadata line followed by the request model's JSON."""
+
+    builder_request_id: str | None
+    payload: bytes
+
+    def write(self, stream: BinaryIO) -> None:
+        stream.write(json.dumps(self.builder_request_id).encode() + b"\n")
+        stream.write(self.payload)
+
+    @classmethod
+    def read(cls, stream: BinaryIO) -> "WorkerInput":
+        metadata = stream.readline(_MAX_WORKER_METADATA_BYTES)
+        if not metadata.endswith(b"\n"):
+            raise ValueError("Invalid Manifest worker metadata")
+        request_id = json.loads(metadata)
+        if request_id is not None and (
+            not isinstance(request_id, str)
+            or normalize_builder_request_id(request_id) != request_id
+        ):
+            raise ValueError("Invalid Manifest worker metadata")
+
+        payload = stream.read(_MAX_MESSAGE_BYTES + 1)
+        if len(payload) > _MAX_MESSAGE_BYTES:
+            raise ValueError("Manifest worker input is too large")
+        return cls(request_id, payload)
 
 
 class WorkerResult(BaseModel):
@@ -64,7 +97,13 @@ _check_timeout = min(_seconds(_CHECK_TIMEOUT_ENV, 55), _operation_timeout)
 _slots = BoundedSemaphore(_worker_limit())
 
 
-def run_operation(operation: str, request: BaseModel, response_type: type[ResponseT]) -> ResponseT:
+def run_operation(
+    operation: WorkerOperation,
+    request: BaseModel,
+    response_type: type[ResponseT],
+    *,
+    builder_request_id: str | None = None,
+) -> ResponseT:
     deadline = time.monotonic() + (_check_timeout if operation == "check" else _operation_timeout)
     if not _slots.acquire(blocking=False):
         raise HTTPException(
@@ -74,7 +113,7 @@ def run_operation(operation: str, request: BaseModel, response_type: type[Respon
         )
 
     try:
-        return _run_operation(operation, request, response_type, deadline)
+        return _run_operation(operation, request, response_type, deadline, builder_request_id)
     except subprocess.TimeoutExpired:
         logger.warning("Manifest operation %s exceeded its execution deadline", operation)
         raise HTTPException(status_code=400, detail=_TIMEOUT_DETAIL) from None
@@ -88,7 +127,11 @@ def run_operation(operation: str, request: BaseModel, response_type: type[Respon
 
 
 def _run_operation(
-    operation: str, request: BaseModel, response_type: type[ResponseT], deadline: float
+    operation: WorkerOperation,
+    request: BaseModel,
+    response_type: type[ResponseT],
+    deadline: float,
+    builder_request_id: str | None,
 ) -> ResponseT:
     encoded_request = request.model_dump_json().encode()
     if len(encoded_request) > _MAX_MESSAGE_BYTES:
@@ -112,7 +155,7 @@ def _run_operation(
         # Keep any connector-created relative files inside the operation directory.
         import_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = os.pathsep.join(filter(None, (import_root, env.get("PYTHONPATH"))))
-        request_file.write(encoded_request)
+        WorkerInput(builder_request_id, encoded_request).write(request_file)
         request_file.seek(0)
         remaining = deadline - time.monotonic()
         if remaining <= 0:

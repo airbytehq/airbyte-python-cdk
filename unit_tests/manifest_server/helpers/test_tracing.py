@@ -1,22 +1,81 @@
 import importlib
 import json
 import logging
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from unittest.mock import Mock, call, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from jsonschema.exceptions import ValidationError
 
 from airbyte_cdk.logger import AirbyteLogFormatter
-from airbyte_cdk.manifest_server.api_models import CheckRequest
+from airbyte_cdk.manifest_server.api_models import CheckRequest, ResolveRequest
 from airbyte_cdk.manifest_server.app import app
 from airbyte_cdk.manifest_server.helpers import tracing
+from airbyte_cdk.manifest_server.helpers.security_events import (
+    SECURITY_EVENT_LOGGER_NAME,
+    log_egress_denied,
+)
 from airbyte_cdk.manifest_server.helpers.tracing import with_request_context
+from airbyte_cdk.manifest_server.routers import manifest
 from airbyte_cdk.models import AirbyteConnectionStatus, ConnectorSpecification, Status
+from airbyte_cdk.utils.outbound_request_filter import BlockedDestination
 
 pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
+
+
+def test_resolve_security_event_excludes_legacy_context_and_resets_after_error(
+    monkeypatch, capfd
+) -> None:
+    request_id = "d31133b1-01b2-4553-a167-1921c331fc21"
+    header = "X-Airbyte-Builder-Request-Id"
+    body = {"manifest": {}, "context": {"request_id": "forged-body-id"}}
+    blocked = BlockedDestination(
+        "hostname", "other_policy", "https", 443, matched_rule="denied.example"
+    )
+    (handler,) = logging.getLogger(SECURITY_EVENT_LOGGER_NAME).handlers
+    monkeypatch.setattr(handler, "stream", sys.stderr)
+
+    def fail_build_source(*args: object, **kwargs: object) -> None:
+        log_egress_denied(blocked)
+        raise ValueError("synthetic resolve error")
+
+    monkeypatch.setattr(manifest, "safe_build_source", fail_build_source)
+
+    with pytest.raises(HTTPException):
+        manifest.resolve(ResolveRequest.model_validate(body), [request_id])
+    log_egress_denied(blocked)
+    assert [
+        json.loads(line)["builder_request_id"]
+        for line in capfd.readouterr().err.splitlines()
+        if "airbyte.builder.egress_denied" in line
+    ] == [request_id]
+
+    with TestClient(app) as client:
+        for headers in (
+            [(header, request_id.upper())],
+            [],
+            [(header, "invalid-id")],
+            [(header, request_id), (header, request_id)],
+        ):
+            response = client.post("/v1/manifest/resolve", json=body, headers=headers)
+            assert response.status_code == 400
+            assert response.json() == {
+                "detail": "Error resolving manifest: synthetic resolve error"
+            }
+            assert header not in response.headers
+
+    stderr = capfd.readouterr().err
+    events = [
+        json.loads(line) for line in stderr.splitlines() if "airbyte.builder.egress_denied" in line
+    ]
+    assert [event["builder_request_id"] for event in events] == [request_id, None, None, None]
+    assert all(event["operation"] == "resolve" for event in events)
+    assert "forged-body-id" not in stderr
+    assert "invalid-id" not in stderr
 
 
 @pytest.mark.parametrize(
