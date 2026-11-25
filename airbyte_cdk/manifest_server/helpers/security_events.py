@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 
-from airbyte_cdk.utils.outbound_request_filter import BlockKind, DestinationClass
+from airbyte_cdk.utils.outbound_request_filter import BlockedDestination
 
 WorkerOperation = Literal["test_read", "full_resolve", "check", "discover"]
 Operation = Literal[WorkerOperation, "resolve"]
@@ -64,7 +64,7 @@ def bind_worker_operation(
         _worker_context = None
 
 
-def log_egress_denied(block_kind: BlockKind, destination_class: DestinationClass) -> None:
+def log_egress_denied(blocked: BlockedDestination) -> None:
     context = _request_context.get() or _worker_context
     if context is None:
         return
@@ -77,8 +77,12 @@ def log_egress_denied(block_kind: BlockKind, destination_class: DestinationClass
                 "builder_request_id": context.builder_request_id,
                 "operation": context.operation,
                 "outcome": "blocked",
-                "block_kind": block_kind,
-                "destination_class": destination_class,
+                "block_kind": blocked.kind,
+                "destination_class": blocked.destination_class,
+                "blocked_address": blocked.blocked_address,
+                "matched_rule": blocked.matched_rule,
+                "scheme": blocked.scheme,
+                "port": blocked.port,
             }
         )
     )

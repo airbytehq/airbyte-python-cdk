@@ -31,7 +31,7 @@ DestinationClass = Literal[
     "restricted_network",
     "other_policy",
 ]
-DenyObserver = Callable[[BlockKind, DestinationClass], None]
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 _INTERNAL_REQUEST_FILTER_MARKER = "_airbyte_internal_request_filter"
 _INTERNAL_REQUEST_FILTER_LOCK = threading.Lock()
 _CNAME_RESOLVER_LOCK = threading.Lock()
@@ -47,6 +47,19 @@ _MANIFEST_SERVER_BLOCKED_HOSTS = frozenset(
         "mcp.airbyte.com",
     }
 )
+
+
+@dataclass(frozen=True)
+class BlockedDestination:
+    kind: BlockKind
+    destination_class: DestinationClass
+    scheme: str
+    port: int | None
+    blocked_address: str | None = None
+    matched_rule: str | None = None
+
+
+DenyObserver = Callable[[BlockedDestination], None]
 
 
 @dataclass(frozen=True)
@@ -130,8 +143,9 @@ def _wrap_session_send() -> None:
 
 def _validate_prepared_request(request: PreparedRequest) -> None:
     parsed_url = urlparse(request.url)
+    scheme = parsed_url.scheme.lower()
 
-    if parsed_url.scheme not in VALID_URL_SCHEMES:
+    if not isinstance(scheme, str) or scheme not in VALID_URL_SCHEMES:
         raise requests.exceptions.InvalidSchema(
             "Invalid Protocol Scheme: The endpoint that data is being requested from is using an "
             f"invalid or insecure protocol {parsed_url.scheme!r}. Valid protocol schemes: "
@@ -145,12 +159,20 @@ def _validate_prepared_request(request: PreparedRequest) -> None:
         )
 
     try:
+        explicit_port = parsed_url.port
+    except ValueError:
+        # A malformed port must not take precedence over a hostname policy denial.
+        telemetry_port = None
+    else:
+        telemetry_port = explicit_port if explicit_port is not None else _DEFAULT_PORTS.get(scheme)
+
+    try:
         hostname = _normalize_hostname(raw_hostname)
-        _reject_blocked_hostname(hostname, _ACTIVE_POLICY)
+        _reject_blocked_hostname(hostname, _ACTIVE_POLICY, scheme=scheme, port=telemetry_port)
 
         if _ACTIVE_POLICY.inspect_cname_chain and not _is_ip_literal(hostname):
             for cname in _resolve_cname_chain(hostname):
-                _reject_blocked_hostname(cname, _ACTIVE_POLICY)
+                _reject_blocked_hostname(cname, _ACTIVE_POLICY, scheme=scheme, port=telemetry_port)
 
         address_info_entries = socket.getaddrinfo(
             hostname,
@@ -160,27 +182,56 @@ def _validate_prepared_request(request: PreparedRequest) -> None:
         for entry in address_info_entries:
             canonical_name = entry[3]
             if canonical_name:
-                _reject_blocked_hostname(_normalize_hostname(canonical_name), _ACTIVE_POLICY)
-            _reject_blocked_ip(ipaddress.ip_address(entry[4][0]), _ACTIVE_POLICY)
+                _reject_blocked_hostname(
+                    _normalize_hostname(canonical_name),
+                    _ACTIVE_POLICY,
+                    scheme=scheme,
+                    port=telemetry_port,
+                )
+            _reject_blocked_ip(
+                ipaddress.ip_address(entry[4][0]),
+                _ACTIVE_POLICY,
+                scheme=scheme,
+                port=telemetry_port,
+            )
     except (socket.gaierror, UnicodeError, ValueError) as exception:
         raise requests.exceptions.InvalidURL(
             f"Invalid URL {parsed_url}: {exception}"
         ) from exception
 
 
-def _reject_blocked_hostname(hostname: str, policy: OutboundRequestPolicy) -> None:
-    if hostname in policy.blocked_hosts or any(
-        hostname == suffix or hostname.endswith(f".{suffix}") for suffix in policy.blocked_suffixes
-    ):
-        destination_class: DestinationClass = (
-            "protected_service" if hostname in _MANIFEST_SERVER_BLOCKED_HOSTS else "other_policy"
+def _reject_blocked_hostname(
+    hostname: str, policy: OutboundRequestPolicy, *, scheme: str, port: int | None
+) -> None:
+    if hostname in policy.blocked_hosts:
+        matched_rule = next(rule for rule in policy.blocked_hosts if rule == hostname)
+    else:
+        matched_rule = max(
+            (
+                suffix
+                for suffix in policy.blocked_suffixes
+                if hostname == suffix or hostname.endswith(f".{suffix}")
+            ),
+            key=len,
+            default="",
         )
-        _raise_blocked_destination(hostname, "hostname", destination_class)
+    if not matched_rule:
+        return
+    destination_class: DestinationClass = (
+        "protected_service" if hostname in _MANIFEST_SERVER_BLOCKED_HOSTS else "other_policy"
+    )
+    _raise_blocked_destination(
+        hostname,
+        BlockedDestination("hostname", destination_class, scheme, port, matched_rule=matched_rule),
+    )
 
 
 def _reject_blocked_ip(
     address: ipaddress.IPv4Address | ipaddress.IPv6Address,
     policy: OutboundRequestPolicy,
+    *,
+    scheme: str,
+    port: int | None,
 ) -> None:
     if not address.is_global or address.is_multicast:
         mapped = address.ipv4_mapped if isinstance(address, ipaddress.IPv6Address) else None
@@ -189,9 +240,17 @@ def _reject_blocked_ip(
             if (mapped or address).is_link_local
             else "private_or_non_global"
         )
-        _raise_blocked_destination(str(address), "address", destination_class)
-    if any(_address_is_in_network(address, network) for network in policy.blocked_networks):
-        _raise_blocked_destination(str(address), "address", "restricted_network")
+    elif any(_address_is_in_network(address, network) for network in policy.blocked_networks):
+        destination_class = "restricted_network"
+    else:
+        return
+    blocked_address = str(address)
+    _raise_blocked_destination(
+        blocked_address,
+        BlockedDestination(
+            "address", destination_class, scheme, port, blocked_address=blocked_address
+        ),
+    )
 
 
 def _address_is_in_network(
@@ -212,17 +271,15 @@ def _address_is_in_network(
     )
 
 
-def _raise_blocked_destination(
-    destination: str, kind: BlockKind, destination_class: DestinationClass
-) -> NoReturn:
+def _raise_blocked_destination(destination: str, blocked: BlockedDestination) -> NoReturn:
     observer = _DENY_OBSERVER
     if observer is not None:
         try:
-            observer(kind, destination_class)
+            observer(blocked)
         except Exception:
             pass
     raise AirbyteTracedException(
-        internal_message=f"Invalid URL endpoint: {kind} {destination!r} is not permitted",
+        internal_message=f"Invalid URL endpoint: {blocked.kind} {destination!r} is not permitted",
         failure_type=FailureType.config_error,
         message=(
             "Invalid URL endpoint: The endpoint that data is being requested from is not a "

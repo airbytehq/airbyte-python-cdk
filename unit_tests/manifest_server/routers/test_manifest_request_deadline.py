@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from copy import deepcopy
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -71,6 +72,14 @@ def resolve(host, port, *, flags):
     return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("192.0.0.9", 443))]
 
 
+def resolve_cname(host):
+    rule = os.getenv("AIRBYTE_SSRF_DENY_HOSTS")
+    if rule:
+        assert host == "fixture.example"
+        return (rule,)
+    return ()
+
+
 def send(session, request, **kwargs):
     response = Response()
     response.status_code = 200
@@ -80,7 +89,8 @@ def send(session, request, **kwargs):
     return response
 
 
-blocked = bool(os.getenv("AIRBYTE_SSRF_DENY_CIDRS"))
+hostname_blocked = bool(os.getenv("AIRBYTE_SSRF_DENY_HOSTS") or os.getenv("AIRBYTE_SSRF_DENY_HOST_SUFFIXES"))
+blocked = hostname_blocked or bool(os.getenv("AIRBYTE_SSRF_DENY_CIDRS"))
 with (
     patch.object(
         Session,
@@ -88,13 +98,16 @@ with (
         autospec=True,
         side_effect=AssertionError("Blocked send ran") if blocked else send,
     ) as send_mock,
-    patch.object(outbound_request_filter, "_resolve_cname_chain", return_value=()),
+    patch.object(outbound_request_filter, "_resolve_cname_chain", side_effect=resolve_cname),
     patch.object(outbound_request_filter.socket, "getaddrinfo", side_effect=resolve) as resolver,
 ):
     from airbyte_cdk.manifest_server.operation_worker import main
 
     main(sys.argv[1], int(sys.argv[2]), float(sys.argv[3]))
-    resolver.assert_called_once()
+    if hostname_blocked:
+        resolver.assert_not_called()
+    else:
+        resolver.assert_called_once()
     if blocked:
         send_mock.assert_not_called()
     else:
@@ -110,11 +123,32 @@ def test_full_resolve_uses_supervised_worker():
 
 
 @pytest.mark.parametrize(
-    "blocked,request_id",
-    [(True, BUILDER_REQUEST_ID), (True, None), (False, BUILDER_REQUEST_ID)],
-    ids=["correlated-deny", "uncorrelated-deny", "allowed"],
+    "block_kind,request_id,explicit_port,host,suffix,exact_rule",
+    [
+        ("address", BUILDER_REQUEST_ID, None, "fixture.example", None, None),
+        ("address", None, 8443, "fixture.example", None, None),
+        (
+            "hostname",
+            BUILDER_REQUEST_ID,
+            None,
+            "secret-customer.svc.cluster.local",
+            "svc.cluster.local",
+            None,
+        ),
+        ("hostname", BUILDER_REQUEST_ID, None, "fixture.example", None, "denied.example"),
+        (None, BUILDER_REQUEST_ID, None, "fixture.example", None, None),
+    ],
+    ids=[
+        "address-default-port",
+        "address-explicit-port",
+        "hostname-suffix",
+        "cname-exact-host",
+        "allowed",
+    ],
 )
-def test_real_test_read_worker_correlates_policy_denies(monkeypatch, capfd, blocked, request_id):
+def test_real_test_read_worker_correlates_policy_denies(
+    monkeypatch, capfd, block_kind, request_id, explicit_port, host, suffix, exact_rule
+):
     process_factory = subprocess.Popen
     worker_inputs = []
 
@@ -129,11 +163,15 @@ def test_real_test_read_worker_correlates_policy_denies(monkeypatch, capfd, bloc
 
     monkeypatch.setattr(execution.subprocess, "Popen", start_worker)
     monkeypatch.setenv("AIRBYTE_EDITION", "cloud")
-    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", "192.0.0.9/32" if blocked else "")
-    monkeypatch.delenv("AIRBYTE_SSRF_DENY_HOSTS", raising=False)
-    monkeypatch.delenv("AIRBYTE_SSRF_DENY_HOST_SUFFIXES", raising=False)
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_CIDRS", "192.0.0.9/32" if block_kind == "address" else "")
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_HOSTS", exact_rule or "")
+    monkeypatch.setenv("AIRBYTE_SSRF_DENY_HOST_SUFFIXES", suffix or "")
+    test_manifest = deepcopy(TEST_READ_MANIFEST)
+    requester = test_manifest["streams"][0]["retriever"]["requester"]
+    authority = f"{host}:{explicit_port}" if explicit_port is not None else host
+    requester["url"] = f"https://{authority}/synthetic-input-marker"
     body = {
-        "manifest": TEST_READ_MANIFEST,
+        "manifest": test_manifest,
         "config": {},
         "stream_name": "items",
         "context": {"request_id": "forged-body-id"},
@@ -152,7 +190,7 @@ def test_real_test_read_worker_correlates_policy_denies(monkeypatch, capfd, bloc
     assert BUILDER_REQUEST_ID.encode() not in worker_input.payload
     result = response.json()
     event_lines = [line for line in stderr.splitlines() if "airbyte.builder.egress_denied" in line]
-    if not blocked:
+    if block_kind is None:
         assert not event_lines
         assert result["slices"][0]["pages"][0]["records"] == [{"id": 1}]
         return
@@ -173,9 +211,14 @@ def test_real_test_read_worker_correlates_policy_denies(monkeypatch, capfd, bloc
         "builder_request_id": request_id,
         "operation": "test_read",
         "outcome": "blocked",
-        "block_kind": "address",
-        "destination_class": "restricted_network",
+        "block_kind": block_kind,
+        "destination_class": "restricted_network" if block_kind == "address" else "other_policy",
+        "blocked_address": "192.0.0.9" if block_kind == "address" else None,
+        "matched_rule": suffix or exact_rule,
+        "scheme": "https",
+        "port": explicit_port if explicit_port is not None else 443,
     }
+    assert host not in event_line
     assert "synthetic-input-marker" not in event_line
     assert "forged-body-id" not in event_line
 

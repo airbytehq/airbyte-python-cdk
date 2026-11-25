@@ -22,6 +22,7 @@ from airbyte_cdk.manifest_server.helpers.security_events import (
 from airbyte_cdk.manifest_server.helpers.tracing import with_request_context
 from airbyte_cdk.manifest_server.routers import manifest
 from airbyte_cdk.models import AirbyteConnectionStatus, ConnectorSpecification, Status
+from airbyte_cdk.utils.outbound_request_filter import BlockedDestination
 
 pytestmark = pytest.mark.usefixtures("inline_manifest_operations")
 
@@ -32,18 +33,21 @@ def test_resolve_security_event_excludes_legacy_context_and_resets_after_error(
     request_id = "d31133b1-01b2-4553-a167-1921c331fc21"
     header = "X-Airbyte-Builder-Request-Id"
     body = {"manifest": {}, "context": {"request_id": "forged-body-id"}}
+    blocked = BlockedDestination(
+        "hostname", "other_policy", "https", 443, matched_rule="denied.example"
+    )
     (handler,) = logging.getLogger(SECURITY_EVENT_LOGGER_NAME).handlers
     monkeypatch.setattr(handler, "stream", sys.stderr)
 
     def fail_build_source(*args: object, **kwargs: object) -> None:
-        log_egress_denied("hostname", "other_policy")
+        log_egress_denied(blocked)
         raise ValueError("synthetic resolve error")
 
     monkeypatch.setattr(manifest, "safe_build_source", fail_build_source)
 
     with pytest.raises(HTTPException):
         manifest.resolve(ResolveRequest.model_validate(body), [request_id])
-    log_egress_denied("hostname", "other_policy")
+    log_egress_denied(blocked)
     assert [
         json.loads(line)["builder_request_id"]
         for line in capfd.readouterr().err.splitlines()

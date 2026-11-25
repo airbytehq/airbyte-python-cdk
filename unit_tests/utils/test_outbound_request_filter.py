@@ -8,7 +8,7 @@ from requests import PreparedRequest, Response, Session
 from requests.exceptions import InvalidURL
 
 from airbyte_cdk.utils.outbound_request_filter import (
-    BlockKind,
+    BlockedDestination,
     DestinationClass,
     OutboundRequestPolicy,
     _normalize_hostname,
@@ -54,40 +54,74 @@ def _address_info(*addresses: str, canonical_name: str = ""):
 
 
 @pytest.mark.parametrize(
-    "host,address,kind,destination_class",
+    "authority,address,expected",
     [
-        ("api.airbyte.com", None, "hostname", "protected_service"),
-        ("denied.example", None, "hostname", "other_policy"),
-        ("target.example", "fe80::1", "address", "metadata_or_link_local"),
-        ("target.example", "192.0.2.1", "address", "private_or_non_global"),
-        ("target.example", "8.8.8.8", "address", "restricted_network"),
+        (
+            "api.airbyte.com",
+            None,
+            BlockedDestination(
+                "hostname", "protected_service", "https", 443, matched_rule="api.airbyte.com"
+            ),
+        ),
+        (
+            "denied.example",
+            None,
+            BlockedDestination(
+                "hostname", "other_policy", "https", 443, matched_rule="denied.example"
+            ),
+        ),
+        (
+            "denied.example:invalid",
+            None,
+            BlockedDestination(
+                "hostname", "other_policy", "https", None, matched_rule="denied.example"
+            ),
+        ),
+        (
+            "target.example",
+            "fe80::1",
+            BlockedDestination(
+                "address", "metadata_or_link_local", "https", 443, blocked_address="fe80::1"
+            ),
+        ),
+        (
+            "target.example:8443",
+            "192.0.2.1",
+            BlockedDestination(
+                "address", "private_or_non_global", "https", 8443, blocked_address="192.0.2.1"
+            ),
+        ),
+        (
+            "target.example",
+            "8.8.8.8",
+            BlockedDestination(
+                "address", "restricted_network", "https", 443, blocked_address="8.8.8.8"
+            ),
+        ),
     ],
 )
-def test_deny_observer_receives_only_classification_before_send(
-    mocker, host, address, kind, destination_class
+def test_deny_observer_receives_blocked_destination_before_send(
+    mocker, authority: str, address: str | None, expected: BlockedDestination
 ) -> None:
     send = mocker.patch.object(Session, "send", autospec=True)
     resolver = mocker.patch(
         "airbyte_cdk.utils.outbound_request_filter.socket.getaddrinfo",
         return_value=_address_info(address) if address else [],
     )
-    observed: list[tuple[BlockKind, DestinationClass]] = []
-
-    def observe(block_kind: BlockKind, destination: DestinationClass) -> None:
-        observed.append((block_kind, destination))
+    observer = Mock()
 
     init_internal_request_filter(
         OutboundRequestPolicy(
             blocked_hosts=frozenset({"api.airbyte.com", "denied.example"}),
             blocked_networks=(ipaddress.ip_network("8.8.8.0/24"),),
         ),
-        deny_observer=observe,
+        deny_observer=observer,
     )
 
     with pytest.raises(AirbyteTracedException):
-        Session().send(_request(f"https://{host}/private-synthetic-path"))
+        Session().send(_request(f"HTTPS://{authority}/private-synthetic-path"))
 
-    assert observed == [(kind, destination_class)]
+    observer.assert_called_once_with(expected)
     send.assert_not_called()
     assert resolver.call_count == int(address is not None)
 
@@ -105,7 +139,11 @@ def test_observer_failure_or_absence_preserves_deny(mocker, observer_fails) -> N
         Session().send(_request("https://denied.example/"))
 
     if observer is not None:
-        observer.assert_called_once_with("hostname", "other_policy")
+        observer.assert_called_once_with(
+            BlockedDestination(
+                "hostname", "other_policy", "https", 443, matched_rule="denied.example"
+            )
+        )
     send.assert_not_called()
 
 
@@ -286,12 +324,24 @@ def test_invalid_configured_cidr_fails_policy_construction(monkeypatch):
         cloud_outbound_request_policy()
 
 
-def test_cname_target_is_checked_before_address_resolution(mocker):
-    policy = cloud_outbound_request_policy(include_airbyte_service_names=True)
-    init_internal_request_filter(policy)
+@pytest.mark.parametrize(
+    "target,expected_class,expected_rule",
+    [
+        ("mcp.airbyte.com", "protected_service", "mcp.airbyte.com"),
+        ("synthetic-alias.svc.cluster.local", "other_policy", "svc.cluster.local"),
+    ],
+)
+def test_cname_target_is_checked_before_address_resolution(
+    mocker, target: str, expected_class: DestinationClass, expected_rule: str
+) -> None:
+    policy = cloud_outbound_request_policy(include_airbyte_service_names=True).merge(
+        OutboundRequestPolicy(blocked_suffixes=frozenset({"cluster.local", "svc.cluster.local"}))
+    )
+    observer = Mock()
+    init_internal_request_filter(policy, deny_observer=observer)
     mocker.patch(
         "airbyte_cdk.utils.outbound_request_filter._resolve_cname_chain",
-        return_value=iter(["mcp.airbyte.com"]),
+        return_value=iter([target]),
     )
     address_lookup = mocker.patch(
         "airbyte_cdk.utils.outbound_request_filter.socket.getaddrinfo",
@@ -301,8 +351,11 @@ def test_cname_target_is_checked_before_address_resolution(mocker):
     with pytest.raises(AirbyteTracedException) as exc_info:
         Session().send(_request("https://attacker-controlled.example/"))
     assert exc_info.value.internal_message
-    assert "mcp.airbyte.com" in exc_info.value.internal_message
+    assert target in exc_info.value.internal_message
     address_lookup.assert_not_called()
+    observer.assert_called_once_with(
+        BlockedDestination("hostname", expected_class, "https", 443, matched_rule=expected_rule)
+    )
 
 
 def test_getaddrinfo_canonical_name_is_checked(mocker):
