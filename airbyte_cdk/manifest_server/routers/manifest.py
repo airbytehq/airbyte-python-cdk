@@ -9,7 +9,6 @@ import jsonschema
 import pydantic
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import WithJsonSchema
 
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
@@ -48,9 +47,9 @@ from ..helpers.tracing import with_request_context
 
 logger = logging.getLogger("airbyte.manifest-server")
 
-BuilderRequestIdHeader = Annotated[
+BuilderRequestIdHeaderValues = Annotated[
     list[str] | None,
-    WithJsonSchema({"type": "string", "format": "uuid"}),
+    pydantic.WithJsonSchema({"type": "string", "format": "uuid"}),
     Header(
         alias="X-Airbyte-Builder-Request-Id",
         description="Internal correlation ID. Only a single UUIDv4 value is accepted.",
@@ -62,6 +61,12 @@ _CLIENT_FACING_EXCEPTIONS = (
     ValueError,
 )
 _INTERNAL_VALUE_ERRORS = (json.JSONDecodeError, UnicodeError)
+
+
+def _parse_builder_request_id(header_values: list[str] | None) -> str | None:
+    if header_values is None or len(header_values) != 1:
+        return None
+    return normalize_builder_request_id(header_values[0])
 
 
 def _error_detail(action: str, exc: Exception) -> str:
@@ -132,14 +137,15 @@ router = APIRouter(
 )
 @with_request_context
 def test_read(
-    request: StreamTestReadRequest, builder_request_id: BuilderRequestIdHeader = None
+    request: StreamTestReadRequest,
+    builder_request_id_values: BuilderRequestIdHeaderValues = None,
 ) -> StreamReadResponse:
     """Test reading from a specific stream in the manifest."""
     return run_operation(
         "test_read",
         request,
         StreamReadResponse,
-        builder_request_id=normalize_builder_request_id(builder_request_id),
+        builder_request_id=_parse_builder_request_id(builder_request_id_values),
     )
 
 
@@ -261,10 +267,10 @@ def _discover(request: DiscoverRequest) -> DiscoverResponse:
 )
 @with_request_context
 def resolve(
-    request: ResolveRequest, builder_request_id: BuilderRequestIdHeader = None
+    request: ResolveRequest, builder_request_id_values: BuilderRequestIdHeaderValues = None
 ) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
-    with bind_request_operation("resolve", normalize_builder_request_id(builder_request_id)):
+    with bind_request_operation("resolve", _parse_builder_request_id(builder_request_id_values)):
         try:
             source = safe_build_source(request.manifest.model_dump(), {})
             return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
@@ -283,7 +289,8 @@ def resolve(
 )
 @with_request_context
 def full_resolve(
-    request: FullResolveRequest, builder_request_id: BuilderRequestIdHeader = None
+    request: FullResolveRequest,
+    builder_request_id_values: BuilderRequestIdHeaderValues = None,
 ) -> ManifestResponse:
     """
     Fully resolve a manifest, including dynamic streams.
@@ -294,7 +301,7 @@ def full_resolve(
         "full_resolve",
         request,
         ManifestResponse,
-        builder_request_id=normalize_builder_request_id(builder_request_id),
+        builder_request_id=_parse_builder_request_id(builder_request_id_values),
     )
 
 

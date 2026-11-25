@@ -11,7 +11,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, FrozenSet, Iterable, Literal, Tuple
+from typing import Any, FrozenSet, Iterable, Literal, NoReturn, Tuple
 from urllib.parse import urlparse
 
 import dns.exception
@@ -101,7 +101,10 @@ def cloud_outbound_request_policy(
 def init_internal_request_filter(
     policy: OutboundRequestPolicy | None = None, *, deny_observer: DenyObserver | None = None
 ) -> None:
-    """Install the process-wide Requests filter, adding policy and optionally a deny observer."""
+    """Install the process-wide Requests filter once and merge in the supplied policy.
+
+    If supplied, `deny_observer` replaces the current observer. Omitting it preserves the observer.
+    """
 
     global _ACTIVE_POLICY, _DENY_OBSERVER
 
@@ -211,7 +214,7 @@ def _address_is_in_network(
 
 def _raise_blocked_destination(
     destination: str, kind: BlockKind, destination_class: DestinationClass
-) -> None:
+) -> NoReturn:
     observer = _DENY_OBSERVER
     if observer is not None:
         try:
@@ -287,7 +290,7 @@ def _split_env(name: str) -> set[str]:
 
 
 def _reset_request_filter_policy_for_testing() -> None:
-    """Reset additive policy state. Tests must also patch Session.send to remove the wrapper."""
+    """Reset the policy and observer without removing the installed Requests wrapper."""
 
     global _ACTIVE_POLICY, _DENY_OBSERVER
     with _INTERNAL_REQUEST_FILTER_LOCK:

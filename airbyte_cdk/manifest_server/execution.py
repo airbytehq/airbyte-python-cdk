@@ -42,6 +42,8 @@ ResponseT = TypeVar("ResponseT", bound=BaseModel)
 
 @dataclass(frozen=True)
 class WorkerInput:
+    """Private stdin envelope: one JSON metadata line followed by the request model's JSON."""
+
     builder_request_id: str | None
     payload: bytes
 
@@ -57,7 +59,7 @@ class WorkerInput:
         request_id = json.loads(metadata)
         if request_id is not None and (
             not isinstance(request_id, str)
-            or normalize_builder_request_id([request_id]) != request_id
+            or normalize_builder_request_id(request_id) != request_id
         ):
             raise ValueError("Invalid Manifest worker metadata")
 

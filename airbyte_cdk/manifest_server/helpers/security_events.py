@@ -24,9 +24,9 @@ _UUID_V4 = re.compile(
 )
 
 
-def normalize_builder_request_id(values: list[str] | None) -> str | None:
-    if values and len(values) == 1 and _UUID_V4.fullmatch(values[0]):
-        return values[0].lower()
+def normalize_builder_request_id(value: str) -> str | None:
+    if _UUID_V4.fullmatch(value):
+        return value.lower()
     return None
 
 

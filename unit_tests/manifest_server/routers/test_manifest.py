@@ -17,7 +17,7 @@ BUILDER_REQUEST_ID_HEADER = "X-Airbyte-Builder-Request-Id"
 BUILDER_REQUEST_ID = "d31133b1-01b2-4553-a167-1921c331fc21"
 
 
-@pytest.mark.parametrize("operation", ["test_read", "full_resolve", "check", "discover"])
+@pytest.mark.parametrize("operation", ["test_read", "full_resolve"])
 @pytest.mark.parametrize(
     "values,expected",
     [
@@ -29,11 +29,12 @@ BUILDER_REQUEST_ID = "d31133b1-01b2-4553-a167-1921c331fc21"
         ([f"{BUILDER_REQUEST_ID},{BUILDER_REQUEST_ID}"], None),
     ],
 )
-def test_only_builder_worker_operations_forward_a_single_uuidv4(
+def test_builder_worker_operations_forward_a_single_uuidv4(
     operation, values, expected, monkeypatch, caplog
 ) -> None:
     run_operation = Mock(side_effect=HTTPException(status_code=400, detail="Worker reached"))
     monkeypatch.setattr(manifest, "run_operation", run_operation)
+    caplog.set_level(logging.INFO)
     payload = {
         "manifest": {},
         "config": {},
@@ -47,7 +48,6 @@ def test_only_builder_worker_operations_forward_a_single_uuidv4(
         headers=[(BUILDER_REQUEST_ID_HEADER, value) for value in values],
     )
 
-    expected = expected if operation in {"test_read", "full_resolve"} else None
     assert response.status_code == 400
     assert response.json() == {"detail": "Worker reached"}
     assert BUILDER_REQUEST_ID_HEADER not in response.headers
@@ -55,6 +55,25 @@ def test_only_builder_worker_operations_forward_a_single_uuidv4(
     assert run_operation.call_args.args[0] == operation
     assert run_operation.call_args.kwargs.get("builder_request_id") == expected
     assert "invalid-header-marker" not in caplog.text
+
+
+@pytest.mark.parametrize("operation", ["check", "discover"])
+def test_other_worker_operations_ignore_builder_request_id(operation, monkeypatch) -> None:
+    run_operation = Mock(side_effect=HTTPException(status_code=400, detail="Worker reached"))
+    monkeypatch.setattr(manifest, "run_operation", run_operation)
+
+    response = client.post(
+        f"/v1/manifest/{operation}",
+        json={"manifest": {}, "config": {}, "context": {"request_id": "forged-body-id"}},
+        headers={BUILDER_REQUEST_ID_HEADER: BUILDER_REQUEST_ID},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Worker reached"}
+    assert BUILDER_REQUEST_ID_HEADER not in response.headers
+    run_operation.assert_called_once()
+    assert run_operation.call_args.args[0] == operation
+    assert run_operation.call_args.kwargs.get("builder_request_id") is None
 
 
 @pytest.mark.parametrize("operation", ["test_read", "full_resolve", "resolve"])
